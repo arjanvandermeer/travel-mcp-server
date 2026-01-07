@@ -9,6 +9,7 @@
     "start:http": "node src/index-http.js",
     "import": "node src/import-geonames.js",
     "import:extended": "node src/import-geonames-extended.js",
+    "import:osm": "node src/import-osm.js",
     "dev": "node --watch src/index.js",
     "dev:http": "node --watch src/index-http.js"
   },

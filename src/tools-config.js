@@ -159,6 +159,46 @@ export const toolsConfig = [
     },
   },
   {
+    name: 'get_hotel_by_id',
+    description: 'Get detailed information about a hotel by its OpenStreetMap ID (requires OSM data to be imported)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_id: {
+          type: 'string',
+          description: 'OpenStreetMap ID of the hotel (e.g., "node/123456" or "way/789012")',
+        },
+      },
+      required: ['osm_id'],
+    },
+  },
+  {
+    name: 'find_hotels_in_polygon',
+    description: 'Find hotels within a polygon defined by coordinate vertices. Useful for finding hotels within a specific geographic area or boundary (requires OSM data to be imported)',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        polygon: {
+          type: 'array',
+          description: 'Array of [latitude, longitude] coordinate pairs defining the polygon vertices. The polygon will be automatically closed (no need to repeat the first point at the end).',
+          items: {
+            type: 'array',
+            items: { type: 'number' },
+            minItems: 2,
+            maxItems: 2,
+          },
+          minItems: 3,
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum number of results to return (default: 100)',
+          default: 100,
+        },
+      },
+      required: ['polygon'],
+    },
+  },
+  {
     name: 'get_database_stats',
     description: 'Get statistics about the database (number of cities, hotels, etc.)',
     inputSchema: {
@@ -175,9 +215,9 @@ export const toolsConfig = [
  * @param {string} name - Tool name
  * @param {object} args - Tool arguments
  * @param {HotelDatabase} db - Database instance
- * @returns {object} MCP response object
+ * @returns {Promise<object>} MCP response object
  */
-export function executeToolHandler(name, args, db) {
+export async function executeToolHandler(name, args, db) {
   try {
     switch (name) {
       case 'search_cities': {
@@ -272,11 +312,49 @@ export function executeToolHandler(name, args, db) {
       }
 
       case 'find_hotels_near_coordinates': {
-        const results = db.getHotelsNearCoordinates(
+        const results = await db.getHotelsNearCoordinates(
           args.latitude,
           args.longitude,
           args.radius_km || 10,
           args.limit || 50
+        );
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(results, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_hotel_by_id': {
+        const hotel = await db.getHotelByOsmId(args.osm_id);
+        if (!hotel) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: `Hotel with OSM ID ${args.osm_id} not found`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(hotel, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'find_hotels_in_polygon': {
+        const results = db.getHotelsInPolygon(
+          args.polygon,
+          args.limit || 100
         );
         return {
           content: [

@@ -1,15 +1,25 @@
 import Database from 'better-sqlite3';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// Cache TTL configuration (in days)
+const CACHE_TTL = {
+  region_hotels: 30,        // Refresh region every 30 days
+  individual_hotel: 90,     // Refresh specific hotel every 90 days
+};
 
 export class HotelDatabase {
   constructor(dbPath = null) {
     const defaultPath = join(__dirname, '../data/hotels.db');
     this.db = new Database(dbPath || defaultPath);
     this.initSchema();
+
+    // Track in-progress fetches to prevent duplicate requests
+    this.activeFetches = new Map(); // regionHash -> Promise
   }
 
   initSchema() {
@@ -151,9 +161,29 @@ export class HotelDatabase {
       CREATE INDEX IF NOT EXISTS idx_geonames_admin1 ON geonames_cities(admin1_code);
     `);
 
-    // Hotels table (will be populated from OSM later)
+    // OSM Cache Metadata (tracks freshness of cached regions)
     this.db.exec(`
-      CREATE TABLE IF NOT EXISTS hotels (
+      CREATE TABLE IF NOT EXISTS osm_cache_metadata (
+        region_hash TEXT PRIMARY KEY,
+        region_type TEXT NOT NULL,
+        bbox TEXT NOT NULL,
+        city_geoname_id INTEGER,
+        data_type TEXT NOT NULL,
+        expected_count INTEGER,
+        actual_count INTEGER,
+        is_complete INTEGER DEFAULT 0,
+        last_fetched INTEGER NOT NULL,
+        cache_ttl_days INTEGER DEFAULT 30,
+        FOREIGN KEY (city_geoname_id) REFERENCES geonames_cities(geoname_id)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_osm_cache_metadata_type ON osm_cache_metadata(data_type);
+      CREATE INDEX IF NOT EXISTS idx_osm_cache_metadata_city ON osm_cache_metadata(city_geoname_id);
+    `);
+
+    // OSM Hotels Cache (populated on-demand from OSM Overpass API)
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS osm_cache_hotels (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         osm_id TEXT UNIQUE,
         name TEXT NOT NULL,
@@ -168,14 +198,15 @@ export class HotelDatabase {
         stars INTEGER,
         rooms INTEGER,
         amenities TEXT, -- JSON array of amenities
-        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        created_at INTEGER DEFAULT (unixepoch('now')),
+        updated_at INTEGER DEFAULT (unixepoch('now'))
       );
-      
-      CREATE INDEX IF NOT EXISTS idx_hotels_name ON hotels(name COLLATE NOCASE);
-      CREATE INDEX IF NOT EXISTS idx_hotels_coords ON hotels(latitude, longitude);
-      CREATE INDEX IF NOT EXISTS idx_hotels_city ON hotels(city COLLATE NOCASE);
-      CREATE INDEX IF NOT EXISTS idx_hotels_country ON hotels(country_code);
+
+      CREATE INDEX IF NOT EXISTS idx_osm_cache_hotels_name ON osm_cache_hotels(name COLLATE NOCASE);
+      CREATE INDEX IF NOT EXISTS idx_osm_cache_hotels_coords ON osm_cache_hotels(latitude, longitude);
+      CREATE INDEX IF NOT EXISTS idx_osm_cache_hotels_city ON osm_cache_hotels(city COLLATE NOCASE);
+      CREATE INDEX IF NOT EXISTS idx_osm_cache_hotels_country ON osm_cache_hotels(country_code);
+      CREATE INDEX IF NOT EXISTS idx_osm_cache_hotels_updated ON osm_cache_hotels(updated_at);
     `);
 
     // Hotel amenities lookup table
@@ -658,15 +689,71 @@ export class HotelDatabase {
       .slice(0, limit);
   }
 
-  // Hotel methods (for later OSM import)
+  // OSM Cache Metadata methods
+
+  /**
+   * Calculate hash for a bounding box
+   */
+  calculateBboxHash(south, west, north, east) {
+    const bboxString = `${south},${west},${north},${east}`;
+    return crypto.createHash('md5').update(bboxString).digest('hex');
+  }
+
+  /**
+   * Get cache metadata for a region
+   */
+  getCacheMetadata(regionHash, dataType = 'hotels') {
+    const stmt = this.db.prepare(`
+      SELECT * FROM osm_cache_metadata
+      WHERE region_hash = ? AND data_type = ?
+    `);
+    return stmt.get(regionHash, dataType);
+  }
+
+  /**
+   * Check if cache is fresh (not stale)
+   */
+  isCacheFresh(metadata) {
+    if (!metadata) return false;
+    const now = Math.floor(Date.now() / 1000);
+    const ageInDays = (now - metadata.last_fetched) / 86400;
+    return ageInDays < metadata.cache_ttl_days;
+  }
+
+  /**
+   * Insert or update cache metadata
+   */
+  upsertCacheMetadata(metadata) {
+    const stmt = this.db.prepare(`
+      INSERT OR REPLACE INTO osm_cache_metadata (
+        region_hash, region_type, bbox, city_geoname_id, data_type,
+        expected_count, actual_count, is_complete, last_fetched, cache_ttl_days
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    return stmt.run(
+      metadata.region_hash,
+      metadata.region_type,
+      metadata.bbox,
+      metadata.city_geoname_id || null,
+      metadata.data_type,
+      metadata.expected_count || null,
+      metadata.actual_count || 0,
+      metadata.is_complete || 0,
+      metadata.last_fetched,
+      metadata.cache_ttl_days || CACHE_TTL.region_hotels
+    );
+  }
+
+  // OSM Hotel Cache methods
   insertHotel(hotel) {
     const stmt = this.db.prepare(`
-      INSERT OR REPLACE INTO hotels (
+      INSERT OR REPLACE INTO osm_cache_hotels (
         osm_id, name, latitude, longitude, address, city, country_code,
         phone, website, email, stars, rooms, amenities
       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
-    
+
     return stmt.run(
       hotel.osm_id,
       hotel.name,
@@ -686,48 +773,223 @@ export class HotelDatabase {
 
   searchHotels(query, limit = 20) {
     const stmt = this.db.prepare(`
-      SELECT * FROM hotels 
+      SELECT * FROM osm_cache_hotels
       WHERE name LIKE ? OR city LIKE ? OR address LIKE ?
       LIMIT ?
     `);
-    
+
     const searchTerm = `%${query}%`;
     return stmt.all(searchTerm, searchTerm, searchTerm, limit);
   }
 
-  getHotelsNearCoordinates(lat, lon, radiusKm = 10, limit = 50) {
+  async getHotelsNearCoordinates(lat, lon, radiusKm = 10, limit = 50) {
     const latDelta = radiusKm / 111;
     const lonDelta = radiusKm / (111 * Math.cos(lat * Math.PI / 180));
-    
+
+    // Calculate bounding box
+    const south = lat - latDelta;
+    const north = lat + latDelta;
+    const west = lon - lonDelta;
+    const east = lon + lonDelta;
+
+    // Check cache metadata
+    const regionHash = this.calculateBboxHash(south, west, north, east);
+    const metadata = this.getCacheMetadata(regionHash, 'hotels');
+
+    // If cache is missing or stale, trigger background refresh
+    if (!metadata || !this.isCacheFresh(metadata)) {
+      // Check if there's already an active fetch for this region
+      if (!this.activeFetches.has(regionHash)) {
+        // Start new fetch and track it
+        const fetchPromise = this.refreshRegionCache(south, west, north, east, regionHash)
+          .catch(err => {
+            console.error(`Background refresh failed for region ${regionHash}:`, err.message);
+          })
+          .finally(() => {
+            // Remove from active fetches when done
+            this.activeFetches.delete(regionHash);
+          });
+
+        this.activeFetches.set(regionHash, fetchPromise);
+
+        console.log(`Started background fetch for region ${regionHash}`);
+      } else {
+        console.log(`Fetch already in progress for region ${regionHash}, skipping duplicate`);
+      }
+
+      // If no metadata at all, return empty (first call)
+      if (!metadata) {
+        return [];
+      }
+      // If stale, return stale data while refreshing in background
+      console.log(`Returning stale data while refreshing region ${regionHash}`);
+    }
+
+    // Query cached hotels
     const stmt = this.db.prepare(`
       SELECT *,
         (
           6371 * acos(
-            cos(radians(?)) * cos(radians(latitude)) * 
-            cos(radians(longitude) - radians(?)) + 
+            cos(radians(?)) * cos(radians(latitude)) *
+            cos(radians(longitude) - radians(?)) +
             sin(radians(?)) * sin(radians(latitude))
           )
         ) as distance_km
-      FROM hotels
+      FROM osm_cache_hotels
       WHERE latitude BETWEEN ? AND ?
         AND longitude BETWEEN ? AND ?
       ORDER BY distance_km
       LIMIT ?
     `);
-    
+
     return stmt.all(
       lat, lon, lat,
-      lat - latDelta, lat + latDelta,
-      lon - lonDelta, lon + lonDelta,
+      south, north,
+      west, east,
       limit
     );
+  }
+
+  /**
+   * Refresh region cache in background
+   * For large regions, splits into tiles to avoid OSM API timeouts
+   */
+  async refreshRegionCache(south, west, north, east, regionHash) {
+    const { queryHotelCount, fetchHotels, parseOSMElement, splitBoundingBox } = await import('./osm-api.js');
+
+    console.log(`Fetching hotel count for region ${regionHash}...`);
+    const expectedCount = await queryHotelCount(south, west, north, east);
+
+    if (expectedCount === null) {
+      console.error('Failed to query hotel count');
+      return;
+    }
+
+    console.log(`Expecting ${expectedCount} hotels in region`);
+
+    // Determine if we need to split the region
+    const latSpan = north - south;
+    const lonSpan = east - west;
+    const areaSize = latSpan * lonSpan;
+
+    // Split if region is large or has many hotels
+    const shouldSplit = areaSize > 0.04 || expectedCount > 200;
+    const tiles = shouldSplit
+      ? splitBoundingBox(south, west, north, east, 4)
+      : [{ south, west, north, east }];
+
+    if (tiles.length > 1) {
+      console.log(`Splitting into ${tiles.length} tiles to avoid API timeout`);
+    }
+
+    let imported = 0;
+    for (let i = 0; i < tiles.length; i++) {
+      const tile = tiles[i];
+      console.log(`Fetching tile ${i + 1}/${tiles.length}...`);
+
+      const elements = await fetchHotels(tile.south, tile.west, tile.north, tile.east);
+
+      for (const element of elements) {
+        const hotel = parseOSMElement(element);
+        if (hotel) {
+          try {
+            this.insertHotel(hotel);
+            imported++;
+          } catch (error) {
+            // Skip duplicates or errors
+          }
+        }
+      }
+    }
+
+    // Update metadata
+    const now = Math.floor(Date.now() / 1000);
+    this.upsertCacheMetadata({
+      region_hash: regionHash,
+      region_type: 'coordinates',
+      bbox: JSON.stringify({ south, west, north, east }),
+      data_type: 'hotels',
+      expected_count: expectedCount,
+      actual_count: imported,
+      is_complete: imported >= expectedCount ? 1 : 0,
+      last_fetched: now,
+      cache_ttl_days: CACHE_TTL.region_hotels,
+    });
+
+    console.log(`✓ Refreshed region ${regionHash}: ${imported}/${expectedCount} hotels`);
+  }
+
+  async getHotelByOsmId(osmId) {
+    const stmt = this.db.prepare('SELECT * FROM osm_cache_hotels WHERE osm_id = ?');
+    const hotel = stmt.get(osmId);
+
+    // If hotel exists, check if it's stale
+    if (hotel) {
+      const now = Math.floor(Date.now() / 1000);
+      const ageInDays = (now - hotel.updated_at) / 86400;
+
+      // If older than individual hotel TTL, trigger background refresh
+      if (ageInDays > CACHE_TTL.individual_hotel) {
+        console.log(`Hotel ${osmId} is stale (${Math.floor(ageInDays)} days old), refreshing in background`);
+        this.refreshIndividualHotel(osmId).catch(err => {
+          console.error(`Failed to refresh hotel ${osmId}:`, err.message);
+        });
+      }
+    }
+
+    return hotel;
+  }
+
+  /**
+   * Refresh individual hotel data from OSM
+   */
+  async refreshIndividualHotel(osmId) {
+    const { fetchHotelById } = await import('./osm-api.js');
+
+    console.log(`Fetching updated data for hotel ${osmId}...`);
+    const hotelData = await fetchHotelById(osmId);
+
+    if (hotelData) {
+      // Update the hotel with fresh data
+      this.insertHotel(hotelData);
+      console.log(`✓ Refreshed hotel ${osmId}`);
+    } else {
+      console.error(`Failed to fetch hotel ${osmId} from OSM`);
+    }
+  }
+
+  getHotelsInPolygon(polygon, limit = 100) {
+    // Calculate bounding box for initial filter
+    const lats = polygon.map(p => p[0]);
+    const lons = polygon.map(p => p[1]);
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLon = Math.min(...lons);
+    const maxLon = Math.max(...lons);
+
+    // Get all hotels in bounding box
+    const stmt = this.db.prepare(`
+      SELECT * FROM osm_cache_hotels
+      WHERE latitude BETWEEN ? AND ?
+        AND longitude BETWEEN ? AND ?
+    `);
+
+    const candidates = stmt.all(minLat, maxLat, minLon, maxLon);
+
+    // Filter to only hotels actually inside polygon
+    const hotelsInPolygon = candidates.filter(hotel =>
+      this.isPointInPolygon(hotel.latitude, hotel.longitude, polygon)
+    );
+
+    // Limit results
+    return hotelsInPolygon.slice(0, limit);
   }
 
   // Stats
   getStats() {
     const countriesCount = this.db.prepare('SELECT COUNT(*) as count FROM geonames_countries').get();
     const citiesCount = this.db.prepare('SELECT COUNT(*) as count FROM geonames_cities').get();
-    const hotelsCount = this.db.prepare('SELECT COUNT(*) as count FROM hotels').get();
+    const hotelsCount = this.db.prepare('SELECT COUNT(*) as count FROM osm_cache_hotels').get();
     const alternateNamesCount = this.db.prepare('SELECT COUNT(*) as count FROM geonames_alternate_names').get();
     const admin1Count = this.db.prepare('SELECT COUNT(*) as count FROM geonames_admin1_codes').get();
     const admin2Count = this.db.prepare('SELECT COUNT(*) as count FROM geonames_admin2_codes').get();
