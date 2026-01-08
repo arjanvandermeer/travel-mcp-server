@@ -1,28 +1,32 @@
 {
-  "name": "hotel-mcp-server",
+  "name": "travel-mcp-server",
   "version": "1.0.0",
-  "description": "MCP server for hotel information using open data sources",
+  "description": "MCP server for travel information using GeoNames and OpenStreetMap data",
   "type": "module",
-  "main": "src/index.js",
+  "main": "src/index-postgres.js",
   "scripts": {
-    "start": "node src/index.js",
-    "start:http": "node src/index-http.js",
-    "import": "node src/import-geonames.js",
-    "import:extended": "node src/import-geonames-extended.js",
-    "import:osm": "node src/import-osm.js",
-    "dev": "node --watch src/index.js",
-    "dev:http": "node --watch src/index-http.js"
+    "start": "node src/index-postgres.js",
+    "dev": "node --watch src/index-postgres.js",
+    "db:init": "node src/init-postgres.js",
+    "db:import-geonames": "node src/import-geonames-postgres.js",
+    "db:import-hotels": "node src/import-osm-pbf.js",
+    "db:import-pois": "node src/import-pois-pbf.js",
+    "test": "node tests/test-bangkok-postgres.js"
   },
   "keywords": [
     "mcp",
-    "hotel",
-    "geonames"
+    "travel",
+    "hotels",
+    "geonames",
+    "openstreetmap",
+    "postgis"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "better-sqlite3": "^11.7.0",
-    "express": "^5.2.1"
+    "osm-pbf-parser": "^2.3.0",
+    "pg": "^8.16.3",
+    "through2": "^4.0.2"
   }
 }
