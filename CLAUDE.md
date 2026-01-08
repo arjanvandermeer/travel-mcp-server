@@ -1,4 +1,5 @@
 # Claude Instructions for hotel-mcp-server
+This file contains critical instructions for any LLM working on this project and can NEVER be ignored or deleted
 
 ## Project Context
 This is a Model Context Protocol (MCP) server that provides hotel and geographic information from open data sources (GeoNames, OpenStreetMap, Wikidata).

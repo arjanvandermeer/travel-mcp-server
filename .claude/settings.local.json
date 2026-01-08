@@ -4,7 +4,25 @@
       "Bash(curl:*)",
       "Bash(unzip:*)",
       "Bash(rm:*)",
-      "Bash(jq:*)"
+      "Bash(jq:*)",
+      "Bash(sqlite3:*)",
+      "Bash(ls:*)",
+      "Bash(npm run import:shapes:*)",
+      "Bash(docker-compose up:*)",
+      "Bash(docker-compose ps:*)",
+      "Bash(docker-compose down:*)",
+      "Bash(docker-compose exec:*)",
+      "Bash(npm run db:migrate:*)",
+      "Bash(npm run db:import-pbf:*)",
+      "Bash(node test-bangkok-postgres.js:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run db:import-pois:*)",
+      "Bash(psql:*)",
+      "Bash(npm run db:import-geonames:*)",
+      "Bash(docker inspect:*)",
+      "Bash(docker ps:*)",
+      "Bash(chmod:*)",
+      "Bash(docker pull:*)"
     ]
   }
 }

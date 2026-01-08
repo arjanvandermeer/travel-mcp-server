@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgis/postgis:17-3.4
+    container_name: travel-postgres
+    environment:
+      POSTGRES_DB: travel
+      POSTGRES_USER: ${POSTGRES_USER:-traveluser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-travelpass}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-traveluser} -d travel"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:
