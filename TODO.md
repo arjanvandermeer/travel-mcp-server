@@ -2,6 +2,94 @@
 
 ## High Priority
 
+### Refactor: Separate Data Sources into Dedicated Tables
+- [ ] Create separate tables for each data source to maintain clean data model
+- [ ] New table structure:
+  - Keep `pois` table for core OSM data only (osm_id, name, location, poi_type, etc.)
+  - Create `google_places` table for Google Places enrichment data
+  - Create `pois_google_mapping` table (many-to-many) to link OSM IDs with Google Place IDs
+- [ ] Update database schema and migration script
+- [ ] Refactor `database-postgres.js` to JOIN tables when returning enriched data
+- [ ] Consider renaming tables to reflect source:
+  - `pois` → `osm_pois` or keep as is (since OSM is primary source)
+  - `geonames_cities` → already prefixed correctly
+  - `google_places` → new table for Google data
+- [ ] Update all queries to use JOINs for enriched data
+- [ ] Migration strategy: Extract Google columns from `pois` into new `google_places` table
+
+**Rationale**: Currently Google Places data is stored directly in the `pois` table, mixing data sources. This makes it harder to:
+- Update Google data independently from OSM data
+- Handle cases where multiple OSM POIs map to the same Google Place
+- Support other enrichment sources in the future (Yelp, TripAdvisor, etc.)
+- Keep data models clean and maintainable
+
+**Benefits of separate tables**:
+- Clean separation of concerns (OSM vs Google vs GeoNames)
+- Better data integrity (each source has its own schema)
+- Easier to update/refresh data from specific sources
+- Supports many-to-many relationships (multiple OSM entries for one Google Place)
+- Future-proof for additional enrichment sources
+
+**Current schema (mixed)**:
+```
+pois: osm_id, name, latitude, longitude, google_place_id, google_rating, ...
+```
+
+**Proposed schema (separated)**:
+```
+osm_pois: osm_id, name, latitude, longitude, poi_type, ...
+google_places: google_place_id, name, rating, user_ratings_total, ...
+pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
+```
+
+### Fix Google Places Matching Algorithm
+- [ ] Improve matching algorithm between OSM POIs and Google Places entries
+- [ ] Current issues:
+  - Thai/non-Latin character names often mismatch (e.g., 'โรงแรมสิริน')
+  - Name variations not handled well (abbreviations, different word order)
+  - Distance-based matching is too broad (matches wrong nearby places)
+- [ ] Proposed improvements:
+  - Use normalized name matching (remove special characters, lowercase, transliteration)
+  - Implement fuzzy string matching with configurable threshold (Levenshtein distance)
+  - Check address/location first, then verify name similarity
+  - Use Google's `findplacefromtext` with better query construction
+  - Add confidence score to matching results
+  - Store matching metadata (confidence, method used) for debugging
+- [ ] Add validation before accepting match:
+  - Verify distance is within reasonable threshold (e.g., < 50 meters)
+  - Check if POI types are compatible (hotel vs restaurant)
+  - Compare business names with fuzzy matching
+  - Log low-confidence matches for manual review
+- [ ] Add `pois_google_mapping` table with fields:
+  - `osm_id`, `google_place_id`
+  - `confidence_score` (0.0 to 1.0)
+  - `matching_method` ('name_exact', 'name_fuzzy', 'location_only')
+  - `verified` (boolean for manual verification)
+  - `created_at`, `updated_at`
+
+**Rationale**: Current matching algorithm has high false-positive rate, especially for non-Latin names. Poor matches reduce data quality and user trust. Need better matching logic with confidence scoring and manual verification capability.
+
+**Test cases to validate**:
+- Thai hotel names (โรงแรมสิริน, etc.)
+- Hotels with similar names in same area
+- Chain hotels (Marriott, Hilton) - should match correct branch
+- POIs with transliterated names vs native scripts
+
+### Security: SQL Injection Audit
+- [ ] Audit all database queries in `src/database-postgres.js` for SQL injection vulnerabilities
+- [ ] Verify all user inputs are properly parameterized (using `$1`, `$2` placeholders)
+- [ ] Check dynamic query building for potential injection vectors
+- [ ] Review Google Places integration for proper input sanitization
+- [ ] Add input validation for all MCP tool parameters
+
+**Rationale**: Security is critical. Need to ensure all database queries use parameterized statements and that no user input is directly interpolated into SQL strings. This is especially important for the MCP server which accepts external input from Claude Desktop.
+
+**Focus areas**:
+- `unifiedSearchPOIs()` - city names, POI types, coordinates
+- `searchCities()` - search terms
+- `enrichPOIWithGooglePlaces()` - OSM IDs
+- Any dynamic ORDER BY, LIMIT, or WHERE clauses
+
 ### Data caching and automatic refresh system
 - [ ] Add `data_cache_metadata` table to track when regions/data were last updated
   - Fields: `region_type` (city/hotel), `region_identifier` (bbox/polygon hash), `last_updated`, `refresh_interval_days`

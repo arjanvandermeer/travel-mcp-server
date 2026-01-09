@@ -1,4 +1,8 @@
 import pg from 'pg';
+import { GooglePlacesClient } from './google-places.js';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const CONNECTION_STRING = process.env.DATABASE_URL ||
   'postgresql://traveluser:travelpass@localhost:5432/travel';
@@ -6,6 +10,7 @@ const CONNECTION_STRING = process.env.DATABASE_URL ||
 export class TravelDatabase {
   constructor() {
     this.pool = new pg.Pool({ connectionString: CONNECTION_STRING });
+    this.googlePlaces = new GooglePlacesClient();
   }
 
   async close() {
@@ -274,13 +279,15 @@ export class TravelDatabase {
       throw new Error('country_code can only be used with city_name, not with coordinates');
     }
 
+    let result;
+
     // Case 1: Name only (no location filter)
     if (query && !cityName && !latitude) {
-      return this.searchPOIs(query, poiType, limit);
+      const pois = await this.searchPOIs(query, poiType, limit);
+      result = pois; // searchPOIs returns array directly
     }
-
     // Case 2: Coordinates only (no name filter)
-    if (latitude && longitude && !query) {
+    else if (latitude && longitude && !query) {
       const pois = await this.getPOIsNearCoordinates(
         latitude,
         longitude,
@@ -288,7 +295,7 @@ export class TravelDatabase {
         poiType,
         limit
       );
-      return {
+      result = {
         latitude,
         longitude,
         radius_km: radiusKm,
@@ -297,15 +304,13 @@ export class TravelDatabase {
         pois,
       };
     }
-
     // Case 3: City name only (no name filter)
-    if (cityName && !query) {
-      return this.findPOIsInCity(cityName, countryCode, poiType, limit);
+    else if (cityName && !query) {
+      result = await this.findPOIsInCity(cityName, countryCode, poiType, limit);
     }
-
     // Case 4: Name + Coordinates (combined search)
-    if (query && latitude && longitude) {
-      return this.searchPOIsWithNameAndCoordinates(
+    else if (query && latitude && longitude) {
+      result = await this.searchPOIsWithNameAndCoordinates(
         query,
         latitude,
         longitude,
@@ -314,10 +319,9 @@ export class TravelDatabase {
         limit
       );
     }
-
     // Case 5: Name + City (combined search)
-    if (query && cityName) {
-      return this.searchPOIsWithNameAndCity(
+    else if (query && cityName) {
+      result = await this.searchPOIsWithNameAndCity(
         query,
         cityName,
         countryCode,
@@ -325,13 +329,43 @@ export class TravelDatabase {
         limit
       );
     }
-
     // No filters provided - return empty result
-    return {
-      message: 'Please provide at least a name (query) or location (city_name or coordinates)',
-      pois: [],
-      count: 0,
-    };
+    else {
+      result = {
+        message: 'Please provide at least a name (query) or location (city_name or coordinates)',
+        pois: [],
+        count: 0,
+      };
+    }
+
+    // Trigger background enrichment for "bookable" POIs (places with hours, reviews, that can be visited)
+    // Include: accommodations, dining, attractions, entertainment, shopping
+    // Exclude: monuments, memorials, artworks, viewpoints (non-bookable, no reviews)
+    const bookablePOITypes = [
+      // Accommodations
+      'hotel', 'hostel', 'guest_house', 'motel',
+      // Dining
+      'restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court',
+      // Attractions & Entertainment
+      'museum', 'gallery', 'zoo', 'theme_park', 'attraction', 'castle', 'archaeological_site', 'ruins',
+      'cinema', 'theatre', 'nightclub',
+      // Shopping
+      'shopping_mall', 'department_store', 'supermarket',
+      // Religious (often have hours, tours)
+      'place_of_worship'
+    ];
+
+    if (this.googlePlaces.isEnabled() && poiType && bookablePOITypes.includes(poiType)) {
+      const pois = Array.isArray(result) ? result : (result.pois || []);
+      const osmIds = pois.map(p => p.osm_id).filter(id => id);
+
+      if (osmIds.length > 0) {
+        // Fire-and-forget background enrichment
+        this.triggerBackgroundEnrichment(osmIds);
+      }
+    }
+
+    return result;
   }
 
   // Helper: Search POIs by name within a coordinate radius
@@ -354,6 +388,19 @@ export class TravelDatabase {
         stars,
         rooms,
         beds,
+        -- Google Places enrichment data
+        google_place_id,
+        google_rating,
+        google_user_ratings_total,
+        google_price_level,
+        google_types,
+        google_formatted_address,
+        google_phone,
+        google_website,
+        google_opening_hours,
+        google_photos,
+        google_enriched_at,
+        google_enrichment_status,
         similarity(name, $1) as similarity_score,
         ST_Distance(
           location::geography,
@@ -472,6 +519,19 @@ export class TravelDatabase {
         opening_hours,
         phone,
         website,
+        -- Google Places enrichment data
+        google_place_id,
+        google_rating,
+        google_user_ratings_total,
+        google_price_level,
+        google_types,
+        google_formatted_address,
+        google_phone,
+        google_website,
+        google_opening_hours,
+        google_photos,
+        google_enriched_at,
+        google_enrichment_status,
         ST_Distance(
           location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
@@ -708,4 +768,186 @@ export class TravelDatabase {
       recent_imports: recentImports.rows,
     };
   }
+
+  // =========================================================================
+  // Google Places Enrichment
+  // =========================================================================
+
+  /**
+   * Enrich a POI with Google Places data (background-safe)
+   * This method is fire-and-forget - errors are logged but not thrown
+   */
+  async enrichPOIWithGooglePlaces(osmId) {
+    if (!this.googlePlaces.isEnabled()) {
+      return;
+    }
+
+    try {
+      // Get the POI data
+      const poiResult = await this.pool.query(`
+        SELECT
+          osm_id, osm_type, poi_type, name,
+          latitude, longitude,
+          google_place_id, google_enriched_at, google_enrichment_status
+        FROM pois
+        WHERE osm_id = $1
+      `, [osmId]);
+
+      if (poiResult.rows.length === 0) {
+        return;
+      }
+
+      const poi = poiResult.rows[0];
+
+      // Skip if already enriched recently (within cache period)
+      const cacheHours = parseInt(process.env.GOOGLE_PLACES_CACHE_HOURS || '168');
+      if (poi.google_enriched_at) {
+        const hoursSinceEnrichment = (Date.now() - new Date(poi.google_enriched_at).getTime()) / (1000 * 60 * 60);
+        if (hoursSinceEnrichment < cacheHours && poi.google_enrichment_status === 'enriched') {
+          return;
+        }
+      }
+
+      // Skip if recently marked as not_found
+      if (poi.google_enrichment_status === 'not_found' && poi.google_enriched_at) {
+        const hoursSinceCheck = (Date.now() - new Date(poi.google_enriched_at).getTime()) / (1000 * 60 * 60);
+        if (hoursSinceCheck < 24) { // Don't retry not_found for 24 hours
+          return;
+        }
+      }
+
+      // Enrich with Google Places
+      const enrichmentData = await this.googlePlaces.enrichPOI(poi);
+
+      if (enrichmentData) {
+        // Update POI with Google Places data
+        await this.pool.query(`
+          UPDATE pois
+          SET
+            google_place_id = $2,
+            google_rating = $3,
+            google_user_ratings_total = $4,
+            google_price_level = $5,
+            google_types = $6,
+            google_formatted_address = $7,
+            google_phone = $8,
+            google_website = $9,
+            google_opening_hours = $10,
+            google_photos = $11,
+            google_enriched_at = $12,
+            google_enrichment_status = $13
+          WHERE osm_id = $1
+        `, [
+          osmId,
+          enrichmentData.google_place_id,
+          enrichmentData.google_rating,
+          enrichmentData.google_user_ratings_total,
+          enrichmentData.google_price_level,
+          enrichmentData.google_types,
+          enrichmentData.google_formatted_address,
+          enrichmentData.google_phone,
+          enrichmentData.google_website,
+          JSON.stringify(enrichmentData.google_opening_hours),
+          JSON.stringify(enrichmentData.google_photos),
+          enrichmentData.google_enriched_at,
+          enrichmentData.google_enrichment_status,
+        ]);
+
+        console.error(`✓ Enriched POI ${osmId} with Google Places data`);
+      } else {
+        // Mark as not found
+        await this.pool.query(`
+          UPDATE pois
+          SET
+            google_enriched_at = CURRENT_TIMESTAMP,
+            google_enrichment_status = 'not_found'
+          WHERE osm_id = $1
+        `, [osmId]);
+      }
+    } catch (error) {
+      console.error(`Error enriching POI ${osmId} with Google Places:`, error.message);
+
+      // Mark enrichment as error
+      try {
+        await this.pool.query(`
+          UPDATE pois
+          SET
+            google_enriched_at = CURRENT_TIMESTAMP,
+            google_enrichment_status = 'error'
+          WHERE osm_id = $1
+        `, [osmId]);
+      } catch (updateError) {
+        console.error(`Failed to update error status for POI ${osmId}:`, updateError.message);
+      }
+    }
+  }
+
+  /**
+   * Get POI details including Google Places enrichment data
+   */
+  async getPOIDetails(osmId) {
+    const result = await this.pool.query(`
+      SELECT
+        osm_id, osm_type, poi_type, name,
+        latitude, longitude,
+        address, phone, email, website, opening_hours,
+        cuisine, rating, wheelchair,
+        stars, rooms, beds,
+        google_place_id,
+        google_rating,
+        google_user_ratings_total,
+        google_price_level,
+        google_types,
+        google_formatted_address,
+        google_phone,
+        google_website,
+        google_opening_hours,
+        google_photos,
+        google_enriched_at,
+        google_enrichment_status,
+        tags,
+        source_region,
+        imported_at
+      FROM pois
+      WHERE osm_id = $1
+    `, [osmId]);
+
+    if (result.rows.length === 0) {
+      return null;
+    }
+
+    const poi = result.rows[0];
+
+    // Trigger background enrichment if not enriched
+    if (this.googlePlaces.isEnabled() && (!poi.google_enrichment_status || poi.google_enrichment_status === 'pending')) {
+      // Fire-and-forget background enrichment
+      this.enrichPOIWithGooglePlaces(osmId).catch(err => {
+        console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
+      });
+    }
+
+    return poi;
+  }
+
+  /**
+   * Trigger background enrichment for an array of POIs
+   * Fire-and-forget - doesn't wait for completion
+   */
+  triggerBackgroundEnrichment(osmIds) {
+    if (!this.googlePlaces.isEnabled() || !osmIds || osmIds.length === 0) {
+      return;
+    }
+
+    // Process enrichment in the background without blocking
+    Promise.all(
+      osmIds.slice(0, 10).map(osmId => // Limit to first 10 to avoid API quota issues
+        this.enrichPOIWithGooglePlaces(osmId).catch(err => {
+          console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
+        })
+      )
+    ).catch(err => {
+      console.error('Background enrichment batch failed:', err.message);
+    });
+  }
 }
+

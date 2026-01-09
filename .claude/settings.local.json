@@ -22,7 +22,9 @@
       "Bash(docker inspect:*)",
       "Bash(docker ps:*)",
       "Bash(chmod:*)",
-      "Bash(docker pull:*)"
+      "Bash(docker pull:*)",
+      "Bash(cat:*)",
+      "Bash(node:*)"
     ]
   }
 }
