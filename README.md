@@ -1,15 +1,37 @@
 # Travel MCP Server
 
-MCP server for travel information using GeoNames city data and OpenStreetMap POI data (hotels, restaurants, attractions, etc.).
+MCP server for travel information using GeoNames city data, OpenStreetMap POI data, and Google Places API enrichment.
 
 ## Features
 
-- **City Search**: Search cities worldwide from GeoNames database (150k+ cities with population >1000)
-- **City-based Hotel Search**: Find hotels within cities using population-based radius
-- **Coordinate-based Search**: Find hotels near specific GPS coordinates
-- **Smart Caching**: Lazy-loading cache with automatic background refresh
-- **Dynamic Radius**: Search radius automatically scales with city population (3-25km)
-- **Pending Status**: LLM-friendly status responses during data fetching
+- **Multi-Source Data Integration**: Combines GeoNames cities, OpenStreetMap POIs, and Google Places enrichment
+- **Comprehensive POI Search**: Hotels, restaurants, cafes, museums, attractions, shopping, and more
+- **City Search**: Search cities worldwide from GeoNames database (150k+ cities)
+- **Smart Location-Based Search**: Find POIs by city name, coordinates, or combined name+location queries
+- **Google Places Enrichment**: Automatic background enrichment with ratings, reviews, photos, and verified details
+- **Unified Search API**: Single `search_pois` tool supports all POI types with flexible filtering
+- **PostgreSQL + PostGIS**: Efficient spatial queries with geographic indexing
+
+## Recent Updates
+
+### Google Places API Integration ✨
+- Automatic background enrichment for hotels, restaurants, attractions, and other "bookable" POIs
+- Enrichment data includes: ratings, review counts, price levels, photos, verified hours, phone, website
+- Smart caching (7-day default) to minimize API costs
+- Fire-and-forget architecture: searches return immediately, enrichment happens in background
+- Cost management: batch limiting (top 10 results), selective enrichment, retry prevention
+
+### Unified POI System
+- Single `pois` table for all POI types (hotels, restaurants, cafes, museums, attractions, etc.)
+- PostgreSQL with PostGIS for efficient spatial queries
+- Streamlined MCP tools: `search_hotels`, `search_restaurants`, `search_pois`
+- Flexible search modes: by name, by location (city or coordinates), or combined
+
+### Enhanced Search Capabilities
+- Combined name + location queries (e.g., "Marriott in Bangkok")
+- Fuzzy name matching with similarity scoring
+- Distance-based sorting with configurable radius
+- POI type filtering (search specific types or all)
 
 ## Installation
 
@@ -17,259 +39,350 @@ MCP server for travel information using GeoNames city data and OpenStreetMap POI
 npm install
 ```
 
+## Configuration
+
+### Database Setup
+
+Create PostgreSQL database:
+
+```bash
+createdb travel
+psql travel < schema.sql
+```
+
+### Google Places API (Optional but Recommended)
+
+1. Get API key from [Google Cloud Console](https://console.cloud.google.com/)
+2. Enable "Places API (New)"
+3. Create `.env` file:
+
+```env
+DATABASE_URL=postgresql://traveluser:travelpass@localhost:5432/travel
+GOOGLE_PLACES_API_KEY=your_api_key_here
+GOOGLE_PLACES_ENABLED=true
+GOOGLE_PLACES_CACHE_HOURS=168  # 7 days
+```
+
+**Note**: Google Places enrichment is optional. The server works fine with just OSM data.
+
 ## Data Import
 
 ### 1. Import GeoNames Cities
 
 ```bash
-npm run import
+npm run import:geonames
 ```
 
-Downloads and imports city data from GeoNames (cities with population >1000).
+Imports ~150k cities worldwide from GeoNames (cities with population >1000).
 
-### 2. Hotel Data (OSM)
+### 2. Import Extended GeoNames Data (Optional)
 
-Hotel data is fetched on-demand from OpenStreetMap when you first search a region. No pre-import needed!
+```bash
+npm run import:geonames-extended
+```
+
+Imports alternate names, admin codes, timezones, feature codes, and hierarchy data.
+
+### 3. Import OpenStreetMap POIs
+
+```bash
+npm run import:osm
+```
+
+Imports POI data (hotels, restaurants, attractions, etc.) from OpenStreetMap for specified regions.
+
+**Interactive mode**: Prompts for region selection (city, country, or custom bounding box)
+
+**Supported POI types**:
+- Accommodations: hotel, hostel, guest_house, motel
+- Dining: restaurant, cafe, bar, pub, fast_food, food_court
+- Attractions: museum, gallery, zoo, theme_park, attraction, castle, archaeological_site, ruins
+- Entertainment: cinema, theatre, nightclub
+- Shopping: shopping_mall, department_store, supermarket
+- Religious: place_of_worship
+- Others: monument, memorial, artwork, viewpoint
 
 ## Usage
 
 ### Start the MCP Server
 
-**For stdio transport (Claude Desktop, etc.):**
+**For stdio transport (Claude Desktop):**
 ```bash
 npm start
 ```
 
-**For HTTP transport (testing):**
+**For HTTP/SSE transport (testing):**
 ```bash
 npm run start:http
 ```
 
-### Available Tools
+### Claude Desktop Configuration
 
-#### 1. `search_cities`
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
 
-Search for cities by name:
+```json
+{
+  "mcpServers": {
+    "travel-info": {
+      "command": "/path/to/node",
+      "args": ["/path/to/hotel-mcp-server/src/index-postgres.js"]
+    }
+  }
+}
+```
+
+## Available MCP Tools
+
+### 1. `search_cities`
+
+Search for cities by name with optional country filtering.
 
 ```json
 {
   "query": "Bangkok",
+  "country_code": "TH",
   "limit": 10
 }
 ```
 
-Returns matching cities ordered by population.
+Returns cities with coordinates, population, timezone.
 
-#### 2. `find_hotels_in_city` (Recommended)
+### 2. `search_hotels`
 
-Find hotels within a city automatically:
+Search for hotels by name, location, or both.
+
+**Search modes:**
+- By name only: `{ "query": "Marriott" }`
+- By city: `{ "city_name": "Bangkok", "country_code": "TH" }`
+- By coordinates: `{ "latitude": 13.7563, "longitude": 100.5018, "radius_km": 5 }`
+- Combined: `{ "query": "Marriott", "city_name": "Bangkok" }`
+
+**Response includes**:
+- OSM data: name, address, phone, website, stars, rooms
+- Google Places data (if enriched): rating, reviews, photos, verified details
+- Distance from search center
+- Enrichment status
+
+### 3. `search_restaurants`
+
+Search for restaurants by name, location, or both. Same flexible search modes as `search_hotels`.
 
 ```json
 {
+  "query": "Italian restaurant",
   "city_name": "Bangkok",
   "country_code": "TH",
-  "limit": 50
+  "limit": 20
 }
 ```
 
-**How it works:**
-1. Searches for the city in GeoNames database
-2. Determines appropriate search radius based on population:
-   - Mega cities (>5M): 25km radius
-   - Large cities (1-5M): 15km radius
-   - Medium cities (500k-1M): 10km radius
-   - Small cities (100k-500k): 5km radius
-   - Towns (<100k): 3km radius
-3. Fetches hotels from cache or triggers OSM fetch
+**Response includes**:
+- OSM data: name, cuisine, opening_hours, phone, website
+- Google Places data (if enriched): rating, reviews, price_level, photos
+- Distance from search center
 
-**Response includes:**
-- City information (name, country, population, coordinates)
-- Search radius used
-- Status (`fetching`, `cached`, or `cached_stale`)
-- Hotels array with distance from city center
-- Cache metadata
+### 4. `search_pois`
 
-#### 3. `find_hotels_near_coordinates`
-
-Find hotels near specific GPS coordinates:
+Universal POI search supporting all POI types.
 
 ```json
 {
-  "latitude": 13.7563,
-  "longitude": 100.5018,
-  "radius_km": 5,
-  "limit": 50
+  "query": "museum",
+  "city_name": "Paris",
+  "country_code": "FR",
+  "poi_type": "museum",
+  "limit": 20
 }
 ```
 
-Returns hotels within the specified radius.
+**Parameters**:
+- `query`: Optional name to search for
+- `city_name` / `country_code`: Optional location filter
+- `latitude` / `longitude` / `radius_km`: Optional coordinate-based search
+- `poi_type`: Optional type filter (hotel, restaurant, museum, etc.)
+- `limit`: Max results (default: 50)
 
-#### 4. `get_city_by_id`
+### 5. `get_poi_details`
 
-Get detailed city information by GeoNames ID:
+Get detailed information about a specific POI, including Google Places enrichment.
 
 ```json
 {
-  "geoname_id": 1609350
+  "osm_id": 255562903
 }
 ```
 
-#### 5. `get_hotel_by_id`
+**Triggers background enrichment** if POI hasn't been enriched yet.
 
-Get detailed hotel information by OSM ID:
+### 6. `get_stats`
+
+Get database statistics: countries, cities, POIs by type, coverage by region.
 
 ```json
-{
-  "osm_id": "node/123456789"
-}
+{}
 ```
 
-#### 6. `get_database_stats`
+## Google Places Enrichment
 
-Get database statistics (cities count, hotels count, cache status).
+### How It Works
 
-## Status Responses
+1. **Automatic Enrichment**: When you search for hotels, restaurants, or attractions, the top 10 results are automatically enriched in the background
+2. **Fire-and-Forget**: Search results return immediately with OSM data; enrichment happens asynchronously
+3. **Smart Caching**: Enriched data cached for 7 days (configurable) to minimize API costs
+4. **Selective**: Only "bookable" POIs enriched (hotels, restaurants, museums) - not monuments or viewpoints
 
-The server uses structured status responses to help LLMs understand cache state:
+### Enrichment Data Provided
 
-### `fetching` - Initial Fetch
+- **Ratings**: Google star rating (0.0 - 5.0)
+- **Reviews**: Number of user reviews
+- **Price Level**: Cost indicator (0-4: free to very expensive)
+- **Photos**: Photo references for images
+- **Verified Details**: Google-verified phone, website, address
+- **Opening Hours**: Detailed hours for each day of week
+- **Place Types**: Google's place type classifications
 
-First request for an uncached region:
+### Cost Management
 
-```json
-{
-  "status": "fetching",
-  "message": "Hotel data for this region is being fetched from OpenStreetMap. Please retry this request in 10-30 seconds.",
-  "hotels": [],
-  "cache_info": {
-    "is_fetching": true,
-    "is_cached": false,
-    "estimated_wait_seconds": 20
-  },
-  "instruction": "Hotel data for Bangkok is being fetched. Please retry in 10-30 seconds."
-}
-```
+- **Caching**: 7-day default (168 hours) - configurable via `GOOGLE_PLACES_CACHE_HOURS`
+- **Batch Limiting**: Only top 10 results per search enriched
+- **Selective Types**: Only enriches POIs where reviews/hours matter
+- **Retry Prevention**: Failed matches cached 24 hours to avoid repeated API calls
+- **Estimated Cost**: ~$0.05 per enrichment (Basic Data SKU)
 
-**LLM should**: Inform user to retry in 10-30 seconds.
-
-### `cached` - Fresh Data
-
-Subsequent requests with fresh cached data (<30 days):
-
-```json
-{
-  "status": "cached",
-  "message": "Data successfully retrieved from cache.",
-  "hotels": [...],
-  "count": 42,
-  "cache_info": {
-    "is_fetching": false,
-    "is_cached": true,
-    "is_stale": false,
-    "last_updated": "2026-01-07T18:45:40.000Z"
-  }
-}
-```
-
-**LLM should**: Present results immediately.
-
-### `cached_stale` - Refreshing
-
-Stale data (>30 days) being refreshed in background:
-
-```json
-{
-  "status": "cached_stale",
-  "message": "Returning cached data while fetching fresh data in the background. Data may be up to 30 days old.",
-  "hotels": [...],
-  "count": 42,
-  "cache_info": {
-    "is_fetching": true,
-    "is_cached": true,
-    "is_stale": true,
-    "last_updated": "2025-12-01T10:30:00.000Z"
-  }
-}
-```
-
-**LLM should**: Present results but mention data might be slightly outdated.
-
-See [PENDING_STATUS.md](PENDING_STATUS.md) for detailed documentation.
-
-## Caching System
-
-- **Cache TTL**: 30 days for regions, 90 days for individual hotels
-- **Lazy Loading**: Data fetched on-demand from OSM when first requested
-- **Background Refresh**: Stale caches automatically refresh in background
-- **Race Protection**: Multiple simultaneous requests for same region only trigger one fetch
-- **Rate Limiting**: 1-second minimum delay between OSM API requests with exponential backoff
+See [GOOGLE_PLACES_INTEGRATION.md](GOOGLE_PLACES_INTEGRATION.md) for detailed documentation.
 
 ## Database Schema
 
 ### GeoNames Tables
-
-- `geonames_cities`: City data (150k+ cities)
+- `geonames_cities`: Cities worldwide (150k+)
 - `geonames_countries`: Country reference data
+- `geonames_alternate_names`: City name translations
+- `geonames_admin_codes`: Administrative divisions
+- `geonames_timezones`: Timezone data
+- `geonames_feature_codes`: Feature type definitions
+- `geonames_hierarchy`: Geographic hierarchy
 
-### OSM Cache Tables
+### OSM Tables
+- `pois`: All POI data with Google Places enrichment columns
+- `regions`: Imported OSM regions tracking
 
-- `osm_cache_hotels`: Cached hotel data from OpenStreetMap
-- `osm_cache_metadata`: Cache status and timestamps
+### Import Tracking
+- `imports`: Import history and metadata
+
+### Key Fields in `pois` Table
+
+**OSM Data**:
+- `osm_id`, `osm_type`, `poi_type`, `name`
+- `location` (PostGIS geography point)
+- `latitude`, `longitude`
+- `address`, `cuisine`, `opening_hours`
+- `phone`, `email`, `website`
+- `stars`, `rooms`, `beds` (for hotels)
+
+**Google Places Enrichment**:
+- `google_place_id`, `google_rating`, `google_user_ratings_total`
+- `google_price_level`, `google_types`
+- `google_formatted_address`, `google_phone`, `google_website`
+- `google_opening_hours` (JSONB)
+- `google_photos` (JSONB)
+- `google_enriched_at`, `google_enrichment_status`
 
 ## Testing
 
-Test the city search workflow:
-
+Test Google Places integration:
 ```bash
-node test-city-search.js
+node test-google-places.js
 ```
 
-Test pending status responses:
-
+Test hotel search with enrichment:
 ```bash
-node test-pending-status.js
+node test-search-with-enrichment.js
 ```
 
-## Configuration
-
-Edit database paths in source files if needed:
-- Default: `./data/hotels.db` (created automatically)
+Test Bangkok hotel search:
+```bash
+node test-bangkok-search.js
+```
 
 ## Architecture
 
 ```
-┌─────────────────┐
-│  LLM (Claude)   │
-└────────┬────────┘
-         │ MCP Tools
-         ▼
-┌─────────────────┐
-│  MCP Server     │
-│  tools-config   │
-└────────┬────────┘
-         │
-         ▼
+┌─────────────────────┐
+│  Claude Desktop     │
+│  (MCP Client)       │
+└──────────┬──────────┘
+           │ MCP Protocol
+           ▼
 ┌─────────────────────────────────────┐
-│  HotelDatabase (database.js)        │
+│  MCP Server (index-postgres.js)     │
+│  - Tool definitions                 │
+│  - Request handling                 │
+└──────────┬──────────────────────────┘
+           │
+           ▼
+┌─────────────────────────────────────┐
+│  TravelDatabase                     │
+│  (database-postgres.js)             │
 │  - City search (GeoNames)           │
-│  - Boundary lookup (Shapes)         │
-│  - Hotel queries (OSM Cache)        │
-│  - Background fetch orchestration   │
-└────────┬────────────────────────────┘
-         │
-         ▼
+│  - POI search (OSM)                 │
+│  - Spatial queries (PostGIS)        │
+│  - Background enrichment            │
+└──────────┬──────────────────────────┘
+           │
+           ▼
 ┌─────────────────────────────────────┐
-│  OSM API (osm-api.js)               │
-│  - Rate-limited fetch               │
-│  - Exponential backoff              │
-│  - Retry logic                      │
+│  GooglePlacesClient                 │
+│  (google-places.js)                 │
+│  - Place search & matching          │
+│  - Enrichment with full details     │
+│  - Rate limiting & error handling   │
 └─────────────────────────────────────┘
 ```
 
+## Data Flow: Search with Enrichment
+
+1. User searches for hotels via MCP tool
+2. MCP server calls `unifiedSearchPOIs()` in database layer
+3. Database returns OSM POI data immediately
+4. Background enrichment triggered for top 10 results
+5. Google Places API queried for each POI
+6. Enrichment data stored in `pois` table
+7. Subsequent queries return both OSM + Google data
+
 ## Data Sources
 
-- **GeoNames**: http://www.geonames.org/ (city and boundary data)
-- **OpenStreetMap**: https://www.openstreetmap.org/ (hotel data via Overpass API)
+- **GeoNames**: http://www.geonames.org/ - City and geographic data (CC BY 4.0)
+- **OpenStreetMap**: https://www.openstreetmap.org/ - POI data (ODbL)
+- **Google Places API**: https://developers.google.com/maps/documentation/places - Business details, ratings, reviews
+
+## Known Issues & Future Work
+
+See [TODO.md](TODO.md) for planned improvements:
+- SQL injection security audit
+- Separate data sources into dedicated tables (OSM, Google, mapping)
+- Improve Google Places matching algorithm (especially for Thai/non-Latin names)
+- Data caching and automatic refresh system
+- Additional POI types and features
+
+## Project Structure
+
+```
+hotel-mcp-server/
+├── src/
+│   ├── index-postgres.js          # MCP server (stdio)
+│   ├── database-postgres.js       # Database layer with all queries
+│   ├── google-places.js           # Google Places API client
+│   ├── import-geonames.js         # GeoNames city import
+│   ├── import-geonames-extended.js# Extended GeoNames data
+│   └── import-osm.js              # OpenStreetMap POI import
+├── schema.sql                     # PostgreSQL schema with PostGIS
+├── .env                           # Configuration (API keys)
+├── .env.example                   # Configuration template
+├── package.json                   # Dependencies and scripts
+├── TODO.md                        # Planned improvements
+├── GOOGLE_PLACES_INTEGRATION.md   # Google Places docs
+└── README.md                      # This file
+```
 
 ## License
 
