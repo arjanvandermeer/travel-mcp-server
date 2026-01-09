@@ -156,6 +156,20 @@ CREATE TABLE pois (
     rooms INTEGER,                              -- For hotels
     beds INTEGER,                               -- For hotels
 
+    -- Google Places enrichment data
+    google_place_id VARCHAR(200),               -- Google Places ID
+    google_rating DECIMAL(2,1),                 -- Google rating (0.0 - 5.0)
+    google_user_ratings_total INTEGER,          -- Number of Google reviews
+    google_price_level INTEGER,                 -- Price level (0-4: free to very expensive)
+    google_types TEXT[],                        -- Google place types array
+    google_formatted_address TEXT,              -- Google's formatted address
+    google_phone VARCHAR(100),                  -- Verified phone from Google
+    google_website VARCHAR(500),                -- Verified website from Google
+    google_opening_hours JSONB,                 -- Detailed opening hours from Google
+    google_photos JSONB,                        -- Photo references from Google
+    google_enriched_at TIMESTAMP,               -- When Google data was fetched
+    google_enrichment_status VARCHAR(20),       -- 'pending', 'enriched', 'not_found', 'error'
+
     -- Metadata
     tags JSONB,                                 -- All OSM tags as JSON
     source_region VARCHAR(100),                 -- e.g., 'thailand-latest'
@@ -175,6 +189,8 @@ CREATE INDEX idx_pois_nearest_city ON pois(nearest_city_id);
 CREATE INDEX idx_pois_tags ON pois USING GIN(tags);
 CREATE INDEX idx_pois_name_trgm ON pois USING GIN(name gin_trgm_ops);  -- For fuzzy search
 CREATE INDEX idx_pois_stars ON pois(stars) WHERE stars IS NOT NULL;  -- For hotel filtering
+CREATE INDEX idx_pois_google_place_id ON pois(google_place_id) WHERE google_place_id IS NOT NULL;
+CREATE INDEX idx_pois_google_enrichment_status ON pois(google_enrichment_status);
 
 -- Enable trigram extension for fuzzy name search
 CREATE EXTENSION IF NOT EXISTS pg_trgm;

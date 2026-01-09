@@ -173,6 +173,20 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
         },
       },
       {
+        name: 'get_poi_details',
+        description: 'Get detailed information about a specific POI (hotel, restaurant, attraction, etc.) including Google Places enrichment data (ratings, reviews, photos, verified hours). Automatically triggers background enrichment from Google Places API if not already enriched.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            osm_id: {
+              type: 'number',
+              description: 'The OSM ID of the POI to get details for',
+            },
+          },
+          required: ['osm_id'],
+        },
+      },
+      {
         name: 'get_stats',
         description: 'Get database statistics including counts of countries, cities, POIs by type, and coverage by region',
         inputSchema: {
@@ -263,6 +277,30 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
             {
               type: 'text',
               text: JSON.stringify(result, null, 2),
+            },
+          ],
+        };
+      }
+
+      case 'get_poi_details': {
+        const poi = await db.getPOIDetails(args.osm_id);
+
+        if (!poi) {
+          return {
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({ error: 'POI not found', osm_id: args.osm_id }, null, 2),
+              },
+            ],
+          };
+        }
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(poi, null, 2),
             },
           ],
         };
