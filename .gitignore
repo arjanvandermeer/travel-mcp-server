@@ -4,10 +4,12 @@ node_modules/
 package-lock.json
 
 # Data files
+*.pbf
 data/*.txt
 data/*.db
 data/*.zip
 data/*.gz
+data/*pbf
 
 # Logs
 *.log
