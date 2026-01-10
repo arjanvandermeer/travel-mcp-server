@@ -9,8 +9,7 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// Hardcoded API key for testing (TODO: remove after debugging)
-const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY || 'REDACTED_API_KEY';
+const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 const GOOGLE_PLACES_ENABLED = process.env.GOOGLE_PLACES_ENABLED !== 'false';
 
 export class GooglePlacesClient {
