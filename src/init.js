@@ -39,7 +39,7 @@ async function initializeDatabase() {
 
     // Read schema file
     console.log('\nReading schema.sql...');
-    const schemaPath = join(__dirname, '..', 'schema.sql');
+    const schemaPath = join(__dirname, '..', 'data', 'schema.sql');
     const schemaSql = readFileSync(schemaPath, 'utf-8');
     console.log(`✓ Schema file loaded (${schemaSql.length} characters)`);
 

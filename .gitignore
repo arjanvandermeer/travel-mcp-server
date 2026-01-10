@@ -20,6 +20,7 @@ npm-debug.log*
 .env.local
 
 # IDE
+.claude/
 .vscode/
 .idea/
 *.swp

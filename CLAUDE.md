@@ -12,6 +12,7 @@ When a new idea, improvement, or task comes up during discussion:
 1. **Pause and ask**: "Should we add this to TODO.md or work on it now?"
 2. **If TODO**: Add it to the appropriate priority section and continue current work
 3. **If now**: Explicitly acknowledge we're interrupting current flow to implement it
+4. After changes, also check the TODO file and update it if necessary
 
 **Never silently add tasks without discussing priority first.**
 
@@ -37,6 +38,8 @@ src/
 ├── import-geonames-extended.js  # Import extended GeoNames data
 └── import-osm.js        # Import OpenStreetMap hotel data
 ```
+
+random explanation files should go in a director doc/ and testfiles go in a director tests/
 
 ## Important Conventions
 

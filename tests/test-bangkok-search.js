@@ -4,7 +4,7 @@
  * Test Bangkok hotel search with automatic enrichment
  */
 
-import { TravelDatabase } from './src/database-postgres.js';
+import { TravelDatabase } from './src/database.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

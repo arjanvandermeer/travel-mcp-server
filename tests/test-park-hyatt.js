@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { TravelDatabase } from './src/database-postgres.js';
+import { TravelDatabase } from './src/database.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

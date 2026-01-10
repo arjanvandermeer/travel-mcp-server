@@ -3,15 +3,15 @@
   "version": "1.0.0",
   "description": "MCP server for travel information using GeoNames and OpenStreetMap data",
   "type": "module",
-  "main": "src/index-postgres.js",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node src/index-postgres.js",
-    "dev": "node --watch src/index-postgres.js",
-    "db:init": "node src/init-postgres.js",
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "db:init": "node src/init.js",
     "db:import-geonames": "node src/import-geonames-postgres.js",
-    "db:import-hotels": "node src/import-osm-pbf.js",
-    "db:import-pois": "node src/import-pois-pbf.js",
-    "test": "node tests/test-bangkok-postgres.js"
+    "db:import-all-pois": "node src/import-osm-pbf.js data/thailand-latest.osm.pbf all",
+    "test": "node tests/test-bangkok-postgres.js",
+    "config": "node scripts/manage-config.js"
   },
   "keywords": [
     "mcp",

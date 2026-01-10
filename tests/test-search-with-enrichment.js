@@ -5,7 +5,7 @@
  * Simulates what happens when Claude Desktop calls search_hotels
  */
 
-import { TravelDatabase } from './src/database-postgres.js';
+import { TravelDatabase } from './src/database.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

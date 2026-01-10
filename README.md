@@ -54,7 +54,24 @@ psql travel < schema.sql
 
 1. Get API key from [Google Cloud Console](https://console.cloud.google.com/)
 2. Enable "Places API (New)"
-3. Create `.env` file:
+3. Configure using **database** (recommended for Claude Desktop) or environment variables:
+
+#### Option A: Database Configuration (Recommended)
+
+```bash
+# Set your API key in the database
+node scripts/manage-config.js set google_places_api_key YOUR_API_KEY_HERE
+
+# Verify configuration
+node scripts/manage-config.js list
+
+# Test the integration
+node test-db-config.js
+```
+
+#### Option B: Environment Variables
+
+Create `.env` file:
 
 ```env
 DATABASE_URL=postgresql://traveluser:travelpass@localhost:5432/travel
@@ -62,6 +79,10 @@ GOOGLE_PLACES_API_KEY=your_api_key_here
 GOOGLE_PLACES_ENABLED=true
 GOOGLE_PLACES_CACHE_HOURS=168  # 7 days
 ```
+
+**Why database config?** Claude Desktop sometimes has issues reading environment variables. Database configuration is more reliable and persists across restarts.
+
+**Full documentation**: See [GOOGLE_PLACES_CONFIG.md](GOOGLE_PLACES_CONFIG.md) for detailed configuration options.
 
 **Note**: Google Places enrichment is optional. The server works fine with just OSM data.
 
@@ -125,7 +146,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "travel-info": {
       "command": "/path/to/node",
-      "args": ["/path/to/hotel-mcp-server/src/index-postgres.js"]
+      "args": ["/path/to/hotel-mcp-server/src/index.js"]
     }
   }
 }
@@ -314,7 +335,7 @@ node test-bangkok-search.js
            │ MCP Protocol
            ▼
 ┌─────────────────────────────────────┐
-│  MCP Server (index-postgres.js)     │
+│  MCP Server (index.js)     │
 │  - Tool definitions                 │
 │  - Request handling                 │
 └──────────┬──────────────────────────┘
@@ -322,7 +343,7 @@ node test-bangkok-search.js
            ▼
 ┌─────────────────────────────────────┐
 │  TravelDatabase                     │
-│  (database-postgres.js)             │
+│  (database.js)             │
 │  - City search (GeoNames)           │
 │  - POI search (OSM)                 │
 │  - Spatial queries (PostGIS)        │
@@ -369,8 +390,8 @@ See [TODO.md](TODO.md) for planned improvements:
 ```
 hotel-mcp-server/
 ├── src/
-│   ├── index-postgres.js          # MCP server (stdio)
-│   ├── database-postgres.js       # Database layer with all queries
+│   ├── index.js          # MCP server (stdio)
+│   ├── database.js       # Database layer with all queries
 │   ├── google-places.js           # Google Places API client
 │   ├── import-geonames.js         # GeoNames city import
 │   ├── import-geonames-extended.js# Extended GeoNames data
