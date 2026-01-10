@@ -82,6 +82,60 @@ export class GooglePlacesClient {
   }
 
   /**
+   * Make a GET request to Google Places API (New) - for Place Details
+   */
+  async makeGetRequest(url, fieldMask) {
+    if (!this.enabled) {
+      throw new Error('Google Places API is not enabled');
+    }
+
+    const options = {
+      method: 'GET',
+      headers: {
+        'X-Goog-Api-Key': this.apiKey,
+        'X-Goog-FieldMask': fieldMask,
+      },
+    };
+
+    return new Promise((resolve, reject) => {
+      const req = https.request(url, options, (res) => {
+        let data = '';
+
+        res.on('data', (chunk) => {
+          data += chunk;
+        });
+
+        res.on('end', () => {
+          try {
+            if (!data) {
+              reject(new Error('Empty response from Google Places API'));
+              return;
+            }
+
+            const result = JSON.parse(data);
+
+            // Check for error in response
+            if (result.error) {
+              reject(new Error(`Google Places API error: ${result.error.status} - ${result.error.message || ''}`));
+              return;
+            }
+
+            resolve(result);
+          } catch (error) {
+            reject(new Error(`Failed to parse Google Places API response: ${error.message}`));
+          }
+        });
+      });
+
+      req.on('error', (error) => {
+        reject(new Error(`Google Places API request failed: ${error.message}`));
+      });
+
+      req.end();
+    });
+  }
+
+  /**
    * Search for a place near coordinates
    * Uses Nearby Search API (New)
    */
@@ -158,7 +212,7 @@ export class GooglePlacesClient {
     const fieldMask = 'id,displayName,formattedAddress,rating,userRatingCount,priceLevel,types,nationalPhoneNumber,websiteUri,regularOpeningHours,photos,location';
 
     try {
-      const result = await this.makeRequest(url, {}, fieldMask);
+      const result = await this.makeGetRequest(url, fieldMask);
       return result || null;
     } catch (error) {
       console.error('Google Places Details error:', error.message);
