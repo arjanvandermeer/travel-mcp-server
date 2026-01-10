@@ -207,7 +207,9 @@ export class GooglePlacesClient {
    * Uses Place Details API (New)
    */
   async getPlaceDetails(placeId) {
-    const url = `https://places.googleapis.com/v1/${placeId}`;
+    // Ensure place ID has the "places/" prefix
+    const formattedPlaceId = placeId.startsWith('places/') ? placeId : `places/${placeId}`;
+    const url = `https://places.googleapis.com/v1/${formattedPlaceId}`;
 
     const fieldMask = 'id,displayName,formattedAddress,rating,userRatingCount,priceLevel,types,nationalPhoneNumber,websiteUri,regularOpeningHours,photos,location';
 
