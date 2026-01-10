@@ -7,6 +7,23 @@ dotenv.config();
 const CONNECTION_STRING = process.env.DATABASE_URL ||
   'postgresql://traveluser:travelpass@localhost:5432/travel';
 
+/**
+ * Recursively removes null and undefined fields from objects and arrays
+ * @param {*} obj - Object, array, or primitive value to clean
+ * @returns {*} Cleaned object/array/value with null/undefined fields removed
+ */
+function removeNullFields(obj) {
+  if (Array.isArray(obj)) {
+    return obj.map(removeNullFields);
+  }
+  if (obj !== null && typeof obj === 'object') {
+    return Object.entries(obj)
+      .filter(([_, v]) => v !== null && v !== undefined)
+      .reduce((acc, [k, v]) => ({ ...acc, [k]: removeNullFields(v) }), {});
+  }
+  return obj;
+}
+
 export class TravelDatabase {
   constructor() {
     this.pool = new pg.Pool({ connectionString: CONNECTION_STRING });
@@ -107,7 +124,7 @@ export class TravelDatabase {
     params.push(limit);
 
     const result = await this.pool.query(queryText, params);
-    return result.rows;
+    return removeNullFields(result.rows);
   }
 
   async getCityByGeonameId(geonameId) {
@@ -125,7 +142,8 @@ export class TravelDatabase {
       WHERE geoname_id = $1
     `, [geonameId]);
 
-    return result.rows[0] || null;
+    const city = result.rows[0] || null;
+    return city ? removeNullFields(city) : null;
   }
 
   // =========================================================================
@@ -209,7 +227,7 @@ export class TravelDatabase {
     }
 
     const result = await this.pool.query(query, queryParams);
-    return result.rows;
+    return removeNullFields(result.rows);
   }
 
   async searchPOIsNearCoordinates(latitude, longitude, radiusKm, poiType = null, limit = 50) {
@@ -250,7 +268,7 @@ export class TravelDatabase {
     params.push(limit);
 
     const result = await this.pool.query(query, params);
-    return result.rows;
+    return removeNullFields(result.rows);
   }
 
   async getCityByName(name, countryCode = null) {
@@ -302,6 +320,7 @@ export class TravelDatabase {
         amenities,
         match_confidence,
         match_method,
+        mapping_status,
         google_enriched_at,
         best_name,
         best_latitude,
@@ -313,19 +332,49 @@ export class TravelDatabase {
     `, [osmId]);
 
     const poi = result.rows[0] || null;
+    if (!poi) return null;
 
-    // Trigger background enrichment if not enriched and Google Places is enabled
-    if (poi && !poi.google_place_id) {
-      await this.ensureGooglePlacesReady();
-      if (this.googlePlaces && this.googlePlaces.isEnabled()) {
-        // Fire-and-forget background enrichment
-        this.enrichOSMPOI(osmId).catch(err => {
-          console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
-        });
+    // Determine enrichment status and add helpful metadata
+    let enrichment_status = 'complete';
+    let enrichment_message = null;
+
+    if (!poi.google_place_id) {
+      // Check if enrichment failed previously
+      if (poi.mapping_status === 'not_found') {
+        enrichment_status = 'failed';
+        enrichment_message = 'Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.';
+      } else if (poi.mapping_status === 'error') {
+        enrichment_status = 'failed';
+        enrichment_message = 'Google Places enrichment failed due to an error. Only OpenStreetMap data is available.';
+      } else {
+        // No enrichment yet - trigger it
+        await this.ensureGooglePlacesReady();
+        if (this.googlePlaces && this.googlePlaces.isEnabled()) {
+          enrichment_status = 'pending';
+          enrichment_message = 'Google Places enrichment is in progress. Additional details (ratings, reviews, photos, opening hours) will be available in approximately 30 seconds. Please check back shortly for the complete information.';
+
+          // Fire-and-forget background enrichment
+          this.enrichOSMPOI(osmId).catch(err => {
+            console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
+          });
+        } else {
+          enrichment_status = 'disabled';
+          enrichment_message = 'Google Places enrichment is not enabled. Only OpenStreetMap data is available.';
+        }
       }
     }
 
-    return poi;
+    // Add enrichment metadata to the response
+    const response = {
+      ...poi,
+      _enrichment: {
+        status: enrichment_status,
+        message: enrichment_message,
+      }
+    };
+
+    // Remove null/undefined fields from the response
+    return removeNullFields(response);
   }
 
   // =========================================================================
@@ -807,7 +856,7 @@ export class TravelDatabase {
       GROUP BY mapping_status
     `);
 
-    return {
+    const stats = {
       countries: parseInt(countries.rows[0].count),
       cities: parseInt(cities.rows[0].count),
       pois: parseInt(pois.rows[0].count),
@@ -819,6 +868,8 @@ export class TravelDatabase {
       google_places_enriched: parseInt(enrichmentStats.rows[0].total_enriched),
       enrichment_by_status: mappingStats.rows,
     };
+
+    return removeNullFields(stats);
   }
 }
 
