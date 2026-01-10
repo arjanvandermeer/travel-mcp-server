@@ -8,7 +8,7 @@
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
-import { TravelDatabase } from './database-postgres.js';
+import { TravelDatabase } from './database.js';
 
 const db = new TravelDatabase();
 
@@ -217,13 +217,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'search_hotels': {
-        const result = await db.unifiedSearchPOIs({
-          query: args.query,
+        const result = await db.searchPOIs({
+          name: args.query,
           cityName: args.city_name,
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radiusKm: args.radius_km || 5,
+          radius: args.radius_km || 5,
           poiType: 'hotel',
           limit: args.limit || 50,
         });
@@ -239,13 +239,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'search_restaurants': {
-        const result = await db.unifiedSearchPOIs({
-          query: args.query,
+        const result = await db.searchPOIs({
+          name: args.query,
           cityName: args.city_name,
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radiusKm: args.radius_km || 5,
+          radius: args.radius_km || 5,
           poiType: 'restaurant',
           limit: args.limit || 50,
         });
@@ -261,13 +261,13 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'search_pois': {
-        const result = await db.unifiedSearchPOIs({
-          query: args.query,
+        const result = await db.searchPOIs({
+          name: args.query,
           cityName: args.city_name,
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radiusKm: args.radius_km || 5,
+          radius: args.radius_km || 5,
           poiType: args.poi_type,
           limit: args.limit || 50,
         });

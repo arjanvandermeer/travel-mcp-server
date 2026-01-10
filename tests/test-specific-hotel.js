@@ -4,7 +4,7 @@
  * Test specific hotel enrichment - Paradox Resort Phuket
  */
 
-import { TravelDatabase } from './src/database-postgres.js';
+import { TravelDatabase } from './src/database.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

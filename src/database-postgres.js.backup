@@ -10,11 +10,71 @@ const CONNECTION_STRING = process.env.DATABASE_URL ||
 export class TravelDatabase {
   constructor() {
     this.pool = new pg.Pool({ connectionString: CONNECTION_STRING });
-    this.googlePlaces = new GooglePlacesClient();
+    this.googlePlaces = null; // Initialize later with config
+    this.googlePlacesReady = this.initGooglePlaces(); // Store promise
   }
 
   async close() {
     await this.pool.end();
+  }
+
+  async ensureGooglePlacesReady() {
+    if (!this.googlePlaces) {
+      await this.googlePlacesReady;
+    }
+  }
+
+  // =========================================================================
+  // Configuration
+  // =========================================================================
+
+  async getConfig(key, defaultValue = null) {
+    try {
+      const result = await this.pool.query(
+        'SELECT value FROM config WHERE key = $1',
+        [key]
+      );
+      return result.rows.length > 0 ? result.rows[0].value : defaultValue;
+    } catch (error) {
+      console.error(`Error reading config ${key}:`, error.message);
+      return defaultValue;
+    }
+  }
+
+  async setConfig(key, value, description = null) {
+    await this.pool.query(`
+      INSERT INTO config (key, value, description)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (key) DO UPDATE SET
+        value = EXCLUDED.value,
+        description = COALESCE(EXCLUDED.description, config.description),
+        updated_at = CURRENT_TIMESTAMP
+    `, [key, value, description]);
+  }
+
+  async initGooglePlaces() {
+    try {
+      // Try to read from database first, fallback to environment variable
+      const apiKey = await this.getConfig('google_places_api_key', process.env.GOOGLE_PLACES_API_KEY);
+      const enabled = await this.getConfig('google_places_enabled', process.env.GOOGLE_PLACES_ENABLED || 'true');
+
+      // Update environment for GooglePlacesClient (if not already set)
+      if (apiKey && !process.env.GOOGLE_PLACES_API_KEY) {
+        process.env.GOOGLE_PLACES_API_KEY = apiKey;
+      }
+      if (!process.env.GOOGLE_PLACES_ENABLED) {
+        process.env.GOOGLE_PLACES_ENABLED = enabled;
+      }
+
+      this.googlePlaces = new GooglePlacesClient(apiKey);
+
+      if (this.googlePlaces.isEnabled()) {
+        console.error('✓ Google Places API initialized from database config');
+      }
+    } catch (error) {
+      console.error('⚠️  Could not initialize Google Places from database, using environment variables');
+      this.googlePlaces = new GooglePlacesClient();
+    }
   }
 
   // =========================================================================
@@ -778,7 +838,10 @@ export class TravelDatabase {
    * This method is fire-and-forget - errors are logged but not thrown
    */
   async enrichPOIWithGooglePlaces(osmId) {
-    if (!this.googlePlaces.isEnabled()) {
+    // Ensure Google Places is initialized
+    await this.ensureGooglePlacesReady();
+
+    if (!this.googlePlaces || !this.googlePlaces.isEnabled()) {
       return;
     }
 
@@ -800,7 +863,7 @@ export class TravelDatabase {
       const poi = poiResult.rows[0];
 
       // Skip if already enriched recently (within cache period)
-      const cacheHours = parseInt(process.env.GOOGLE_PLACES_CACHE_HOURS || '168');
+      const cacheHours = parseInt(await this.getConfig('google_places_cache_hours', '168'));
       if (poi.google_enriched_at) {
         const hoursSinceEnrichment = (Date.now() - new Date(poi.google_enriched_at).getTime()) / (1000 * 60 * 60);
         if (hoursSinceEnrichment < cacheHours && poi.google_enrichment_status === 'enriched') {

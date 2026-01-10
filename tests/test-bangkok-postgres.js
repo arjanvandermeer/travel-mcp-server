@@ -4,7 +4,7 @@
  * Test script for Bangkok hotel search with PostgreSQL
  */
 
-import { TravelDatabase } from '../src/database-postgres.js';
+import { TravelDatabase } from '../src/database.js';
 
 async function testBangkok() {
   const db = new TravelDatabase();

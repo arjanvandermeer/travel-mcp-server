@@ -9,7 +9,7 @@
   - Create `google_places` table for Google Places enrichment data
   - Create `pois_google_mapping` table (many-to-many) to link OSM IDs with Google Place IDs
 - [ ] Update database schema and migration script
-- [ ] Refactor `database-postgres.js` to JOIN tables when returning enriched data
+- [ ] Refactor `database.js` to JOIN tables when returning enriched data
 - [ ] Consider renaming tables to reflect source:
   - `pois` → `osm_pois` or keep as is (since OSM is primary source)
   - `geonames_cities` → already prefixed correctly
@@ -76,7 +76,7 @@ pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
 - POIs with transliterated names vs native scripts
 
 ### Security: SQL Injection Audit
-- [ ] Audit all database queries in `src/database-postgres.js` for SQL injection vulnerabilities
+- [ ] Audit all database queries in `src/database.js` for SQL injection vulnerabilities
 - [ ] Verify all user inputs are properly parameterized (using `$1`, `$2` placeholders)
 - [ ] Check dynamic query building for potential injection vectors
 - [ ] Review Google Places integration for proper input sanitization

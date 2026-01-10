@@ -4,7 +4,7 @@
  * Test well-known hotels in Bangkok to verify Google Places enrichment
  */
 
-import { TravelDatabase } from './src/database-postgres.js';
+import { TravelDatabase } from './src/database.js';
 import dotenv from 'dotenv';
 
 dotenv.config();

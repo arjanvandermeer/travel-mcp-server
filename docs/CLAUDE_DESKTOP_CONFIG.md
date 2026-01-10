@@ -24,7 +24,7 @@ Add this to your `claude_desktop_config.json`:
     "travel-info": {
       "command": "node",
       "args": [
-        "/Users/arjanvandermeer/Documents/Development/hotel-mcp-server/src/index-postgres.js"
+        "/Users/arjanvandermeer/Documents/Development/hotel-mcp-server/src/index.js"
       ],
       "env": {
         "DATABASE_URL": "postgresql://traveluser:travelpass@localhost:5432/travel"

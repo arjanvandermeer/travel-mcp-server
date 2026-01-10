@@ -160,7 +160,7 @@ CREATE TABLE pois (
     google_place_id VARCHAR(200),               -- Google Places ID
     google_rating DECIMAL(2,1),                 -- Google rating (0.0 - 5.0)
     google_user_ratings_total INTEGER,          -- Number of Google reviews
-    google_price_level INTEGER,                 -- Price level (0-4: free to very expensive)
+    google_price_level TEXT,                    -- Price level enum: PRICE_LEVEL_FREE, PRICE_LEVEL_INEXPENSIVE, PRICE_LEVEL_MODERATE, PRICE_LEVEL_EXPENSIVE, PRICE_LEVEL_VERY_EXPENSIVE
     google_types TEXT[],                        -- Google place types array
     google_formatted_address TEXT,              -- Google's formatted address
     google_phone VARCHAR(100),                  -- Verified phone from Google

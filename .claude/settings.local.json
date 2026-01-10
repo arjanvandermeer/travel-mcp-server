@@ -27,7 +27,11 @@
       "Bash(node:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git push)"
+      "Bash(git push)",
+      "Bash(find:*)",
+      "Bash(npm run db:import-cafes:*)",
+      "Bash(npm run db:import-all-pois:*)",
+      "Bash(tee:*)"
     ]
   }
 }

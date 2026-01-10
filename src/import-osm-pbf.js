@@ -28,15 +28,50 @@ import through2 from 'through2';
 
 const PG_CONNECTION = 'postgresql://traveluser:travelpass@localhost:5432/travel';
 
-// POI types we support
-const POI_TYPES = {
-  hotel: 'tourism=hotel',
-  restaurant: 'amenity=restaurant',
-  attraction: 'tourism=attraction',
-  museum: 'tourism=museum',
-  viewpoint: 'tourism=viewpoint',
-  cafe: 'amenity=cafe',
-  bar: 'amenity=bar',
+// POI type mappings: OSM tag -> our poi_type
+const POI_MAPPINGS = {
+  // Accommodation
+  'tourism=hotel': 'hotel',
+  'tourism=hostel': 'hostel',
+  'tourism=guest_house': 'guest_house',
+  'tourism=motel': 'motel',
+
+  // Tourism
+  'tourism=attraction': 'attraction',
+  'tourism=museum': 'museum',
+  'tourism=viewpoint': 'viewpoint',
+  'tourism=artwork': 'artwork',
+  'tourism=gallery': 'gallery',
+  'tourism=theme_park': 'theme_park',
+  'tourism=zoo': 'zoo',
+
+  // Food & Drink
+  'amenity=restaurant': 'restaurant',
+  'amenity=cafe': 'cafe',
+  'amenity=bar': 'bar',
+  'amenity=pub': 'pub',
+  'amenity=fast_food': 'fast_food',
+  'amenity=food_court': 'food_court',
+
+  // Historic
+  'historic=monument': 'monument',
+  'historic=memorial': 'memorial',
+  'historic=castle': 'castle',
+  'historic=ruins': 'ruins',
+  'historic=archaeological_site': 'archaeological_site',
+
+  // Places of worship
+  'amenity=place_of_worship': 'place_of_worship',
+
+  // Entertainment
+  'amenity=cinema': 'cinema',
+  'amenity=theatre': 'theatre',
+  'amenity=nightclub': 'nightclub',
+
+  // Shopping
+  'shop=mall': 'shopping_mall',
+  'shop=department_store': 'department_store',
+  'shop=supermarket': 'supermarket',
 };
 
 async function importPBF(pbfPath, poiType = 'hotel') {
@@ -68,33 +103,67 @@ async function importPBF(pbfPath, poiType = 'hotel') {
     console.log('\n✅ Import complete!');
 
     // Show statistics
-    const stats = await pool.query(`
-      SELECT COUNT(*) as total,
-             COUNT(DISTINCT source_region) as regions,
-             COUNT(*) FILTER (WHERE stars IS NOT NULL) as with_stars
-      FROM pois
-      WHERE poi_type = 'hotel'
-    `);
+    if (poiType === 'all') {
+      const stats = await pool.query(`
+        SELECT poi_type, COUNT(*) as count
+        FROM osm_pois
+        GROUP BY poi_type
+        ORDER BY count DESC
+      `);
 
-    console.log('\nDatabase statistics:');
-    console.log(`  Total hotels: ${stats.rows[0].total}`);
-    console.log(`  Regions: ${stats.rows[0].regions}`);
-    console.log(`  Hotels with star ratings: ${stats.rows[0].with_stars}`);
+      console.log('\nPOIs by type:');
+      let total = 0;
+      stats.rows.forEach(row => {
+        console.log(`  ${row.poi_type}: ${row.count}`);
+        total += parseInt(row.count);
+      });
+      console.log(`  TOTAL: ${total}`);
 
-    // Show sample hotels
-    console.log('\nSample hotels from this import:');
-    const samples = await pool.query(`
-      SELECT name, stars,
-             ST_X(location) as lon, ST_Y(location) as lat
-      FROM pois
-      WHERE poi_type = 'hotel' AND source_region = $1 AND name IS NOT NULL
-      LIMIT 5
-    `, [regionName]);
+      // Show sample POIs
+      console.log(`\nSample POIs from this import:`);
+      const samples = await pool.query(`
+        SELECT poi_type, name, city
+        FROM osm_pois
+        WHERE name IS NOT NULL
+        ORDER BY imported_at DESC
+        LIMIT 10
+      `);
 
-    samples.rows.forEach(hotel => {
-      const stars = hotel.stars ? ` (${hotel.stars}⭐)` : '';
-      console.log(`  - ${hotel.name}${stars}`);
-    });
+      samples.rows.forEach(poi => {
+        const city = poi.city ? `, ${poi.city}` : '';
+        console.log(`  [${poi.poi_type}] ${poi.name}${city}`);
+      });
+    } else {
+      const stats = await pool.query(`
+        SELECT COUNT(*) as total,
+               COUNT(DISTINCT country_code) as countries,
+               COUNT(*) FILTER (WHERE stars IS NOT NULL) as with_stars
+        FROM osm_pois
+        WHERE poi_type = $1
+      `, [poiType]);
+
+      console.log('\nDatabase statistics:');
+      console.log(`  Total ${poiType}s: ${stats.rows[0].total}`);
+      console.log(`  Countries: ${stats.rows[0].countries}`);
+      console.log(`  With star ratings: ${stats.rows[0].with_stars}`);
+
+      // Show sample POIs
+      console.log(`\nSample ${poiType}s from this import:`);
+      const samples = await pool.query(`
+        SELECT name, stars, city, latitude, longitude
+        FROM osm_pois
+        WHERE poi_type = $1 AND name IS NOT NULL
+        ORDER BY imported_at DESC
+        LIMIT 5
+      `, [poiType]);
+
+      samples.rows.forEach(poi => {
+        const stars = poi.stars ? ` (${poi.stars}⭐)` : '';
+        const city = poi.city ? `, ${poi.city}` : '';
+        console.log(`  - ${poi.name}${stars}${city}`);
+      });
+    }
+
 
   } catch (error) {
     console.error('❌ Import failed:', error.message);
@@ -109,7 +178,7 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
   return new Promise((resolve, reject) => {
     const osm = parseOSM();
     let processed = 0;
-    let hotels = [];
+    let pois = [];
     const batchSize = 1000;
 
     console.log('Parsing PBF file (this may take a few minutes)...\n');
@@ -121,17 +190,18 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
           for (const item of items) {
             // Only process nodes with coordinates
             if (item.type === 'node' && item.lat && item.lon && item.tags) {
-              // Check if this is a hotel
-              if (item.tags.tourism === 'hotel') {
-                const hotel = extractHotelData(item, regionName);
-                hotels.push(hotel);
+              // Check if this matches our POI type
+              const matchedType = matchPOIType(item.tags, poiType);
+              if (matchedType) {
+                const poi = extractPOIData(item, matchedType, regionName);
+                pois.push(poi);
 
                 // Batch insert
-                if (hotels.length >= batchSize) {
-                  await insertBatch(pool, hotels);
-                  processed += hotels.length;
-                  console.log(`  Processed: ${processed} hotels`);
-                  hotels = [];
+                if (pois.length >= batchSize) {
+                  await insertBatch(pool, pois);
+                  processed += pois.length;
+                  console.log(`  Processed: ${processed} ${poiType}s`);
+                  pois = [];
                 }
               }
             }
@@ -143,11 +213,11 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
       }))
       .on('finish', async () => {
         try {
-          // Insert remaining hotels
-          if (hotels.length > 0) {
-            await insertBatch(pool, hotels);
-            processed += hotels.length;
-            console.log(`  Processed: ${processed} hotels`);
+          // Insert remaining POIs
+          if (pois.length > 0) {
+            await insertBatch(pool, pois);
+            processed += pois.length;
+            console.log(`  Processed: ${processed} ${poiType}s`);
           }
           console.log('\n✓ PBF parsing complete');
           resolve();
@@ -159,7 +229,34 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
   });
 }
 
-function extractHotelData(node, regionName) {
+function matchPOIType(tags, requestedType) {
+  // Match against all POI types if 'all' is requested
+  if (requestedType === 'all') {
+    for (const [osmTag, poiType] of Object.entries(POI_MAPPINGS)) {
+      if (evaluatePOICondition(tags, osmTag)) {
+        return poiType;
+      }
+    }
+    return null;
+  }
+
+  // Match specific type - find the mapping for this POI type
+  for (const [osmTag, poiType] of Object.entries(POI_MAPPINGS)) {
+    if (poiType === requestedType && evaluatePOICondition(tags, osmTag)) {
+      return poiType;
+    }
+  }
+
+  return null;
+}
+
+function evaluatePOICondition(tags, osmTag) {
+  // Parse osmTag like "tourism=hotel" or "amenity=cafe"
+  const [key, value] = osmTag.split('=');
+  return tags[key] === value;
+}
+
+function extractPOIData(node, poiType, regionName) {
   const tags = node.tags || {};
 
   // Helper to truncate long strings
@@ -184,35 +281,37 @@ function extractHotelData(node, regionName) {
   let beds = tags.beds ? parseInt(tags.beds) : null;
   if (beds !== null && (isNaN(beds) || beds < 0)) beds = null;
 
-  // Build address from components
-  const addressParts = [];
-  if (tags['addr:street']) addressParts.push(tags['addr:street']);
-  if (tags['addr:housenumber']) addressParts.push(tags['addr:housenumber']);
-  if (tags['addr:city']) addressParts.push(tags['addr:city']);
-  if (tags['addr:postcode']) addressParts.push(tags['addr:postcode']);
-  const address = addressParts.length > 0 ? addressParts.join(', ') : null;
-
   return {
     osm_id: node.id,
     osm_type: 'node',
-    poi_type: 'hotel',
-    name: truncate(tags.name || tags['name:en'], 500),
+    poi_type: poiType,
+    name: truncate(tags.name, 500),
+    name_en: truncate(tags['name:en'], 500),
     latitude: node.lat,
     longitude: node.lon,
-    stars: truncate(stars, 10),
-    rooms,
-    beds,
-    address: truncate(address, 500),
+    street: truncate(tags['addr:street'], 200),
+    housenumber: truncate(tags['addr:housenumber'], 20),
+    postcode: truncate(tags['addr:postcode'], 20),
+    city: truncate(tags['addr:city'], 200),
+    country: truncate(tags['addr:country'], 100),
+    country_code: tags['addr:country']?.substring(0, 2)?.toUpperCase() || null,
     phone: truncate(tags.phone || tags['contact:phone'], 100),
     email: truncate(tags.email || tags['contact:email'], 200),
     website: truncate(tags.website || tags['contact:website'] || tags.url, 500),
-    tags: tags, // Store all tags as JSONB
-    source_region: regionName,
+    description: truncate(tags.description, 1000),
+    wikipedia: truncate(tags.wikipedia, 200),
+    wikidata: truncate(tags.wikidata, 50),
+    brand: truncate(tags.brand, 200),
+    operator: truncate(tags.operator, 200),
+    stars: stars ? parseInt(stars) : null,
+    rooms,
+    beds,
+    osm_tags: tags, // Store all tags as JSONB
   };
 }
 
-async function insertBatch(pool, hotels) {
-  if (hotels.length === 0) return;
+async function insertBatch(pool, pois) {
+  if (pois.length === 0) return;
 
   const client = await pool.connect();
 
@@ -220,52 +319,78 @@ async function insertBatch(pool, hotels) {
     await client.query('BEGIN');
 
     const insertQuery = `
-      INSERT INTO pois (
-        osm_id, osm_type, poi_type, name,
+      INSERT INTO osm_pois (
+        osm_id, osm_type, poi_type, name, name_en,
         location, latitude, longitude,
+        street, housenumber, postcode, city, country, country_code,
+        phone, email, website,
+        description, wikipedia, wikidata, brand, operator,
         stars, rooms, beds,
-        address, phone, email, website,
-        tags, source_region, imported_at
-      ) VALUES ($1, $2, $3, $4,
-                ST_SetSRID(ST_MakePoint($6, $5), 4326), $5, $6,
-                $7, $8, $9,
-                $10, $11, $12, $13,
-                $14, $15, CURRENT_TIMESTAMP)
+        osm_tags, imported_at
+      ) VALUES (
+        $1, $2, $3, $4, $5,
+        ST_SetSRID(ST_MakePoint($7, $6), 4326), $6, $7,
+        $8, $9, $10, $11, $12, $13,
+        $14, $15, $16,
+        $17, $18, $19, $20, $21,
+        $22, $23, $24,
+        $25, CURRENT_TIMESTAMP
+      )
       ON CONFLICT (osm_id) DO UPDATE SET
         poi_type = EXCLUDED.poi_type,
         name = EXCLUDED.name,
+        name_en = EXCLUDED.name_en,
         location = EXCLUDED.location,
         latitude = EXCLUDED.latitude,
         longitude = EXCLUDED.longitude,
-        stars = EXCLUDED.stars,
-        rooms = EXCLUDED.rooms,
-        beds = EXCLUDED.beds,
-        address = EXCLUDED.address,
+        street = EXCLUDED.street,
+        housenumber = EXCLUDED.housenumber,
+        postcode = EXCLUDED.postcode,
+        city = EXCLUDED.city,
+        country = EXCLUDED.country,
+        country_code = EXCLUDED.country_code,
         phone = EXCLUDED.phone,
         email = EXCLUDED.email,
         website = EXCLUDED.website,
-        tags = EXCLUDED.tags,
-        source_region = EXCLUDED.source_region,
-        imported_at = CURRENT_TIMESTAMP
+        description = EXCLUDED.description,
+        wikipedia = EXCLUDED.wikipedia,
+        wikidata = EXCLUDED.wikidata,
+        brand = EXCLUDED.brand,
+        operator = EXCLUDED.operator,
+        stars = EXCLUDED.stars,
+        rooms = EXCLUDED.rooms,
+        beds = EXCLUDED.beds,
+        osm_tags = EXCLUDED.osm_tags,
+        updated_at = CURRENT_TIMESTAMP
     `;
 
-    for (const hotel of hotels) {
+    for (const poi of pois) {
       await client.query(insertQuery, [
-        hotel.osm_id,
-        hotel.osm_type,
-        hotel.poi_type,
-        hotel.name,
-        hotel.latitude,
-        hotel.longitude,
-        hotel.stars,
-        hotel.rooms,
-        hotel.beds,
-        hotel.address,
-        hotel.phone,
-        hotel.email,
-        hotel.website,
-        JSON.stringify(hotel.tags),
-        hotel.source_region,
+        poi.osm_id,
+        poi.osm_type,
+        poi.poi_type,
+        poi.name,
+        poi.name_en,
+        poi.latitude,
+        poi.longitude,
+        poi.street,
+        poi.housenumber,
+        poi.postcode,
+        poi.city,
+        poi.country,
+        poi.country_code,
+        poi.phone,
+        poi.email,
+        poi.website,
+        poi.description,
+        poi.wikipedia,
+        poi.wikidata,
+        poi.brand,
+        poi.operator,
+        poi.stars,
+        poi.rooms,
+        poi.beds,
+        JSON.stringify(poi.osm_tags),
       ]);
     }
 
