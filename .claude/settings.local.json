@@ -24,7 +24,10 @@
       "Bash(chmod:*)",
       "Bash(docker pull:*)",
       "Bash(cat:*)",
-      "Bash(node:*)"
+      "Bash(node:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)"
     ]
   }
 }
