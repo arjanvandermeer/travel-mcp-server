@@ -211,7 +211,7 @@ export class GooglePlacesClient {
     const formattedPlaceId = placeId.startsWith('places/') ? placeId : `places/${placeId}`;
     const url = `https://places.googleapis.com/v1/${formattedPlaceId}`;
 
-    const fieldMask = 'id,displayName,formattedAddress,rating,userRatingCount,priceLevel,types,nationalPhoneNumber,websiteUri,regularOpeningHours,photos,location';
+    const fieldMask = 'id,displayName,formattedAddress,rating,userRatingCount,priceLevel,types,nationalPhoneNumber,websiteUri,googleMapsUri,regularOpeningHours,photos,location,reservable,businessStatus,editorialSummary,delivery,dineIn,takeout';
 
     try {
       const result = await this.makeGetRequest(url, fieldMask);
