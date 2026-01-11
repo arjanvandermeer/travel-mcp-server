@@ -2,6 +2,7 @@ import pg from 'pg';
 import { GooglePlacesClient } from './google-places.js';
 import dotenv from 'dotenv';
 
+// Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
 
 const CONNECTION_STRING = process.env.DATABASE_URL ||

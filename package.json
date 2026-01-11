@@ -25,7 +25,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
-    "dotenv": "^17.2.3",
+    "dotenv": "^16.4.5",
     "osm-pbf-parser": "^2.3.0",
     "pg": "^8.16.3",
     "through2": "^4.0.2"
