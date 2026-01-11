@@ -127,14 +127,41 @@ Imports POI data (hotels, restaurants, attractions, etc.) from OpenStreetMap for
 
 ### Start the MCP Server
 
-**For stdio transport (Claude Desktop):**
+The server supports two transport modes:
+
+**1. stdio transport (for Claude Desktop):**
 ```bash
 npm start
+# or with auto-reload during development:
+npm run dev
 ```
 
-**For HTTP/SSE transport (testing):**
+**2. HTTP/SSE transport (for web clients, remote access, testing):**
 ```bash
 npm run start:http
+# Starts on port 3000 by default
+# or specify custom port:
+node src/index-http.js 8080
+
+# Development mode with auto-reload:
+npm run dev:http
+```
+
+**HTTP/SSE Features:**
+- Server-Sent Events (SSE) for real-time MCP communication
+- CORS enabled for browser-based clients
+- Health check endpoint: `http://localhost:3000/health`
+- SSE endpoint: `http://localhost:3000/sse`
+- Supports multiple simultaneous connections
+- Full documentation: [docs/HTTP_SSE_TRANSPORT.md](docs/HTTP_SSE_TRANSPORT.md)
+
+**Test the HTTP server:**
+```bash
+# Start server in one terminal
+npm run start:http
+
+# Test with client in another terminal
+node tests/test-http-client.js
 ```
 
 ### Claude Desktop Configuration
