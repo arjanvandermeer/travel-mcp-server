@@ -6,7 +6,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
+    "start:http": "node src/index-http.js",
     "dev": "node --watch src/index.js",
+    "dev:http": "node --watch src/index-http.js",
     "db:init": "node src/init.js",
     "db:import-geonames": "node src/import-geonames-postgres.js",
     "db:import-all-pois": "node src/import-osm-pbf.js data/thailand-latest.osm.pbf all",

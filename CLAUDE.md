@@ -2,7 +2,7 @@
 This file contains critical instructions for any LLM working on this project and can NEVER be ignored or deleted
 
 ## Project Context
-This is a Model Context Protocol (MCP) server that provides hotel and geographic information from open data sources (GeoNames, OpenStreetMap, Wikidata).
+This is a Model Context Protocol (MCP) server that provides hotel, restaurant and geographic information from open data sources (GeoNames, OpenStreetMap, Wikidata), lazy load from commercial sources (Google Places) and other commercial API's (OTA's, etc)
 
 ## Development Workflow
 
@@ -74,7 +74,7 @@ See `TODO.md` for tracked improvements and future work.
 ## Key Technical Details
 
 ### Node Version
-- Project requires Node.js v24+ (for better-sqlite3 compatibility)
+- Project requires Node.js v24+ 
 - Claude Desktop config specifies absolute path to Node binary to avoid version conflicts
 
 ### MCP Protocol
@@ -83,10 +83,9 @@ See `TODO.md` for tracked improvements and future work.
 - HTTP/SSE transport available for other clients
 
 ### Database
-- SQLite with better-sqlite3
+- PostgreSQL (not part of install)
 - 9 tables: cities, countries, hotels, alternate_names, admin codes, timezones, feature codes, hierarchy
 - Spatial indexing for geographic queries
-- ~600K+ records after full import
 
 ## Don't Do This
 - ❌ Add console.log() to stdio server (breaks protocol)
