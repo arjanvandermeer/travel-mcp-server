@@ -54,7 +54,11 @@ export class TravelDatabase {
       );
       return result.rows.length > 0 ? result.rows[0].value : defaultValue;
     } catch (error) {
-      console.error(`Error reading config ${key}:`, error.message);
+      // Silently fall back to default if config table doesn't exist
+      // (config table is optional - using env vars is fine)
+      if (!error.message.includes('relation "config" does not exist')) {
+        console.error(`Error reading config ${key}:`, error.message);
+      }
       return defaultValue;
     }
   }
@@ -74,14 +78,10 @@ export class TravelDatabase {
     try {
       // Try to read from database first, fallback to environment variable
       const apiKey = await this.getConfig('google_places_api_key', process.env.GOOGLE_PLACES_API_KEY);
-      const enabled = await this.getConfig('google_places_enabled', process.env.GOOGLE_PLACES_ENABLED || 'true');
 
       // Update environment for GooglePlacesClient (if not already set)
       if (apiKey && !process.env.GOOGLE_PLACES_API_KEY) {
         process.env.GOOGLE_PLACES_API_KEY = apiKey;
-      }
-      if (!process.env.GOOGLE_PLACES_ENABLED) {
-        process.env.GOOGLE_PLACES_ENABLED = enabled;
       }
 
       this.googlePlaces = new GooglePlacesClient(apiKey);
@@ -159,6 +159,7 @@ export class TravelDatabase {
       longitude = null,
       radius = null,
       poiType = null,
+      poiTypes = null,  // New: array of types
       name = null,
       limit = 50
     } = params;
@@ -166,8 +167,16 @@ export class TravelDatabase {
     let query;
     let queryParams = [];
 
-    // Case 1: Search by name only (fuzzy match across all POIs)
-    if (name && !cityName && !latitude) {
+    // Normalize POI type filter - support both single type and array of types
+    const typeFilter = poiTypes || (poiType ? [poiType] : null);
+
+    // Determine search strategy based on provided parameters
+    const hasName = !!name;
+    const hasCity = !!cityName;
+    const hasCoords = !!(latitude && longitude);
+
+    // Case 1: Name only (fuzzy match across all POIs)
+    if (hasName && !hasCity && !hasCoords) {
       query = `
         SELECT
           osm_id,
@@ -184,44 +193,103 @@ export class TravelDatabase {
           osm_stars,
           similarity(best_name, $1) as name_similarity
         FROM enriched_pois
-        WHERE best_name ILIKE $2
+        WHERE best_name IS NOT NULL
+          AND best_name ILIKE $2
       `;
       queryParams = [name, `%${name}%`];
 
-      if (poiType) {
-        query += ` AND poi_type = $${queryParams.length + 1}`;
-        queryParams.push(poiType);
+      if (typeFilter) {
+        query += ` AND poi_type = ANY($${queryParams.length + 1})`;
+        queryParams.push(typeFilter);
       }
 
       query += ` ORDER BY name_similarity DESC, google_rating DESC NULLS LAST LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
     }
-    // Case 2: Search by city name
-    else if (cityName) {
-      const city = await this.getCityByName(cityName, countryCode);
-      if (!city) {
-        return [];
+    // Case 2: Location only (city or coordinates)
+    else if (!hasName && (hasCity || hasCoords)) {
+      if (hasCity) {
+        const city = await this.getCityByName(cityName, countryCode);
+        if (!city) {
+          return [];
+        }
+
+        const searchRadius = radius || this.getRadiusForPopulation(city.population || 100000);
+        return this.searchPOIsNearCoordinates(
+          city.latitude,
+          city.longitude,
+          searchRadius,
+          typeFilter,
+          limit
+        );
+      } else {
+        const searchRadius = radius || 10; // Default 10km
+        return this.searchPOIsNearCoordinates(
+          latitude,
+          longitude,
+          searchRadius,
+          typeFilter,
+          limit
+        );
+      }
+    }
+    // Case 3: Name + Location (combined search - filter by name AND location)
+    else if (hasName && (hasCity || hasCoords)) {
+      // First resolve city to coordinates if needed
+      let searchLat = latitude;
+      let searchLon = longitude;
+      let searchRadius = radius;
+
+      if (hasCity) {
+        const city = await this.getCityByName(cityName, countryCode);
+        if (!city) {
+          return [];
+        }
+        searchLat = city.latitude;
+        searchLon = city.longitude;
+        searchRadius = searchRadius || this.getRadiusForPopulation(city.population || 100000);
+      } else {
+        searchRadius = searchRadius || 10; // Default 10km for coordinates
       }
 
-      const searchRadius = radius || this.getRadiusForPopulation(city.population || 100000);
-      return this.searchPOIsNearCoordinates(
-        city.latitude,
-        city.longitude,
-        searchRadius,
-        poiType,
-        limit
-      );
-    }
-    // Case 3: Search by coordinates
-    else if (latitude && longitude) {
-      const searchRadius = radius || 10; // Default 10km
-      return this.searchPOIsNearCoordinates(
-        latitude,
-        longitude,
-        searchRadius,
-        poiType,
-        limit
-      );
+      // Combined query: name filter + distance filter
+      query = `
+        SELECT
+          osm_id,
+          poi_type,
+          best_name as name,
+          best_latitude as latitude,
+          best_longitude as longitude,
+          city,
+          country_code,
+          google_rating,
+          google_reviews,
+          google_price_level,
+          business_status,
+          osm_stars,
+          similarity(best_name, $1) as name_similarity,
+          ST_Distance(
+            osm_location::geography,
+            ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
+          ) / 1000.0 as distance_km
+        FROM enriched_pois
+        WHERE best_name IS NOT NULL
+          AND best_name ILIKE $4
+          AND ST_DWithin(
+            osm_location::geography,
+            ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
+            $5 * 1000
+          )
+      `;
+      queryParams = [name, searchLat, searchLon, `%${name}%`, searchRadius];
+
+      if (typeFilter) {
+        query += ` AND poi_type = ANY($${queryParams.length + 1})`;
+        queryParams.push(typeFilter);
+      }
+
+      query += ` ORDER BY name_similarity DESC, distance_km ASC LIMIT $${queryParams.length + 1}`;
+      queryParams.push(limit);
     }
     else {
       throw new Error('Must provide either name, cityName, or coordinates (latitude + longitude)');
@@ -231,7 +299,7 @@ export class TravelDatabase {
     return removeNullFields(result.rows);
   }
 
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, poiType = null, limit = 50) {
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50) {
     let query = `
       SELECT
         osm_id,
@@ -251,18 +319,19 @@ export class TravelDatabase {
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
         ) / 1000.0 as distance_km
       FROM enriched_pois
-      WHERE ST_DWithin(
-        osm_location::geography,
-        ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
-        $3 * 1000
-      )
+      WHERE best_name IS NOT NULL
+        AND ST_DWithin(
+          osm_location::geography,
+          ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
+          $3 * 1000
+        )
     `;
 
     const params = [latitude, longitude, radiusKm];
 
-    if (poiType) {
-      query += ` AND poi_type = $${params.length + 1}`;
-      params.push(poiType);
+    if (typeFilter) {
+      query += ` AND poi_type = ANY($${params.length + 1})`;
+      params.push(typeFilter);
     }
 
     query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1}`;
@@ -339,29 +408,55 @@ export class TravelDatabase {
     let enrichment_status = 'complete';
     let enrichment_message = null;
 
-    if (!poi.google_place_id) {
-      // Check if enrichment failed previously
-      if (poi.mapping_status === 'not_found') {
-        enrichment_status = 'failed';
-        enrichment_message = 'Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.';
-      } else if (poi.mapping_status === 'error') {
-        enrichment_status = 'failed';
-        enrichment_message = 'Google Places enrichment failed due to an error. Only OpenStreetMap data is available.';
-      } else {
-        // No enrichment yet - trigger it
-        await this.ensureGooglePlacesReady();
-        if (this.googlePlaces && this.googlePlaces.isEnabled()) {
-          enrichment_status = 'pending';
-          enrichment_message = 'Google Places enrichment is in progress. Additional details (ratings, reviews, photos, opening hours) will be available in approximately 30 seconds. Please check back shortly for the complete information.';
+    // Check mapping status to determine if enrichment is needed
+    if (poi.mapping_status === 'active' && poi.google_place_id) {
+      // Already enriched - complete
+      enrichment_status = 'complete';
+    } else if (poi.mapping_status === 'pending') {
+      // Enrichment already in progress
+      enrichment_status = 'pending';
+      const startedAt = poi.google_enriched_at ? new Date(poi.google_enriched_at) : new Date();
+      const checkBackAt = new Date(startedAt.getTime() + 60000);
+      enrichment_message = `Google Places enrichment already in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()} for complete information.`;
+    } else if (poi.mapping_status === 'not_found') {
+      enrichment_status = 'failed';
+      enrichment_message = 'Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.';
+    } else if (poi.mapping_status === 'error') {
+      enrichment_status = 'failed';
+      enrichment_message = 'Google Places enrichment failed due to an error. Only OpenStreetMap data is available.';
+    } else if (!poi.mapping_status) {
+      // No enrichment attempt yet - trigger it
+      await this.ensureGooglePlacesReady();
+      if (this.googlePlaces && this.googlePlaces.isEnabled()) {
+        // Mark as pending IMMEDIATELY before starting enrichment
+        await this.pool.query(`
+          INSERT INTO osm_google_mappings (osm_id, mapping_status, mapped_at)
+          VALUES ($1, 'pending', CURRENT_TIMESTAMP)
+          ON CONFLICT (osm_id) DO UPDATE SET mapping_status = 'pending', mapped_at = CURRENT_TIMESTAMP
+        `, [osmId]);
 
-          // Fire-and-forget background enrichment
-          this.enrichOSMPOI(osmId).catch(err => {
-            console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
-          });
-        } else {
-          enrichment_status = 'disabled';
-          enrichment_message = 'Google Places enrichment is not enabled. Only OpenStreetMap data is available.';
-        }
+        const startedAt = new Date();
+        const checkBackAt = new Date(startedAt.getTime() + 60000); // 1 minute from now
+
+        enrichment_status = 'pending';
+        enrichment_message = `Google Places enrichment started at ${startedAt.toISOString()}. Check back after ${checkBackAt.toISOString()} (approximately 1 minute) for complete information including ratings, reviews, photos, and verified opening hours.`;
+
+        // Fire-and-forget background enrichment with 2-minute timeout
+        Promise.race([
+          this.enrichOSMPOI(osmId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Enrichment timeout after 2 minutes')), 120000))
+        ]).catch(err => {
+          console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
+          // Mark as error if enrichment fails
+          this.pool.query(`
+            UPDATE osm_google_mappings
+            SET mapping_status = 'error', mapping_notes = $1
+            WHERE osm_id = $2
+          `, [err.message, osmId]).catch(() => {});
+        });
+      } else {
+        enrichment_status = 'disabled';
+        enrichment_message = 'Google Places enrichment is not enabled. Only OpenStreetMap data is available.';
       }
     }
 
@@ -537,7 +632,7 @@ export class TravelDatabase {
         raw_response
       ) VALUES (
         $1, $2, $3,
-        ST_SetSRID(ST_MakePoint($5, $4), 4326)::geography,
+        ST_SetSRID(ST_MakePoint($5, $4), 4326),
         $4, $5,
         $6, $7, $8, $9, $10, $11, $12, $13, $14,
         $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
@@ -575,8 +670,7 @@ export class TravelDatabase {
         address_components = EXCLUDED.address_components,
         enriched_at = EXCLUDED.enriched_at,
         cache_expires_at = EXCLUDED.cache_expires_at,
-        raw_response = EXCLUDED.raw_response,
-        updated_at = CURRENT_TIMESTAMP
+        raw_response = EXCLUDED.raw_response
     `, [
       placeData.id,
       placeData.displayName?.text || placeData.displayName || '',
@@ -649,7 +743,7 @@ export class TravelDatabase {
             mapping_notes,
             mapped_at
           ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
-          ON CONFLICT (osm_id, google_place_id) DO UPDATE SET
+          ON CONFLICT (osm_id) DO UPDATE SET
             mapping_status = EXCLUDED.mapping_status,
             mapping_notes = EXCLUDED.mapping_notes,
             mapped_at = CURRENT_TIMESTAMP
@@ -669,7 +763,8 @@ export class TravelDatabase {
         mapping_notes,
         mapped_at
       ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-      ON CONFLICT (osm_id, google_place_id) DO UPDATE SET
+      ON CONFLICT (osm_id) DO UPDATE SET
+        google_place_id = EXCLUDED.google_place_id,
         match_confidence = EXCLUDED.match_confidence,
         match_method = EXCLUDED.match_method,
         match_distance_meters = EXCLUDED.match_distance_meters,
@@ -825,7 +920,7 @@ export class TravelDatabase {
 
     const poisByCountry = await this.pool.query(`
       SELECT country_code, COUNT(*) as count
-      FROM osm_pois
+      FROM enriched_pois
       WHERE country_code IS NOT NULL
       GROUP BY country_code
       ORDER BY count DESC
@@ -845,16 +940,18 @@ export class TravelDatabase {
       LIMIT 10
     `);
 
-    // Get enrichment stats from Google Places
+    // Get enrichment stats from POIs table
     const enrichmentStats = await this.pool.query(`
       SELECT COUNT(*) as total_enriched
-      FROM google_places
+      FROM osm_pois
+      WHERE google_place_id IS NOT NULL
     `);
 
     const mappingStats = await this.pool.query(`
-      SELECT mapping_status, COUNT(*) as count
-      FROM osm_google_mappings
-      GROUP BY mapping_status
+      SELECT google_enrichment_status as mapping_status, COUNT(*) as count
+      FROM osm_pois
+      WHERE google_enrichment_status IS NOT NULL
+      GROUP BY google_enrichment_status
     `);
 
     const stats = {

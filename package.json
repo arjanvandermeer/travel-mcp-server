@@ -9,6 +9,10 @@
     "start:http": "node src/index-http.js",
     "dev": "node --watch src/index.js",
     "dev:http": "node --watch src/index-http.js",
+    "inspect": "npx @modelcontextprotocol/inspector node src/index.js",
+    "inspect:http": "npx @modelcontextprotocol/inspector node src/index-http.js",
+    "inspect:watch": "nodemon --exec 'npx @modelcontextprotocol/inspector' node src/index.js",
+    "inspect:watch:http": "nodemon --exec 'npx @modelcontextprotocol/inspector' node src/index-http.js",
     "db:init": "node src/init.js",
     "db:import-geonames": "node src/import-geonames-postgres.js",
     "test": "node tests/test-bangkok-postgres.js",
@@ -30,5 +34,8 @@
     "osm-pbf-parser": "^2.3.0",
     "pg": "^8.16.3",
     "through2": "^4.0.2"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.11"
   }
 }

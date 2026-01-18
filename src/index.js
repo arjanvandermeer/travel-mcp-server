@@ -79,8 +79,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             radius_km: {
               type: 'number',
-              description: 'Search radius in kilometers when using coordinates (default: 5)',
-              default: 5,
+              description: 'Search radius in kilometers when using coordinates (default: 15)',
+              default: 15,
             },
             limit: {
               type: 'number',
@@ -92,13 +92,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'search_restaurants',
-        description: 'Search for restaurants by name AND/OR location. Supports: (1) name only, (2) location only (city or coordinates), or (3) both combined. Examples: "palace restaurant", "restaurants in Bangkok", "palace restaurant in Bangkok".',
+        description: 'Search for food & drink establishments (restaurants, cafes, bars, fast food, etc.) by name AND/OR location. Supports: (1) name only, (2) location only (city or coordinates), or (3) both combined. Examples: "starbucks", "restaurants in Bangkok", "starbucks in Bangkok".',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'Optional restaurant name to search for (fuzzy matching)',
+              description: 'Optional name to search for (fuzzy matching) - works for restaurants, cafes, bars, etc.',
             },
             city_name: {
               type: 'string',
@@ -118,8 +118,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             radius_km: {
               type: 'number',
-              description: 'Search radius in kilometers when using coordinates (default: 5)',
-              default: 5,
+              description: 'Search radius in kilometers when using coordinates (default: 15)',
+              default: 15,
+            },
+            type: {
+              type: 'string',
+              description: 'Optional type filter: "restaurant", "cafe", "bar", "pub", "fast_food", "food_court". If not specified, searches all food & drink types.',
+              enum: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'],
             },
             limit: {
               type: 'number',
@@ -157,8 +162,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             radius_km: {
               type: 'number',
-              description: 'Search radius in kilometers when using coordinates (default: 5)',
-              default: 5,
+              description: 'Search radius in kilometers when using coordinates (default: 15)',
+              default: 15,
             },
             poi_type: {
               type: 'string',
@@ -223,7 +228,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radius: args.radius_km || 5,
+          radius: args.radius_km,  // Let database layer calculate radius based on city population if not specified
           poiType: 'hotel',
           limit: args.limit || 50,
         });
@@ -239,14 +244,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'search_restaurants': {
+        // Define all food & drink types
+        const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+
+        // Use specific type if provided, otherwise search all food types
+        const types = args.type ? [args.type] : foodTypes;
+
         const result = await db.searchPOIs({
           name: args.query,
           cityName: args.city_name,
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radius: args.radius_km || 5,
-          poiType: 'restaurant',
+          radius: args.radius_km,  // Let database layer calculate radius based on city population if not specified
+          poiTypes: types,
           limit: args.limit || 50,
         });
 
@@ -267,7 +278,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radius: args.radius_km || 5,
+          radius: args.radius_km,  // Let database layer calculate radius based on city population if not specified
           poiType: args.poi_type,
           limit: args.limit || 50,
         });

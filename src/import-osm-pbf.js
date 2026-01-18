@@ -83,6 +83,7 @@ async function importPBF(pbfPath, poiType = 'hotel') {
   }
 
   const regionName = path.basename(pbfPath, '.osm.pbf');
+  const sourceFile = path.basename(pbfPath);
   console.log(`Starting import from: ${pbfPath}`);
   console.log(`Region: ${regionName}`);
   console.log(`POI Type: ${poiType}`);
@@ -90,6 +91,7 @@ async function importPBF(pbfPath, poiType = 'hotel') {
 
   // Connect to PostgreSQL
   const pool = new pg.Pool({ connectionString: PG_CONNECTION });
+  let importId = null;
 
   try {
     // Test connection
@@ -97,8 +99,25 @@ async function importPBF(pbfPath, poiType = 'hotel') {
     console.log('✓ Connected to PostgreSQL');
     client.release();
 
+    // Record import start
+    const importResult = await pool.query(`
+      INSERT INTO imports (import_type, source_file, region_name, status, started_at)
+      VALUES ($1, $2, $3, 'running', CURRENT_TIMESTAMP)
+      RETURNING id
+    `, [`osm_${poiType}`, sourceFile, regionName]);
+    importId = importResult.rows[0].id;
+
     // Parse PBF and import
-    await parsePBFFile(pbfPath, pool, poiType, regionName);
+    const recordsImported = await parsePBFFile(pbfPath, pool, poiType, regionName);
+
+    // Record import completion
+    await pool.query(`
+      UPDATE imports
+      SET status = 'completed',
+          completed_at = CURRENT_TIMESTAMP,
+          records_imported = $1
+      WHERE id = $2
+    `, [recordsImported, importId]);
 
     console.log('\n✅ Import complete!');
 
@@ -106,7 +125,7 @@ async function importPBF(pbfPath, poiType = 'hotel') {
     if (poiType === 'all') {
       const stats = await pool.query(`
         SELECT poi_type, COUNT(*) as count
-        FROM pois
+        FROM osm_pois
         GROUP BY poi_type
         ORDER BY count DESC
       `);
@@ -123,7 +142,7 @@ async function importPBF(pbfPath, poiType = 'hotel') {
       console.log(`\nSample POIs from this import:`);
       const samples = await pool.query(`
         SELECT poi_type, name, address
-        FROM pois
+        FROM osm_pois
         WHERE name IS NOT NULL
         ORDER BY imported_at DESC
         LIMIT 10
@@ -137,7 +156,7 @@ async function importPBF(pbfPath, poiType = 'hotel') {
       const stats = await pool.query(`
         SELECT COUNT(*) as total,
                COUNT(*) FILTER (WHERE stars IS NOT NULL) as with_stars
-        FROM pois
+        FROM osm_pois
         WHERE poi_type = $1
       `, [poiType]);
 
@@ -149,7 +168,7 @@ async function importPBF(pbfPath, poiType = 'hotel') {
       console.log(`\nSample ${poiType}s from this import:`);
       const samples = await pool.query(`
         SELECT name, stars, address, latitude, longitude
-        FROM pois
+        FROM osm_pois
         WHERE poi_type = $1 AND name IS NOT NULL
         ORDER BY imported_at DESC
         LIMIT 5
@@ -164,6 +183,17 @@ async function importPBF(pbfPath, poiType = 'hotel') {
 
 
   } catch (error) {
+    // Record import failure
+    if (importId) {
+      await pool.query(`
+        UPDATE imports
+        SET status = 'failed',
+            completed_at = CURRENT_TIMESTAMP,
+            error_message = $1
+        WHERE id = $2
+      `, [error.message, importId]).catch(() => {}); // Ignore errors in error handler
+    }
+
     console.error('❌ Import failed:', error.message);
     console.error(error);
     process.exit(1);
@@ -218,7 +248,7 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
             console.log(`  Processed: ${processed} ${poiType}s`);
           }
           console.log('\n✓ PBF parsing complete');
-          resolve();
+          resolve(processed); // Return count of records imported
         } catch (error) {
           reject(error);
         }
@@ -319,7 +349,7 @@ async function insertBatch(pool, pois) {
     await client.query('BEGIN');
 
     const insertQuery = `
-      INSERT INTO pois (
+      INSERT INTO osm_pois (
         osm_id, osm_type, poi_type, name,
         location, latitude, longitude,
         address, phone, email, website, opening_hours,

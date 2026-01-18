@@ -59,7 +59,13 @@ async function testMCPClient() {
       const cities = JSON.parse(citiesContent.text);
       console.log(`   Found ${cities.length} cities:`);
       cities.forEach(city => {
-        console.log(`   - ${city.name}, ${city.country_code} (pop: ${city.population?.toLocaleString() || 'unknown'})`);
+        const lat = city.latitude?.toFixed(4);
+        const lon = city.longitude?.toFixed(4);
+        const pop = city.population?.toLocaleString() || 'unknown';
+        console.log(`   - ${city.name}, ${city.country_code}`);
+        console.log(`     Population: ${pop}`);
+        console.log(`     Coordinates: ${lat}, ${lon}`);
+        if (city.timezone) console.log(`     Timezone: ${city.timezone}`);
       });
     }
     console.log();
@@ -79,15 +85,73 @@ async function testMCPClient() {
     if (hotelsContent.type === 'text') {
       const hotels = JSON.parse(hotelsContent.text);
       console.log(`   Found ${hotels.length} hotels:`);
-      hotels.forEach(hotel => {
-        const rating = hotel.google_rating ? ` (${hotel.google_rating}⭐)` : '';
-        console.log(`   - ${hotel.name}${rating}`);
+      hotels.forEach((hotel, idx) => {
+        const rating = hotel.google_rating ? ` ${hotel.google_rating}⭐` : '';
+        const reviews = hotel.google_user_ratings_total ? ` (${hotel.google_user_ratings_total} reviews)` : '';
+        const stars = hotel.stars ? ` [${hotel.stars}-star]` : '';
+        const distance = hotel.distance_km ? ` - ${hotel.distance_km.toFixed(1)}km away` : '';
+
+        console.log(`   ${idx + 1}. ${hotel.name}${stars}`);
+        if (rating) console.log(`      Rating:${rating}${reviews}`);
+        if (hotel.address) console.log(`      Address: ${hotel.address.substring(0, 60)}${hotel.address.length > 60 ? '...' : ''}`);
+        if (hotel.phone) console.log(`      Phone: ${hotel.phone}`);
+        if (hotel.website) console.log(`      Website: ${hotel.website.substring(0, 50)}...`);
+        if (distance) console.log(`      Distance:${distance}`);
+        console.log();
+      });
+    }
+
+    // Test 4: Search POIs near coordinates (Grand Palace, Bangkok)
+    console.log('4. Searching for POIs near Grand Palace (13.7500, 100.4917)...');
+    const nearbyResult = await client.callTool({
+      name: 'search_pois',
+      arguments: {
+        latitude: 13.7500,
+        longitude: 100.4917,
+        radius_km: 2,
+        limit: 5
+      }
+    });
+
+    const nearbyContent = nearbyResult.content[0];
+    if (nearbyContent.type === 'text') {
+      const pois = JSON.parse(nearbyContent.text);
+      console.log(`   Found ${pois.length} POIs within 2km:`);
+      pois.forEach((poi, idx) => {
+        const type = poi.poi_type ? `[${poi.poi_type}]` : '';
+        const distance = poi.distance_km ? ` (${poi.distance_km.toFixed(2)}km)` : '';
+        console.log(`   ${idx + 1}. ${poi.name} ${type}${distance}`);
       });
     }
     console.log();
 
-    // Test 4: Get database stats
-    console.log('4. Getting database statistics...');
+    // Test 5: Search for restaurants
+    console.log('5. Searching for restaurants in Bangkok...');
+    const restaurantsResult = await client.callTool({
+      name: 'search_restaurants',
+      arguments: {
+        city_name: 'Bangkok',
+        country_code: 'TH',
+        limit: 3
+      }
+    });
+
+    const restaurantsContent = restaurantsResult.content[0];
+    if (restaurantsContent.type === 'text') {
+      const restaurants = JSON.parse(restaurantsContent.text);
+      console.log(`   Found ${restaurants.length} restaurants:`);
+      restaurants.forEach((restaurant, idx) => {
+        const rating = restaurant.google_rating ? ` ${restaurant.google_rating}⭐` : '';
+        const cuisine = restaurant.cuisine ? ` (${restaurant.cuisine})` : '';
+        console.log(`   ${idx + 1}. ${restaurant.name}${cuisine}`);
+        if (rating) console.log(`      Rating:${rating}`);
+        if (restaurant.address) console.log(`      Address: ${restaurant.address.substring(0, 60)}...`);
+      });
+    }
+    console.log();
+
+    // Test 6: Get database stats
+    console.log('6. Getting database statistics...');
     const statsResult = await client.callTool({
       name: 'get_stats',
       arguments: {}
@@ -96,17 +160,25 @@ async function testMCPClient() {
     const statsContent = statsResult.content[0];
     if (statsContent.type === 'text') {
       const stats = JSON.parse(statsContent.text);
-      console.log(`   Countries: ${stats.countries}`);
-      console.log(`   Cities: ${stats.cities}`);
-      console.log(`   POIs: ${stats.pois}`);
-      console.log(`   Hotels: ${stats.hotels}`);
-      console.log(`   Google Places enriched: ${stats.google_places_enriched}`);
+      console.log(`   ╔════════════════════════════════════╗`);
+      console.log(`   ║      Database Statistics          ║`);
+      console.log(`   ╠════════════════════════════════════╣`);
+      console.log(`   ║ Countries: ${String(stats.countries).padEnd(23)}║`);
+      console.log(`   ║ Cities: ${String(stats.cities).padEnd(26)}║`);
+      console.log(`   ║ Total POIs: ${String(stats.pois).padEnd(22)}║`);
+      console.log(`   ╠════════════════════════════════════╣`);
+      console.log(`   ║ Hotels: ${String(stats.hotels || 0).padEnd(26)}║`);
+      console.log(`   ║ Restaurants: ${String(stats.restaurants || 0).padEnd(21)}║`);
+      console.log(`   ║ Attractions: ${String(stats.attractions || 0).padEnd(21)}║`);
+      console.log(`   ╠════════════════════════════════════╣`);
+      console.log(`   ║ Google enriched: ${String(stats.google_places_enriched || 0).padEnd(17)}║`);
+      console.log(`   ╚════════════════════════════════════╝`);
     }
     console.log();
 
     // Close connection
     await client.close();
-    console.log('✓ Tests completed successfully!');
+    console.log('✅ All tests completed successfully!');
 
   } catch (error) {
     console.error('❌ Test failed:', error.message);

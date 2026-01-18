@@ -87,8 +87,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             radius_km: {
               type: 'number',
-              description: 'Search radius in kilometers when using coordinates (default: 5)',
-              default: 5,
+              description: 'Search radius in kilometers when using coordinates (default: 15)',
+              default: 15,
             },
             limit: {
               type: 'number',
@@ -100,13 +100,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
       },
       {
         name: 'search_restaurants',
-        description: 'Search for restaurants by name AND/OR location. Supports: (1) name only, (2) location only (city or coordinates), or (3) both combined. Examples: "palace restaurant", "restaurants in Bangkok", "palace restaurant in Bangkok".',
+        description: 'Search for food & drink establishments (restaurants, cafes, bars, fast food, etc.) by name AND/OR location. Supports: (1) name only, (2) location only (city or coordinates), or (3) both combined. Examples: "starbucks", "restaurants in Bangkok", "starbucks in Bangkok".',
         inputSchema: {
           type: 'object',
           properties: {
             query: {
               type: 'string',
-              description: 'Optional restaurant name to search for (fuzzy matching)',
+              description: 'Optional name to search for (fuzzy matching) - works for restaurants, cafes, bars, etc.',
             },
             city_name: {
               type: 'string',
@@ -126,8 +126,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             radius_km: {
               type: 'number',
-              description: 'Search radius in kilometers when using coordinates (default: 5)',
-              default: 5,
+              description: 'Search radius in kilometers when using coordinates (default: 15)',
+              default: 15,
+            },
+            type: {
+              type: 'string',
+              description: 'Optional type filter: "restaurant", "cafe", "bar", "pub", "fast_food", "food_court". If not specified, searches all food & drink types.',
+              enum: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'],
             },
             limit: {
               type: 'number',
@@ -165,8 +170,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
             },
             radius_km: {
               type: 'number',
-              description: 'Search radius in kilometers when using coordinates (default: 5)',
-              default: 5,
+              description: 'Search radius in kilometers when using coordinates (default: 15)',
+              default: 15,
             },
             poi_type: {
               type: 'string',
@@ -231,7 +236,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radius: args.radius_km || 5,
+          radius: args.radius_km,
           poiType: 'hotel',
           limit: args.limit || 50,
         });
@@ -247,14 +252,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       }
 
       case 'search_restaurants': {
+        // Define all food & drink types
+        const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+
+        // Use specific type if provided, otherwise search all food types
+        const types = args.type ? [args.type] : foodTypes;
+
         const result = await db.searchPOIs({
           name: args.query,
           cityName: args.city_name,
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radius: args.radius_km || 5,
-          poiType: 'restaurant',
+          radius: args.radius_km,
+          poiTypes: types,
           limit: args.limit || 50,
         });
 
@@ -275,7 +286,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           countryCode: args.country_code,
           latitude: args.latitude,
           longitude: args.longitude,
-          radius: args.radius_km || 5,
+          radius: args.radius_km,
           poiType: args.poi_type,
           limit: args.limit || 50,
         });
@@ -344,6 +355,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Create HTTP server with SSE support
 async function main() {
+  // Store active transport (only one at a time for now)
+  let activeTransport = null;
+
   const httpServer = http.createServer(async (req, res) => {
     const parsedUrl = parse(req.url, true);
     const pathname = parsedUrl.pathname;
@@ -371,21 +385,25 @@ async function main() {
         endpoints: {
           sse: '/sse',
           health: '/health',
+          message: '/message',
         },
       }));
       return;
     }
 
     // SSE endpoint - establishes SSE connection
-    if (pathname === '/sse') {
+    if (pathname === '/sse' && req.method === 'GET') {
       console.log('New SSE connection established');
 
       const transport = new SSEServerTransport('/message', res);
+      activeTransport = transport;
+
       await server.connect(transport);
 
       // Handle connection close
       req.on('close', () => {
         console.log('SSE connection closed');
+        activeTransport = null;
       });
 
       return;
@@ -393,9 +411,17 @@ async function main() {
 
     // Message endpoint - handles POST requests from SSE client
     if (pathname === '/message' && req.method === 'POST') {
-      // The SSEServerTransport handles this internally
-      // We just need to not send a 404
-      // The transport will handle the request
+      if (!activeTransport) {
+        res.writeHead(503, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          error: 'Service Unavailable',
+          message: 'No active SSE connection. Connect to /sse first.',
+        }));
+        return;
+      }
+
+      // Let the transport handle the POST message
+      await activeTransport.handlePostMessage(req, res);
       return;
     }
 
