@@ -2,6 +2,29 @@
 
 ## High Priority
 
+### CRITICAL: Eliminate Tool Definition Duplication
+- [ ] Create `src/tools-config.js` as single source of truth for MCP tool definitions
+- [ ] Export `toolsConfig` array with all tool definitions
+- [ ] Export `executeToolHandler()` function with all tool handlers
+- [ ] Update `src/index.js` (stdio server) to import from tools-config.js
+- [ ] Update `src/index-http.js` (HTTP server) to import from tools-config.js
+- [ ] Remove duplicated tool definitions from both servers
+- [ ] Test both servers work after refactor
+
+**Rationale**: Currently tool definitions (~65 lines each) are completely duplicated between index.js and index-http.js. This creates high maintenance burden and risk of servers getting out of sync. Having a single source of truth prevents bugs and follows DRY principle.
+
+**Impact**: High - architectural improvement that prevents future bugs
+
+### CRITICAL: Fix Unhandled Promise in Background Enrichment
+- [ ] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` at database.js:719
+- [ ] Change to `await Promise.allSettled(enrichmentPromises)` to track errors
+- [ ] Add error logging for failed enrichments
+- [ ] Test that background enrichment errors are properly caught
+
+**Rationale**: Currently creates Promise but doesn't await it, which could mask errors in background enrichment process.
+
+**Impact**: High - correctness issue that could hide bugs
+
 ### Refactor: Separate Data Sources into Dedicated Tables
 - [ ] Create separate tables for each data source to maintain clean data model
 - [ ] New table structure:
@@ -48,17 +71,20 @@ pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
   - Thai/non-Latin character names often mismatch (e.g., 'โรงแรมสิริน')
   - Name variations not handled well (abbreviations, different word order)
   - Distance-based matching is too broad (matches wrong nearby places)
+  - Simple string comparison at google-places.js:303 is inadequate
 - [ ] Proposed improvements:
   - Use normalized name matching (remove special characters, lowercase, transliteration)
-  - Implement fuzzy string matching with configurable threshold (Levenshtein distance)
+  - Implement fuzzy string matching library (e.g., `fuzzball` or `string-similarity`)
+  - Use Levenshtein distance with configurable threshold
   - Check address/location first, then verify name similarity
   - Use Google's `findplacefromtext` with better query construction
   - Add confidence score to matching results
   - Store matching metadata (confidence, method used) for debugging
 - [ ] Add validation before accepting match:
-  - Verify distance is within reasonable threshold (e.g., < 50 meters)
+  - Verify distance is within reasonable threshold (e.g., < 50-100 meters from OSM coordinates)
   - Check if POI types are compatible (hotel vs restaurant)
   - Compare business names with fuzzy matching
+  - Reject matches with confidence score below threshold (e.g., < 0.7)
   - Log low-confidence matches for manual review
 - [ ] Add `pois_google_mapping` table with fields:
   - `osm_id`, `google_place_id`
@@ -74,6 +100,8 @@ pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
 - Hotels with similar names in same area
 - Chain hotels (Marriott, Hilton) - should match correct branch
 - POIs with transliterated names vs native scripts
+
+**Impact**: High - data quality improvement
 
 ### Security: SQL Injection Audit
 - [ ] Audit all database queries in `src/database.js` for SQL injection vulnerabilities
