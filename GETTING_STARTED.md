@@ -347,7 +347,7 @@ node scripts/manage-config.js set google_places_api_key YOUR_API_KEY_HERE
 node scripts/manage-config.js list
 ```
 
-**Why database config?** Claude Desktop sometimes has issues reading `.env` files. Database configuration is more reliable and persists across restarts.
+**Why database config?** Claude Desktop sometimes seems to have issues reading `.env` files. Database configuration is more reliable and persists across restarts. Yes, I do realize the contradiction between this and the database config also in .env - I'll fix it at some point. 
 
 ### 6.3 Alternative: Environment Variables
 

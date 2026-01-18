@@ -376,7 +376,7 @@ async function main() {
       return;
     }
 
-    // SSE endpoint
+    // SSE endpoint - establishes SSE connection
     if (pathname === '/sse') {
       console.log('New SSE connection established');
 
@@ -388,6 +388,14 @@ async function main() {
         console.log('SSE connection closed');
       });
 
+      return;
+    }
+
+    // Message endpoint - handles POST requests from SSE client
+    if (pathname === '/message' && req.method === 'POST') {
+      // The SSEServerTransport handles this internally
+      // We just need to not send a 404
+      // The transport will handle the request
       return;
     }
 
