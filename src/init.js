@@ -109,7 +109,7 @@ async function initializeDatabase() {
     const stats = await Promise.all([
       client.query('SELECT COUNT(*) FROM geonames_countries'),
       client.query('SELECT COUNT(*) FROM geonames_cities'),
-      client.query('SELECT COUNT(*) FROM pois'),
+      client.query('SELECT COUNT(*) FROM osm_pois'),
       client.query('SELECT COUNT(*) FROM regions'),
       client.query('SELECT COUNT(*) FROM imports'),
     ]);

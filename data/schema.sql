@@ -5,8 +5,10 @@
 CREATE EXTENSION IF NOT EXISTS postgis;
 
 -- Drop existing tables if they exist (for development)
+DROP TABLE IF EXISTS osm_google_mappings CASCADE;
+DROP TABLE IF EXISTS google_places CASCADE;
 DROP TABLE IF EXISTS imports CASCADE;
-DROP TABLE IF EXISTS pois CASCADE;
+DROP TABLE IF EXISTS osm_pois CASCADE;
 DROP TABLE IF EXISTS hotels CASCADE;
 DROP TABLE IF EXISTS geonames_cities CASCADE;
 DROP TABLE IF EXISTS geonames_countries CASCADE;
@@ -17,7 +19,7 @@ DROP TABLE IF EXISTS regions CASCADE;
 -- ============================================================================
 CREATE TABLE imports (
     id SERIAL PRIMARY KEY,
-    import_type VARCHAR(50) NOT NULL,        -- 'geonames_countries', 'geonames_cities', 'pois', 'regions'
+    import_type VARCHAR(50) NOT NULL,        -- 'geonames_countries', 'geonames_cities', 'osm_pois', 'regions'
     source_file VARCHAR(500),                -- e.g., 'thailand-latest.osm.pbf', 'allCountries.txt'
     source_url VARCHAR(1000),                -- Original download URL
     source_date DATE,                        -- Date of source file (from filename or metadata)
@@ -128,11 +130,97 @@ CREATE INDEX idx_regions_name ON regions(name);
 CREATE INDEX idx_regions_type ON regions(region_type);
 
 -- ============================================================================
+-- Google Places Data Storage
+-- ============================================================================
+CREATE TABLE google_places (
+    google_place_id VARCHAR(200) PRIMARY KEY,
+
+    -- Basic info
+    name VARCHAR(500),
+    display_name VARCHAR(500),
+    formatted_address TEXT,
+    short_formatted_address TEXT,
+
+    -- Location
+    location geometry(Point, 4326),
+    latitude DOUBLE PRECISION NOT NULL,
+    longitude DOUBLE PRECISION NOT NULL,
+
+    -- Classification
+    types TEXT[],
+    primary_type VARCHAR(100),
+    primary_type_display VARCHAR(200),
+
+    -- Contact
+    international_phone VARCHAR(100),
+    national_phone VARCHAR(100),
+    website_uri VARCHAR(500),
+    google_maps_uri VARCHAR(500),
+
+    -- Ratings & Reviews
+    rating DECIMAL(2,1),
+    user_rating_count INTEGER,
+    price_level TEXT,  -- PRICE_LEVEL_FREE, PRICE_LEVEL_INEXPENSIVE, etc.
+
+    -- Status
+    business_status VARCHAR(50),  -- OPERATIONAL, CLOSED_TEMPORARILY, CLOSED_PERMANENTLY
+
+    -- Additional details
+    editorial_summary TEXT,
+    opening_hours JSONB,
+    current_opening_hours JSONB,
+    photos JSONB,
+    service_options JSONB,
+    accessibility JSONB,
+    amenities JSONB,
+    plus_code JSONB,
+    viewport JSONB,
+    address_components JSONB,
+
+    -- Metadata
+    enriched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    cache_expires_at TIMESTAMP,
+    raw_response JSONB
+);
+
+CREATE INDEX idx_google_places_location ON google_places USING GIST(location);
+CREATE INDEX idx_google_places_name ON google_places(name);
+CREATE INDEX idx_google_places_rating ON google_places(rating DESC) WHERE rating IS NOT NULL;
+CREATE INDEX idx_google_places_types ON google_places USING GIN(types);
+
+-- ============================================================================
+-- OSM to Google Places Mapping
+-- ============================================================================
+CREATE TABLE osm_google_mappings (
+    osm_id BIGINT PRIMARY KEY,
+    google_place_id VARCHAR(200),
+
+    -- Match quality
+    match_confidence DECIMAL(3,2),  -- 0.00 to 1.00
+    match_method VARCHAR(50),  -- 'nearby_search', 'text_search', 'manual'
+    match_distance_meters INTEGER,  -- Distance between OSM and Google coordinates
+
+    -- Status
+    mapping_status VARCHAR(20) NOT NULL,  -- 'active', 'not_found', 'error', 'outdated'
+    mapping_notes TEXT,
+
+    -- Timestamps
+    mapped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_verified_at TIMESTAMP,
+
+    FOREIGN KEY (google_place_id) REFERENCES google_places(google_place_id) ON DELETE SET NULL
+);
+
+CREATE INDEX idx_osm_google_mappings_google_id ON osm_google_mappings(google_place_id);
+CREATE INDEX idx_osm_google_mappings_status ON osm_google_mappings(mapping_status);
+CREATE INDEX idx_osm_google_mappings_mapped_at ON osm_google_mappings(mapped_at DESC);
+
+-- ============================================================================
 -- POIs (Points of Interest)
 -- All types: hotels, restaurants, attractions, monuments, museums, etc.
 -- Unified table matching OSM's data model
 -- ============================================================================
-CREATE TABLE pois (
+CREATE TABLE osm_pois (
     osm_id BIGINT PRIMARY KEY,
     osm_type VARCHAR(10) NOT NULL,              -- 'node', 'way', 'relation'
     poi_type VARCHAR(50) NOT NULL,              -- 'hotel', 'restaurant', 'attraction', 'monument', etc.
@@ -156,20 +244,6 @@ CREATE TABLE pois (
     rooms INTEGER,                              -- For hotels
     beds INTEGER,                               -- For hotels
 
-    -- Google Places enrichment data
-    google_place_id VARCHAR(200),               -- Google Places ID
-    google_rating DECIMAL(2,1),                 -- Google rating (0.0 - 5.0)
-    google_user_ratings_total INTEGER,          -- Number of Google reviews
-    google_price_level TEXT,                    -- Price level enum: PRICE_LEVEL_FREE, PRICE_LEVEL_INEXPENSIVE, PRICE_LEVEL_MODERATE, PRICE_LEVEL_EXPENSIVE, PRICE_LEVEL_VERY_EXPENSIVE
-    google_types TEXT[],                        -- Google place types array
-    google_formatted_address TEXT,              -- Google's formatted address
-    google_phone VARCHAR(100),                  -- Verified phone from Google
-    google_website VARCHAR(500),                -- Verified website from Google
-    google_opening_hours JSONB,                 -- Detailed opening hours from Google
-    google_photos JSONB,                        -- Photo references from Google
-    google_enriched_at TIMESTAMP,               -- When Google data was fetched
-    google_enrichment_status VARCHAR(20),       -- 'pending', 'enriched', 'not_found', 'error'
-
     -- Metadata
     tags JSONB,                                 -- All OSM tags as JSON
     source_region VARCHAR(100),                 -- e.g., 'thailand-latest'
@@ -180,20 +254,83 @@ CREATE TABLE pois (
 );
 
 -- Indexes
-CREATE INDEX idx_pois_location ON pois USING GIST(location);
-CREATE INDEX idx_pois_name ON pois(name);
-CREATE INDEX idx_pois_type ON pois(poi_type);
-CREATE INDEX idx_pois_type_name ON pois(poi_type, name);  -- For type-specific searches
-CREATE INDEX idx_pois_source_region ON pois(source_region);
-CREATE INDEX idx_pois_nearest_city ON pois(nearest_city_id);
-CREATE INDEX idx_pois_tags ON pois USING GIN(tags);
-CREATE INDEX idx_pois_name_trgm ON pois USING GIN(name gin_trgm_ops);  -- For fuzzy search
-CREATE INDEX idx_pois_stars ON pois(stars) WHERE stars IS NOT NULL;  -- For hotel filtering
-CREATE INDEX idx_pois_google_place_id ON pois(google_place_id) WHERE google_place_id IS NOT NULL;
-CREATE INDEX idx_pois_google_enrichment_status ON pois(google_enrichment_status);
+CREATE INDEX idx_osm_pois_location ON osm_pois USING GIST(location);
+CREATE INDEX idx_osm_pois_name ON osm_pois(name);
+CREATE INDEX idx_osm_pois_type ON osm_pois(poi_type);
+CREATE INDEX idx_osm_pois_type_name ON osm_pois(poi_type, name);  -- For type-specific searches
+CREATE INDEX idx_osm_pois_source_region ON osm_pois(source_region);
+CREATE INDEX idx_osm_pois_nearest_city ON osm_pois(nearest_city_id);
+CREATE INDEX idx_osm_pois_tags ON osm_pois USING GIN(tags);
+CREATE INDEX idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);  -- For fuzzy search
+CREATE INDEX idx_osm_pois_stars ON osm_pois(stars) WHERE stars IS NOT NULL;  -- For hotel filtering
 
 -- Enable trigram extension for fuzzy name search
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- ============================================================================
+-- Enriched POIs View
+-- Provides computed "best" fields that prefer Google data when available,
+-- falling back to OSM data
+-- ============================================================================
+CREATE OR REPLACE VIEW enriched_pois AS
+SELECT
+    -- Core OSM identifiers
+    p.osm_id,
+    p.osm_type,
+    p.poi_type,
+
+    -- OSM original data (prefixed with osm_)
+    p.name as osm_name,
+    p.latitude as osm_latitude,
+    p.longitude as osm_longitude,
+    p.location as osm_location,
+    p.address as osm_address,
+    p.phone as osm_phone,
+    p.website as osm_website,
+    p.stars as osm_stars,
+    p.cuisine,
+
+    -- Extract city and country from nearest city relationship
+    c.name as city,
+    c.country_code,
+    p.address as street,
+
+    -- Google Places data (from google_places table via mapping)
+    g.google_place_id,
+    g.name as google_name,
+    g.rating as google_rating,
+    g.user_rating_count as google_reviews,
+    g.price_level as google_price_level,
+    g.formatted_address as google_address,
+    g.national_phone as google_phone,
+    g.website_uri as google_website,
+    g.opening_hours,
+    g.photos,
+    g.enriched_at as google_enriched_at,
+    m.mapping_status,
+
+    -- Business status (from Google Places)
+    g.business_status,
+
+    -- Additional metadata from Google
+    g.editorial_summary,
+    g.service_options,
+    g.accessibility,
+    g.amenities,
+    m.match_confidence,
+    m.match_method,
+
+    -- "Best" fields - prefer Google data when available, fall back to OSM
+    COALESCE(g.name, p.name) as best_name,
+    COALESCE(g.latitude, p.latitude) as best_latitude,
+    COALESCE(g.longitude, p.longitude) as best_longitude,
+    COALESCE(g.national_phone, p.phone) as best_phone,
+    COALESCE(g.website_uri, p.website) as best_website
+
+FROM osm_pois p
+LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+LEFT JOIN osm_google_mappings m ON p.osm_id = m.osm_id
+LEFT JOIN google_places g ON m.google_place_id = g.google_place_id AND m.mapping_status = 'active';
 
 -- ============================================================================
 -- Helper Functions
@@ -229,7 +366,7 @@ BEGIN
             p.location::geography,
             ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography
         ) AS distance_meters
-    FROM pois p
+    FROM osm_pois p
     WHERE p.poi_type = 'hotel'
       AND ST_DWithin(
         p.location::geography,
@@ -264,7 +401,7 @@ BEGIN
         p.latitude,
         p.longitude,
         p.stars
-    FROM pois p
+    FROM osm_pois p
     JOIN regions r ON ST_Contains(r.boundary, p.location)
     WHERE p.poi_type = 'hotel'
       AND (r.name ILIKE region_name OR r.name_en ILIKE region_name)
@@ -273,8 +410,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to search POIs by name (fuzzy search)
--- Usage: SELECT * FROM search_pois('democracy monument', 10);
-CREATE OR REPLACE FUNCTION search_pois(
+-- Usage: SELECT * FROM search_osm_pois('democracy monument', 10);
+CREATE OR REPLACE FUNCTION search_osm_pois(
     search_query TEXT,
     result_limit INTEGER DEFAULT 20
 )
@@ -297,7 +434,7 @@ BEGIN
         p.latitude,
         p.longitude,
         similarity(p.name, search_query) AS similarity_score
-    FROM pois p
+    FROM osm_pois p
     WHERE p.name % search_query  -- Fuzzy match using trigrams
     ORDER BY similarity_score DESC, p.name
     LIMIT result_limit;
@@ -305,8 +442,8 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- Function to find POIs near a point
--- Usage: SELECT * FROM find_pois_near_point(13.7563, 100.5018, 5000, 'attraction', 20);
-CREATE OR REPLACE FUNCTION find_pois_near_point(
+-- Usage: SELECT * FROM find_osm_pois_near_point(13.7563, 100.5018, 5000, 'attraction', 20);
+CREATE OR REPLACE FUNCTION find_osm_pois_near_point(
     lat DOUBLE PRECISION,
     lon DOUBLE PRECISION,
     radius_meters DOUBLE PRECISION,
@@ -338,7 +475,7 @@ BEGIN
                 p.location::geography,
                 ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography
             ) AS distance_meters
-        FROM pois p
+        FROM osm_pois p
         WHERE ST_DWithin(
             p.location::geography,
             ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography,
@@ -360,7 +497,7 @@ BEGIN
                 p.location::geography,
                 ST_SetSRID(ST_MakePoint(lon, lat), 4326)::geography
             ) AS distance_meters
-        FROM pois p
+        FROM osm_pois p
         WHERE p.poi_type = poi_type_filter
           AND ST_DWithin(
               p.location::geography,
@@ -380,16 +517,16 @@ $$ LANGUAGE plpgsql;
 -- Run these after import to verify data:
 -- SELECT COUNT(*) FROM geonames_countries;
 -- SELECT COUNT(*) FROM geonames_cities;
--- SELECT COUNT(*) FROM pois;
--- SELECT COUNT(*) FROM pois WHERE poi_type = 'hotel';
--- SELECT COUNT(*) FROM pois WHERE poi_type = 'restaurant';
+-- SELECT COUNT(*) FROM osm_pois;
+-- SELECT COUNT(*) FROM osm_pois WHERE poi_type = 'hotel';
+-- SELECT COUNT(*) FROM osm_pois WHERE poi_type = 'restaurant';
 -- SELECT COUNT(*) FROM regions;
 -- SELECT PostGIS_Version();
 --
 -- Test queries:
 -- SELECT * FROM find_hotels_near_point(13.7563, 100.5018, 5000, 10);
--- SELECT * FROM search_pois('democracy monument', 10);
--- SELECT * FROM find_pois_near_point(13.7563, 100.5018, 5000, 'restaurant', 20);
+-- SELECT * FROM search_osm_pois('democracy monument', 10);
+-- SELECT * FROM find_osm_pois_near_point(13.7563, 100.5018, 5000, 'restaurant', 20);
 --
 -- Get POI type statistics:
--- SELECT poi_type, COUNT(*) as count FROM pois GROUP BY poi_type ORDER BY count DESC;
+-- SELECT poi_type, COUNT(*) as count FROM osm_pois GROUP BY poi_type ORDER BY count DESC;

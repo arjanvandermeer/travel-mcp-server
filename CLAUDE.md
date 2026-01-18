@@ -1,6 +1,11 @@
 # Claude Instructions for hotel-mcp-server
 This file contains critical instructions for any LLM working on this project and can NEVER be ignored or deleted
 
+## 🚨 MANDATORY WORKFLOW RULE 🚨
+**BEFORE making ANY change, implementing ANY idea, or adding ANY feature:**
+**ASK: "Should we add this to TODO.md or work on it now?"**
+**NEVER proceed without explicit user approval.**
+
 ## Project Context
 This is a Model Context Protocol (MCP) server that provides hotel, restaurant and geographic information from open data sources (GeoNames, OpenStreetMap, Wikidata), lazy load from commercial sources (Google Places) and other commercial API's (OTA's, etc)
 

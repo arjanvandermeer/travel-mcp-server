@@ -33,151 +33,52 @@ MCP server for travel information using GeoNames city data, OpenStreetMap POI da
 - Distance-based sorting with configurable radius
 - POI type filtering (search specific types or all)
 
-## Installation
+## Quick Start
+
+**New to this project?** See [GETTING_STARTED.md](GETTING_STARTED.md) for a complete step-by-step setup guide that covers:
+- Installing Node.js, PostgreSQL, and PostGIS
+- Setting up the database (Docker or native installation)
+- Importing GeoNames and OpenStreetMap data
+- Configuring Google Places API (optional)
+- Setting up Claude Desktop integration
+- Troubleshooting common issues
+
+**Quick install for experienced users:**
 
 ```bash
+# Install dependencies
 npm install
-```
 
-## Configuration
-
-### Database Setup
-
-Create PostgreSQL database:
-
-```bash
+# Setup PostgreSQL database with PostGIS
 createdb travel
-psql travel < schema.sql
+psql travel < data/schema.sql
+
+# Import data
+npm run db:import-geonames                         # Import ~150k cities
+node src/import-osm-pbf.js data/REGION.osm.pbf all # Import OSM POIs
+
+# Start server
+npm start  # For Claude Desktop (stdio)
+# OR
+npm run start:http  # For HTTP/SSE clients
 ```
 
-### Google Places API (Optional but Recommended)
-
-1. Get API key from [Google Cloud Console](https://console.cloud.google.com/)
-2. Enable "Places API (New)"
-3. Configure using **database** (recommended for Claude Desktop) or environment variables:
-
-#### Option A: Database Configuration (Recommended)
-
-```bash
-# Set your API key in the database
-node scripts/manage-config.js set google_places_api_key YOUR_API_KEY_HERE
-
-# Verify configuration
-node scripts/manage-config.js list
-
-# Test the integration
-node test-db-config.js
-```
-
-#### Option B: Environment Variables
-
-Create `.env` file:
-
-```env
-DATABASE_URL=postgresql://traveluser:travelpass@localhost:5432/travel
-GOOGLE_PLACES_API_KEY=your_api_key_here
-GOOGLE_PLACES_ENABLED=true
-GOOGLE_PLACES_CACHE_HOURS=168  # 7 days
-```
-
-**Why database config?** Claude Desktop sometimes has issues reading environment variables. Database configuration is more reliable and persists across restarts.
-
-**Full documentation**: See [GOOGLE_PLACES_CONFIG.md](GOOGLE_PLACES_CONFIG.md) for detailed configuration options.
-
-**Note**: Google Places enrichment is optional. The server works fine with just OSM data.
-
-## Data Import
-
-### 1. Import GeoNames Cities
-
-```bash
-npm run import:geonames
-```
-
-Imports ~150k cities worldwide from GeoNames (cities with population >1000).
-
-### 2. Import Extended GeoNames Data (Optional)
-
-```bash
-npm run import:geonames-extended
-```
-
-Imports alternate names, admin codes, timezones, feature codes, and hierarchy data.
-
-### 3. Import OpenStreetMap POIs
-
-```bash
-npm run import:osm
-```
-
-Imports POI data (hotels, restaurants, attractions, etc.) from OpenStreetMap for specified regions.
-
-**Interactive mode**: Prompts for region selection (city, country, or custom bounding box)
-
-**Supported POI types**:
-- Accommodations: hotel, hostel, guest_house, motel
-- Dining: restaurant, cafe, bar, pub, fast_food, food_court
-- Attractions: museum, gallery, zoo, theme_park, attraction, castle, archaeological_site, ruins
-- Entertainment: cinema, theatre, nightclub
-- Shopping: shopping_mall, department_store, supermarket
-- Religious: place_of_worship
-- Others: monument, memorial, artwork, viewpoint
-
-## Usage
-
-### Start the MCP Server
+## Server Modes
 
 The server supports two transport modes:
 
-**1. stdio transport (for Claude Desktop):**
+**stdio transport** (for Claude Desktop):
 ```bash
 npm start
-# or with auto-reload during development:
-npm run dev
 ```
 
-**2. HTTP/SSE transport (for web clients, remote access, testing):**
+**HTTP/SSE transport** (for web clients, testing):
 ```bash
-npm run start:http
-# Starts on port 3000 by default
-# or specify custom port:
-node src/index-http.js 8080
-
-# Development mode with auto-reload:
-npm run dev:http
+npm run start:http  # Starts on port 3000
+node tests/test-http-client.js  # Test client
 ```
 
-**HTTP/SSE Features:**
-- Server-Sent Events (SSE) for real-time MCP communication
-- CORS enabled for browser-based clients
-- Health check endpoint: `http://localhost:3000/health`
-- SSE endpoint: `http://localhost:3000/sse`
-- Supports multiple simultaneous connections
-- Full documentation: [docs/HTTP_SSE_TRANSPORT.md](docs/HTTP_SSE_TRANSPORT.md)
-
-**Test the HTTP server:**
-```bash
-# Start server in one terminal
-npm run start:http
-
-# Test with client in another terminal
-node tests/test-http-client.js
-```
-
-### Claude Desktop Configuration
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
-
-```json
-{
-  "mcpServers": {
-    "travel-info": {
-      "command": "/path/to/node",
-      "args": ["/path/to/hotel-mcp-server/src/index.js"]
-    }
-  }
-}
-```
+For Claude Desktop configuration and detailed setup instructions, see [GETTING_STARTED.md](GETTING_STARTED.md).
 
 ## Available MCP Tools
 
