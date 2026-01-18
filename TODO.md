@@ -144,6 +144,48 @@ pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
 - Implement rate limiting to respect OSM Overpass API limits
 - Consider batch refresh during off-peak hours
 
+### Improve OSM Import Workflow
+- [ ] Create automatic PBF download and import workflow
+- [ ] Add `data/import/` directory for auto-processing PBF files
+- [ ] Implement file watcher or npm script that:
+  - Monitors `data/import/` directory
+  - Automatically imports any `.osm.pbf` files found
+  - Moves processed files to `data/processed/` or deletes them
+  - Logs import results to `data/import-log.txt`
+- [ ] Alternative approach: Create helper script that downloads + imports in one command:
+  ```bash
+  npm run import:osm -- thailand
+  # Downloads thailand-latest.osm.pbf and imports it automatically
+  ```
+- [ ] Add region name mapping for common countries/regions
+- [ ] Add progress indicator for download + import
+- [ ] Clean up data directory after successful import (optional)
+
+**Rationale**: Current workflow requires manual curl download + manual node command. This is error-prone and not user-friendly. Users need to know the Geofabrik URL structure and remember the exact import command syntax.
+
+**Proposed workflow:**
+```bash
+# Simple one-command import
+npm run import:osm thailand
+# or
+npm run import:osm netherlands
+# or
+npm run import:osm california
+
+# Or auto-import anything dropped in data/import/
+cp ~/Downloads/germany-latest.osm.pbf data/import/
+# Script auto-detects and imports it
+```
+
+**Benefits:**
+- Simpler user experience
+- Less error-prone
+- Automatic cleanup
+- Better for CI/CD pipelines
+- Reduces documentation complexity
+
+**Impact**: Medium - UX improvement, reduces setup friction
+
 ### Rename npm scripts for consistency
 - [ ] Rename `import` → `import:geonames` (for consistency with other import scripts)
 - [ ] Rename `import:extended` → `import:geonames-extended`
@@ -166,6 +208,94 @@ pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
 ```
 
 ## Medium Priority
+
+### Add Input Validation Layer
+- [ ] Create `src/validation.js` module with validator functions
+- [ ] Add validators for common parameters:
+  - `latitude`: -90 to 90
+  - `longitude`: -180 to 180
+  - `limit`: positive integer, max 100
+  - `poiType`: whitelist of valid types
+  - `radius`: positive number, reasonable max
+  - `coordinates`: array of valid lat/lon pairs
+- [ ] Create validation middleware for tool handlers
+- [ ] Add input sanitization for text fields (city names, search queries)
+- [ ] Add validation error responses with helpful messages
+- [ ] Test with invalid inputs to ensure proper error handling
+
+**Rationale**: Currently parameters are validated ad-hoc in each tool handler. A centralized validation layer improves security, consistency, and maintainability.
+
+**Impact**: Medium - security and code quality improvement
+
+### Add Type Safety with JSDoc
+- [ ] Add JSDoc comments to all public methods in database.js
+- [ ] Document parameter types, return types, and descriptions
+- [ ] Add @param, @returns, @throws tags
+- [ ] Configure VS Code to use JSDoc for IntelliSense
+- [ ] Consider migrating to TypeScript for full type safety (future)
+- [ ] Start with top 10 most-used functions:
+  - `searchCities()`, `searchPOIs()`, `getPOIDetails()`
+  - `enrichOSMPOI()`, `searchCitiesNearCoordinates()`
+  - `getCityByGeonameId()`, `getCityByName()`
+  - Google Places methods in google-places.js
+
+**Rationale**: No type documentation makes code harder to understand and maintain. JSDoc provides type hints without migrating to TypeScript.
+
+**Impact**: Medium - developer experience and maintainability
+
+### Extract Configuration Constants
+- [ ] Create `src/config.js` for all configuration constants
+- [ ] Extract search radii from database.js:280-286:
+  - LARGE_CITY: 50000 (>1M population)
+  - MEDIUM_CITY: 20000 (100K-1M)
+  - SMALL_CITY: 10000 (10K-100K)
+  - DEFAULT: 5000
+- [ ] Extract Google Places field masks from google-places.js
+- [ ] Extract batch sizes for imports
+- [ ] Extract API rate limits
+- [ ] Make configuration overridable via environment variables
+- [ ] Document all configuration options in README
+
+**Rationale**: Hard-coded constants scattered through code make configuration difficult. Centralizing improves maintainability.
+
+**Impact**: Medium - maintainability improvement
+
+### Improve Error Logging in Stdio Server
+- [ ] Replace console.error() with file-based logging in index.js
+- [ ] Create log stream to mcp-server.log
+- [ ] Add structured logging with timestamps and severity levels
+- [ ] Ensure no console output interferes with JSON-RPC protocol
+- [ ] Keep console.error() in HTTP server (it's safe there)
+- [ ] Add log rotation to prevent log files from growing too large
+
+**Rationale**: console.error() in stdio server could interfere with MCP JSON-RPC protocol. File-based logging is safer.
+
+**Impact**: Medium - reliability improvement
+
+### Add Request Rate Limiting for Google Places API
+- [ ] Implement token bucket algorithm for API rate limiting
+- [ ] Create RateLimiter class in google-places.js
+- [ ] Configure max requests per second/minute
+- [ ] Add queue for pending requests
+- [ ] Log when rate limit is hit
+- [ ] Add configuration for rate limits (env variables)
+- [ ] Track API usage statistics
+- [ ] Consider daily quota tracking to avoid bill shock
+
+**Rationale**: Prevent excessive API costs and quota exhaustion from runaway enrichment jobs.
+
+**Impact**: Medium - cost control and reliability
+
+### Optimize removeNullFields() Function
+- [ ] Refactor to use Object.fromEntries for cleaner code
+- [ ] Consider adding option to skip null removal for some responses
+- [ ] Add performance benchmarking for large result sets
+- [ ] Alternative: Configure JSON serializer to skip nulls globally
+- [ ] Alternative: Use streaming JSON for very large responses
+
+**Rationale**: Called on every response with recursive iteration. Could be optimized or replaced with serializer configuration.
+
+**Impact**: Low-Medium - performance optimization
 
 ### Add generic POI/amenities system (restaurants, attractions, etc.)
 - [ ] Design generic `pois` or `amenities` table structure
@@ -217,29 +347,66 @@ pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
 - [ ] Wikidata enrichment (images, descriptions, etc.)
 
 ### Testing Infrastructure
-- [ ] Choose and set up testing framework (Node.js built-in test runner, Vitest, or Jest)
+- [ ] Choose and set up testing framework (Vitest or Jest recommended)
 - [ ] Add npm script for running tests (`npm test`)
-- [ ] Set up test database (in-memory or separate test.db)
-- [ ] Add basic unit tests for database methods
-  - [ ] Test `searchCities()`, `getCitiesNearCoordinates()`, `getCitiesInPolygon()`
-  - [ ] Test `isPointInPolygon()` with known geometries
-  - [ ] Test hotel search methods
-- [ ] Add integration tests
-  - [ ] Test tool handlers in `executeToolHandler()`
+- [ ] Set up test database (PostgreSQL with PostGIS for integration tests)
+- [ ] Add unit tests for database.js methods:
+  - [ ] `searchCities()`, `getCitiesNearCoordinates()`, `getCitiesInPolygon()`
+  - [ ] `searchPOIs()`, `searchPOIsNearCoordinates()`
+  - [ ] `enrichOSMPOI()`, `upsertGooglePlace()`
+  - [ ] Validation functions
+- [ ] Add unit tests for google-places.js:
+  - [ ] Mock Google Places API responses
+  - [ ] Test `findMatchingPlace()` logic
+  - [ ] Test `enrichPOI()` transformation
+- [ ] Add integration tests:
+  - [ ] Test MCP tool handlers
+  - [ ] Test end-to-end search flows
   - [ ] Test OSM import parsing
   - [ ] Test GeoNames import parsing
-- [ ] Add test coverage reporting
+- [ ] Add test coverage reporting (c8 or nyc)
 - [ ] Add performance benchmarks for spatial queries
+- [ ] Set up CI/CD to run tests automatically
+
+**Current State**: Only 3 test files exist, no test framework configured
+
+**Impact**: Low - quality assurance (important but not blocking)
 
 ### Documentation
 - [ ] Add API documentation for all MCP tools
+- [ ] Add OpenAPI/Swagger spec for HTTP server
+- [ ] Add MCP tool JSON schemas
+- [ ] Add example requests/responses for each tool
 - [ ] Add developer guide for adding new data sources
+- [ ] Add authentication guide for HTTP server
 - [ ] Add example queries and use cases
+- [ ] Add troubleshooting guide
+
+**Impact**: Low - developer experience
+
+## Quick Wins (Can Implement Today)
+
+These are small improvements that can be done quickly but provide immediate value:
+
+- [ ] Fix Promise.all() await issue in batchEnrichPOIs() (5 minutes)
+- [ ] Extract constants to config.js (15 minutes)
+- [ ] Add JSDoc to top 10 most-used functions (30 minutes)
+- [ ] Create tools-config.js and eliminate duplication (45 minutes)
+- [ ] Add input validation for coordinates and limits (20 minutes)
+- [ ] Improve error messages in tool handlers (15 minutes)
+- [ ] Add .nvmrc or .node-version file for consistent Node version (2 minutes)
+
+**Impact**: Quick productivity and quality improvements
 
 ## Ideas / Future Exploration
 
 - Add support for other accommodation types (hostels, B&Bs, vacation rentals)
-- Integrate with real-time availability/pricing APIs
+- Integrate with real-time availability/pricing APIs (Booking.com, Expedia)
 - Add support for events and attractions from Wikidata
 - Consider creating a web UI for browsing/managing data
 - Add data freshness tracking and automatic updates
+- Support for other enrichment sources (Yelp, TripAdvisor, Foursquare)
+- Add image management and CDN integration
+- Support for user-contributed data and corrections
+- Multi-tenancy support for different use cases
+- GraphQL API alongside MCP protocol

@@ -106,7 +106,7 @@ async function importPBF(pbfPath, poiType = 'hotel') {
     if (poiType === 'all') {
       const stats = await pool.query(`
         SELECT poi_type, COUNT(*) as count
-        FROM osm_pois
+        FROM pois
         GROUP BY poi_type
         ORDER BY count DESC
       `);
@@ -122,36 +122,34 @@ async function importPBF(pbfPath, poiType = 'hotel') {
       // Show sample POIs
       console.log(`\nSample POIs from this import:`);
       const samples = await pool.query(`
-        SELECT poi_type, name, city
-        FROM osm_pois
+        SELECT poi_type, name, address
+        FROM pois
         WHERE name IS NOT NULL
         ORDER BY imported_at DESC
         LIMIT 10
       `);
 
       samples.rows.forEach(poi => {
-        const city = poi.city ? `, ${poi.city}` : '';
-        console.log(`  [${poi.poi_type}] ${poi.name}${city}`);
+        const address = poi.address ? `, ${poi.address}` : '';
+        console.log(`  [${poi.poi_type}] ${poi.name}${address}`);
       });
     } else {
       const stats = await pool.query(`
         SELECT COUNT(*) as total,
-               COUNT(DISTINCT country_code) as countries,
                COUNT(*) FILTER (WHERE stars IS NOT NULL) as with_stars
-        FROM osm_pois
+        FROM pois
         WHERE poi_type = $1
       `, [poiType]);
 
       console.log('\nDatabase statistics:');
       console.log(`  Total ${poiType}s: ${stats.rows[0].total}`);
-      console.log(`  Countries: ${stats.rows[0].countries}`);
       console.log(`  With star ratings: ${stats.rows[0].with_stars}`);
 
       // Show sample POIs
       console.log(`\nSample ${poiType}s from this import:`);
       const samples = await pool.query(`
-        SELECT name, stars, city, latitude, longitude
-        FROM osm_pois
+        SELECT name, stars, address, latitude, longitude
+        FROM pois
         WHERE poi_type = $1 AND name IS NOT NULL
         ORDER BY imported_at DESC
         LIMIT 5
@@ -159,8 +157,8 @@ async function importPBF(pbfPath, poiType = 'hotel') {
 
       samples.rows.forEach(poi => {
         const stars = poi.stars ? ` (${poi.stars}⭐)` : '';
-        const city = poi.city ? `, ${poi.city}` : '';
-        console.log(`  - ${poi.name}${stars}${city}`);
+        const address = poi.address ? `, ${poi.address}` : '';
+        console.log(`  - ${poi.name}${stars}${address}`);
       });
     }
 
@@ -262,6 +260,15 @@ function extractPOIData(node, poiType, regionName) {
   // Helper to truncate long strings
   const truncate = (str, maxLen) => str && str.length > maxLen ? str.substring(0, maxLen) : str;
 
+  // Build address from components
+  const addressParts = [];
+  if (tags['addr:housenumber']) addressParts.push(tags['addr:housenumber']);
+  if (tags['addr:street']) addressParts.push(tags['addr:street']);
+  if (tags['addr:city']) addressParts.push(tags['addr:city']);
+  if (tags['addr:postcode']) addressParts.push(tags['addr:postcode']);
+  if (tags['addr:country']) addressParts.push(tags['addr:country']);
+  const address = addressParts.length > 0 ? truncate(addressParts.join(', '), 500) : null;
+
   // Extract star rating (various formats in OSM)
   let stars = tags.stars || tags['stars:DEHOGA'] || null;
   if (stars) {
@@ -286,26 +293,19 @@ function extractPOIData(node, poiType, regionName) {
     osm_type: 'node',
     poi_type: poiType,
     name: truncate(tags.name, 500),
-    name_en: truncate(tags['name:en'], 500),
     latitude: node.lat,
     longitude: node.lon,
-    street: truncate(tags['addr:street'], 200),
-    housenumber: truncate(tags['addr:housenumber'], 20),
-    postcode: truncate(tags['addr:postcode'], 20),
-    city: truncate(tags['addr:city'], 200),
-    country: truncate(tags['addr:country'], 100),
-    country_code: tags['addr:country']?.substring(0, 2)?.toUpperCase() || null,
+    address,
     phone: truncate(tags.phone || tags['contact:phone'], 100),
     email: truncate(tags.email || tags['contact:email'], 200),
     website: truncate(tags.website || tags['contact:website'] || tags.url, 500),
-    description: truncate(tags.description, 1000),
-    wikipedia: truncate(tags.wikipedia, 200),
-    wikidata: truncate(tags.wikidata, 50),
-    brand: truncate(tags.brand, 200),
-    operator: truncate(tags.operator, 200),
+    opening_hours: truncate(tags.opening_hours, 500),
+    cuisine: truncate(tags.cuisine, 200),
+    wheelchair: truncate(tags.wheelchair, 20),
     stars: stars ? parseInt(stars) : null,
     rooms,
     beds,
+    source_region: regionName,
     osm_tags: tags, // Store all tags as JSONB
   };
 }
@@ -319,49 +319,40 @@ async function insertBatch(pool, pois) {
     await client.query('BEGIN');
 
     const insertQuery = `
-      INSERT INTO osm_pois (
-        osm_id, osm_type, poi_type, name, name_en,
+      INSERT INTO pois (
+        osm_id, osm_type, poi_type, name,
         location, latitude, longitude,
-        street, housenumber, postcode, city, country, country_code,
-        phone, email, website,
-        description, wikipedia, wikidata, brand, operator,
+        address, phone, email, website, opening_hours,
+        cuisine, wheelchair,
         stars, rooms, beds,
-        osm_tags, imported_at
+        source_region, tags, imported_at
       ) VALUES (
-        $1, $2, $3, $4, $5,
-        ST_SetSRID(ST_MakePoint($7, $6), 4326), $6, $7,
-        $8, $9, $10, $11, $12, $13,
+        $1, $2, $3, $4,
+        ST_SetSRID(ST_MakePoint($6, $5), 4326), $5, $6,
+        $7, $8, $9, $10, $11,
+        $12, $13,
         $14, $15, $16,
-        $17, $18, $19, $20, $21,
-        $22, $23, $24,
-        $25, CURRENT_TIMESTAMP
+        $17, $18, CURRENT_TIMESTAMP
       )
       ON CONFLICT (osm_id) DO UPDATE SET
         poi_type = EXCLUDED.poi_type,
         name = EXCLUDED.name,
-        name_en = EXCLUDED.name_en,
         location = EXCLUDED.location,
         latitude = EXCLUDED.latitude,
         longitude = EXCLUDED.longitude,
-        street = EXCLUDED.street,
-        housenumber = EXCLUDED.housenumber,
-        postcode = EXCLUDED.postcode,
-        city = EXCLUDED.city,
-        country = EXCLUDED.country,
-        country_code = EXCLUDED.country_code,
+        address = EXCLUDED.address,
         phone = EXCLUDED.phone,
         email = EXCLUDED.email,
         website = EXCLUDED.website,
-        description = EXCLUDED.description,
-        wikipedia = EXCLUDED.wikipedia,
-        wikidata = EXCLUDED.wikidata,
-        brand = EXCLUDED.brand,
-        operator = EXCLUDED.operator,
+        opening_hours = EXCLUDED.opening_hours,
+        cuisine = EXCLUDED.cuisine,
+        wheelchair = EXCLUDED.wheelchair,
         stars = EXCLUDED.stars,
         rooms = EXCLUDED.rooms,
         beds = EXCLUDED.beds,
-        osm_tags = EXCLUDED.osm_tags,
-        updated_at = CURRENT_TIMESTAMP
+        source_region = EXCLUDED.source_region,
+        tags = EXCLUDED.tags,
+        imported_at = CURRENT_TIMESTAMP
     `;
 
     for (const poi of pois) {
@@ -370,26 +361,19 @@ async function insertBatch(pool, pois) {
         poi.osm_type,
         poi.poi_type,
         poi.name,
-        poi.name_en,
         poi.latitude,
         poi.longitude,
-        poi.street,
-        poi.housenumber,
-        poi.postcode,
-        poi.city,
-        poi.country,
-        poi.country_code,
+        poi.address,
         poi.phone,
         poi.email,
         poi.website,
-        poi.description,
-        poi.wikipedia,
-        poi.wikidata,
-        poi.brand,
-        poi.operator,
+        poi.opening_hours,
+        poi.cuisine,
+        poi.wheelchair,
         poi.stars,
         poi.rooms,
         poi.beds,
+        poi.source_region,
         JSON.stringify(poi.osm_tags),
       ]);
     }
