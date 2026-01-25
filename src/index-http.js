@@ -12,9 +12,10 @@
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
-import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
+import { render } from './templates/index.js';
 import http from 'http';
 import { parse } from 'url';
 
@@ -29,6 +30,7 @@ const server = new Server(
   {
     capabilities: {
       tools: {},
+      resources: {},
     },
   }
 );
@@ -321,6 +323,94 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       };
     }
   });
+});
+
+// List available resources (MCP Apps)
+server.setRequestHandler(ListResourcesRequestSchema, async () => {
+  return {
+    resources: [
+      {
+        uri: 'ui://test-widget',
+        name: 'Test MCP Apps Widget',
+        description: 'A simple test widget to verify MCP Apps infrastructure',
+        mimeType: 'text/html+skybridge',
+      },
+    ],
+    // Resource templates allow parameterized URIs
+    resourceTemplates: [
+      {
+        uriTemplate: 'ui://poi/{osm_id}',
+        name: 'POI Detail Page',
+        description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
+        mimeType: 'text/html+skybridge',
+      },
+    ],
+  };
+});
+
+// Read resource content (MCP Apps)
+server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+  const { uri } = request.params;
+
+  // Test widget
+  if (uri === 'ui://test-widget') {
+    const html = render('test-widget', {
+      title: 'Travel MCP Server',
+      message: 'MCP Apps UI is working!',
+    });
+
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: 'text/html+skybridge',
+          text: html,
+        },
+      ],
+    };
+  }
+
+  // POI detail page: ui://poi/{osm_id}
+  const poiMatch = uri.match(/^ui:\/\/poi\/(\d+)$/);
+  if (poiMatch) {
+    const osmId = parseInt(poiMatch[1], 10);
+
+    const poi = await db.getPOIDetails(osmId);
+
+    if (!poi) {
+      const errorHtml = render('error', {
+        title: 'POI Not Found',
+        message: `No POI found with OSM ID: ${osmId}`,
+        code: osmId,
+      });
+      return {
+        contents: [{ uri, mimeType: 'text/html+skybridge', text: errorHtml }],
+      };
+    }
+
+    // Parse opening hours if available
+    const opening_hours = poi.google_opening_hours
+      ? JSON.parse(poi.google_opening_hours)
+      : null;
+
+    // Build rich HTML page using template
+    const html = render('poi-details', {
+      ...poi,
+      opening_hours,
+    });
+
+    return {
+      contents: [
+        {
+          uri,
+          mimeType: 'text/html+skybridge',
+          text: html,
+        },
+      ],
+    };
+  }
+
+  throw new Error(`Unknown resource: ${uri}`);
 });
 
 // Create HTTP server with SSE support

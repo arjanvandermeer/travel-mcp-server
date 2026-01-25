@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 20px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      min-height: 200px;
+      margin: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    h1 { margin: 0 0 10px 0; font-size: 24px; }
+    p { margin: 0; opacity: 0.9; }
+    .status {
+      margin-top: 20px;
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.2);
+      border-radius: 8px;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>{{title}}</h1>
+  <p>{{message}}</p>
+  <div class="status" id="status">Checking bridge...</div>
+  <script>
+    const status = document.getElementById('status');
+    if (window.openai) {
+      status.textContent = 'OpenAI bridge connected';
+    } else {
+      status.textContent = 'Bridge not available (testing outside ChatGPT)';
+    }
+  </script>
+</body>
+</html>
