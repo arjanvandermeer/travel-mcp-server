@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.5;
+    }
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 24px;
+    }
+    .header h1 { font-size: 24px; margin-bottom: 8px; }
+    .header .type { opacity: 0.8; font-size: 14px; text-transform: capitalize; }
+    .header .rating { margin-top: 12px; font-size: 18px; }
+    .content { padding: 20px; }
+    .card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
+    .card h2 { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .card p { font-size: 16px; }
+    .card a { color: #667eea; text-decoration: none; }
+    .hours-list { list-style: none; font-size: 14px; }
+    .hours-list li { padding: 4px 0; border-bottom: 1px solid #eee; }
+    .hours-list li:last-child { border-bottom: none; }
+    .map-link {
+      display: block;
+      background: #667eea;
+      color: white;
+      text-align: center;
+      padding: 14px;
+      border-radius: 8px;
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .map-link:hover { background: #5a6fd6; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="type">{{poi_type}}</div>
+    <h1>{{name}}</h1>
+    {{#if google_rating}}
+    <div class="rating">
+      {{formatRating google_rating}}
+      {{#if google_user_ratings_total}}
+      ({{google_user_ratings_total}} reviews)
+      {{/if}}
+    </div>
+    {{/if}}
+  </div>
+
+  <div class="content">
+    {{#if address}}
+    <div class="card">
+      <h2>Address</h2>
+      <p>{{address}}</p>
+    </div>
+    {{/if}}
+
+    {{#if google_formatted_address}}
+    <div class="card">
+      <h2>Address</h2>
+      <p>{{google_formatted_address}}</p>
+    </div>
+    {{/if}}
+
+    {{#if google_phone}}
+    <div class="card">
+      <h2>Phone</h2>
+      <p><a href="tel:{{google_phone}}">{{google_phone}}</a></p>
+    </div>
+    {{/if}}
+
+    {{#if google_website}}
+    <div class="card">
+      <h2>Website</h2>
+      <p><a href="{{google_website}}" target="_blank">{{google_website}}</a></p>
+    </div>
+    {{/if}}
+
+    {{#if opening_hours}}
+    <div class="card">
+      <h2>Opening Hours</h2>
+      <ul class="hours-list">
+        {{#each opening_hours}}
+        <li>{{this}}</li>
+        {{/each}}
+      </ul>
+    </div>
+    {{/if}}
+
+    <a class="map-link" href="{{mapsUrl latitude longitude}}" target="_blank">
+      Open in Google Maps
+    </a>
+  </div>
+
+  <script>
+    // Check for OpenAI bridge (when running in ChatGPT)
+    if (window.openai) {
+      console.log('OpenAI bridge connected');
+    }
+  </script>
+</body>
+</html>

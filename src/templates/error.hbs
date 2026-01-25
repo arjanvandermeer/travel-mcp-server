@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      padding: 40px;
+      text-align: center;
+      background: #fee;
+      color: #333;
+    }
+    h1 { color: #c00; margin-bottom: 16px; }
+    p { color: #666; }
+    .error-code {
+      margin-top: 20px;
+      padding: 10px;
+      background: #fff;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <h1>{{title}}</h1>
+  <p>{{message}}</p>
+  {{#if code}}
+  <div class="error-code">Error code: {{code}}</div>
+  {{/if}}
+</body>
+</html>
