@@ -335,6 +335,12 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
         description: 'A simple test widget to verify MCP Apps infrastructure',
         mimeType: 'text/html+skybridge',
       },
+      {
+        uri: 'ui://poi/random',
+        name: 'Random POI',
+        description: 'Shows a random POI from the database (for testing)',
+        mimeType: 'text/html+skybridge',
+      },
     ],
     // Resource templates allow parameterized URIs
     resourceTemplates: [
@@ -407,6 +413,36 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
           text: html,
         },
       ],
+    };
+  }
+
+  // Random POI: ui://poi/random
+  if (uri === 'ui://poi/random') {
+    const poi = await db.getRandomPOI();
+
+    if (!poi) {
+      const errorHtml = render('error', {
+        title: 'No POIs Found',
+        message: 'No POIs available in the database',
+        code: 'EMPTY_DB',
+      });
+      return {
+        contents: [{ uri, mimeType: 'text/html+skybridge', text: errorHtml }],
+      };
+    }
+
+    // Parse opening hours if available
+    const opening_hours = poi.google_opening_hours
+      ? JSON.parse(poi.google_opening_hours)
+      : null;
+
+    const html = render('poi-details', {
+      ...poi,
+      opening_hours,
+    });
+
+    return {
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
     };
   }
 
