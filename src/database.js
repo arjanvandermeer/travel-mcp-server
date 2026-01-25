@@ -1029,18 +1029,17 @@ export class TravelDatabase {
       LIMIT 10
     `);
 
-    // Get enrichment stats from POIs table
+    // Get enrichment stats from mappings table
     const enrichmentStats = await this.pool.query(`
       SELECT COUNT(*) as total_enriched
-      FROM osm_pois
-      WHERE google_place_id IS NOT NULL
+      FROM osm_google_mappings
+      WHERE google_place_id IS NOT NULL AND mapping_status = 'active'
     `);
 
     const mappingStats = await this.pool.query(`
-      SELECT google_enrichment_status as mapping_status, COUNT(*) as count
-      FROM osm_pois
-      WHERE google_enrichment_status IS NOT NULL
-      GROUP BY google_enrichment_status
+      SELECT mapping_status, COUNT(*) as count
+      FROM osm_google_mappings
+      GROUP BY mapping_status
     `);
 
     const stats = {
