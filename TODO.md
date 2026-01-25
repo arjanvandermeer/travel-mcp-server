@@ -227,6 +227,31 @@ npm run init:osm california
 
 ## Medium Priority
 
+### MCP Apps: Rich Interactive UI for Hotels & Restaurants
+- [ ] Build interactive HTML/JS webpage for browsing hotels and restaurants
+- [ ] Implement using MCP Apps Extension (SEP-1865) specification
+- [ ] Return `text/html+skybridge` resources for ChatGPT compatibility
+- [ ] Features to include:
+  - Interactive map with hotel/restaurant markers
+  - Filterable list view (by rating, price, distance)
+  - Photo galleries from Google Places
+  - Click-to-book or click-for-details actions
+- [ ] Use `ui://` URI scheme for resources as per MCP Apps spec
+- [ ] Implement `window.openai` bridge for bidirectional communication
+- [ ] Test with MCPJam Inspector or MCP-UI `ui-inspector`
+- [ ] Wait for Claude support or target ChatGPT initially
+
+**Rationale**: MCP Apps (joint Anthropic/OpenAI spec from Nov 2025) enables rich interactive UIs rendered in iframes within chat interfaces. This would provide a much better UX for browsing hotels than text-only responses.
+
+**References**:
+- MCP Apps spec: https://blog.modelcontextprotocol.io/posts/2025-11-21-mcp-apps/
+- OpenAI Apps SDK: https://developers.openai.com/apps-sdk/
+- MCP-UI: https://mcpui.dev/
+
+**Status**: ChatGPT supports it now; Claude support coming (Q1-Q2 2026 estimated)
+
+**Impact**: Medium - significant UX improvement for browsing results
+
 ### Add Input Validation Layer
 - [ ] Create `src/validation.js` module with validator functions
 - [ ] Add validators for common parameters:
