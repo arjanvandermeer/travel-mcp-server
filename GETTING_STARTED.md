@@ -212,8 +212,10 @@ psql postgresql://traveluser:travelpass@localhost:5432/travel -c "\dt"
 You should see tables like:
 - `geonames_countries`
 - `geonames_cities`
-- `pois`
+- `osm_pois`
 - `imports`
+- `google_places`
+- `osm_google_mappins`
 - `regions`
 
 **Verify PostGIS extension:**
@@ -335,7 +337,7 @@ Google Places API enriches POIs with ratings, reviews, photos, and verified busi
 4. Go to **Credentials** → **Create Credentials** → **API Key**
 5. Copy your API key
 
-**Cost estimate:** ~$0.05 per POI enrichment. With 7-day caching and batch limiting, typical usage is $5-20/month.
+**Cost estimate:** ~$0.05 per POI enrichment.With 7-day caching and batch limiting, it tries to save some money.
 
 ### 6.2 Store API Key in Database (Recommended)
 
