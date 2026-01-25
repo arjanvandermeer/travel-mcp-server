@@ -193,24 +193,24 @@ export class TravelDatabase {
         SELECT
           osm_id,
           poi_type,
-          best_name as name,
-          best_latitude as latitude,
-          best_longitude as longitude,
+          COALESCE(google_name, osm_name) as name,
+          osm_latitude as latitude,
+          osm_longitude as longitude,
           city,
           country_code,
           google_rating,
-          google_reviews,
+          google_review_count,
           google_price_level,
-          business_status,
+          google_business_status,
           osm_stars,
-          brand,
+          osm_brand,
           GREATEST(
-            similarity(best_name, $1),
-            COALESCE(similarity(brand, $1), 0)
+            similarity(COALESCE(google_name, osm_name), $1),
+            COALESCE(similarity(osm_brand, $1), 0)
           ) as name_similarity
         FROM enriched_pois
-        WHERE best_name IS NOT NULL
-          AND (best_name ILIKE $2 OR brand ILIKE $2)
+        WHERE osm_name IS NOT NULL
+          AND (osm_name ILIKE $2 OR google_name ILIKE $2 OR osm_brand ILIKE $2)
       `;
       queryParams = [name, `%${name}%`];
 
@@ -273,28 +273,28 @@ export class TravelDatabase {
         SELECT
           osm_id,
           poi_type,
-          best_name as name,
-          best_latitude as latitude,
-          best_longitude as longitude,
+          COALESCE(google_name, osm_name) as name,
+          osm_latitude as latitude,
+          osm_longitude as longitude,
           city,
           country_code,
           google_rating,
-          google_reviews,
+          google_review_count,
           google_price_level,
-          business_status,
+          google_business_status,
           osm_stars,
-          brand,
+          osm_brand,
           GREATEST(
-            similarity(best_name, $1),
-            COALESCE(similarity(brand, $1), 0)
+            similarity(COALESCE(google_name, osm_name), $1),
+            COALESCE(similarity(osm_brand, $1), 0)
           ) as name_similarity,
           ST_Distance(
             osm_location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
           ) / 1000.0 as distance_km
         FROM enriched_pois
-        WHERE best_name IS NOT NULL
-          AND (best_name ILIKE $4 OR brand ILIKE $4)
+        WHERE osm_name IS NOT NULL
+          AND (osm_name ILIKE $4 OR google_name ILIKE $4 OR osm_brand ILIKE $4)
           AND ST_DWithin(
             osm_location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
@@ -324,22 +324,22 @@ export class TravelDatabase {
       SELECT
         osm_id,
         poi_type,
-        best_name as name,
-        best_latitude as latitude,
-        best_longitude as longitude,
+        COALESCE(google_name, osm_name) as name,
+        osm_latitude as latitude,
+        osm_longitude as longitude,
         city,
         country_code,
         google_rating,
-        google_reviews,
+        google_review_count,
         google_price_level,
-        business_status,
+        google_business_status,
         osm_stars,
         ST_Distance(
           osm_location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
         ) / 1000.0 as distance_km
       FROM enriched_pois
-      WHERE best_name IS NOT NULL
+      WHERE osm_name IS NOT NULL
         AND ST_DWithin(
           osm_location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
@@ -380,44 +380,7 @@ export class TravelDatabase {
 
   async getPOIDetails(osmId) {
     const result = await this.pool.query(`
-      SELECT
-        osm_id,
-        osm_type,
-        poi_type,
-        osm_name,
-        osm_latitude,
-        osm_longitude,
-        street,
-        city,
-        country_code,
-        osm_website,
-        osm_phone,
-        osm_stars,
-        google_place_id,
-        google_name,
-        google_rating,
-        google_reviews,
-        google_price_level,
-        business_status,
-        google_address,
-        google_phone,
-        google_website,
-        editorial_summary,
-        opening_hours,
-        photos,
-        service_options,
-        accessibility,
-        amenities,
-        match_confidence,
-        match_method,
-        mapping_status,
-        google_enriched_at,
-        mapped_at,
-        best_name,
-        best_latitude,
-        best_longitude,
-        best_phone,
-        best_website
+      SELECT *
       FROM enriched_pois
       WHERE osm_id = $1
     `, [osmId]);
@@ -617,6 +580,17 @@ export class TravelDatabase {
     const cacheHours = parseInt(await this.getConfig('google_places_cache_hours', '168'));
     const cacheExpiresAt = new Date(Date.now() + cacheHours * 60 * 60 * 1000);
 
+    // Extract and format reviews (up to 5)
+    const reviews = placeData.reviews ? placeData.reviews.slice(0, 5).map(r => ({
+      author: r.authorAttribution?.displayName,
+      authorUri: r.authorAttribution?.uri,
+      rating: r.rating,
+      text: r.text?.text || r.originalText?.text,
+      language: r.text?.languageCode || r.originalText?.languageCode,
+      publishTime: r.publishTime,
+      relativeTime: r.relativePublishTimeDescription,
+    })) : null;
+
     await this.pool.query(`
       INSERT INTO google_places (
         google_place_id,
@@ -636,8 +610,10 @@ export class TravelDatabase {
         google_maps_uri,
         rating,
         user_rating_count,
+        reviews,
         price_level,
         business_status,
+        utc_offset_minutes,
         editorial_summary,
         opening_hours,
         current_opening_hours,
@@ -656,9 +632,9 @@ export class TravelDatabase {
         ST_SetSRID(ST_MakePoint($5, $4), 4326),
         $4, $5,
         $6, $7, $8, $9, $10, $11, $12, $13, $14,
-        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25,
-        $26, $27, $28,
-        $29, $30, $31
+        $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27,
+        $28, $29, $30,
+        $31, $32, $33
       )
       ON CONFLICT (google_place_id) DO UPDATE SET
         name = EXCLUDED.name,
@@ -677,8 +653,10 @@ export class TravelDatabase {
         google_maps_uri = EXCLUDED.google_maps_uri,
         rating = EXCLUDED.rating,
         user_rating_count = EXCLUDED.user_rating_count,
+        reviews = EXCLUDED.reviews,
         price_level = EXCLUDED.price_level,
         business_status = EXCLUDED.business_status,
+        utc_offset_minutes = EXCLUDED.utc_offset_minutes,
         editorial_summary = EXCLUDED.editorial_summary,
         opening_hours = EXCLUDED.opening_hours,
         current_opening_hours = EXCLUDED.current_opening_hours,
@@ -709,8 +687,10 @@ export class TravelDatabase {
       placeData.googleMapsUri || null,
       placeData.rating || null,
       placeData.userRatingCount || null,
+      JSON.stringify(reviews),
       placeData.priceLevel || null,
       placeData.businessStatus || null,
+      placeData.utcOffsetMinutes || null,
       placeData.editorialSummary?.text || null,
       JSON.stringify(placeData.regularOpeningHours || null),
       JSON.stringify(placeData.currentOpeningHours || null),
@@ -723,14 +703,31 @@ export class TravelDatabase {
         delivery: placeData.delivery,
         dineIn: placeData.dineIn,
         takeout: placeData.takeout,
+        curbsidePickup: placeData.curbsidePickup,
         reservable: placeData.reservable
       }),
       JSON.stringify(placeData.accessibilityOptions || null),
       JSON.stringify({
-        parkingOptions: placeData.parkingOptions,
-        evChargeOptions: placeData.evChargeOptions,
+        outdoorSeating: placeData.outdoorSeating,
+        liveMusic: placeData.liveMusic,
+        menuForChildren: placeData.menuForChildren,
+        servesBeer: placeData.servesBeer,
+        servesWine: placeData.servesWine,
+        servesCocktails: placeData.servesCocktails,
+        servesBreakfast: placeData.servesBreakfast,
+        servesBrunch: placeData.servesBrunch,
+        servesLunch: placeData.servesLunch,
+        servesDinner: placeData.servesDinner,
+        servesCoffee: placeData.servesCoffee,
+        servesDessert: placeData.servesDessert,
+        servesVegetarianFood: placeData.servesVegetarianFood,
+        goodForChildren: placeData.goodForChildren,
+        goodForGroups: placeData.goodForGroups,
+        goodForWatchingSports: placeData.goodForWatchingSports,
+        allowsDogs: placeData.allowsDogs,
         restroom: placeData.restroom,
-        allowsDogs: placeData.allowsDogs
+        parkingOptions: placeData.parkingOptions,
+        paymentOptions: placeData.paymentOptions
       }),
       JSON.stringify(placeData.plusCode || null),
       JSON.stringify(placeData.viewport || null),
