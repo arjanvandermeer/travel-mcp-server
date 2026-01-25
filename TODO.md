@@ -2,6 +2,17 @@
 
 ## High Priority
 
+### Add ChatGPT Support (StreamableHTTP Transport)
+- [ ] Add StreamableHTTP transport to index-http.js alongside SSE
+- [ ] StreamableHTTP at `/mcp` for ChatGPT (POST requests)
+- [ ] Keep SSE at `/sse` + `/message` for MCP Inspector (working now)
+- [ ] Test both transports work simultaneously
+- [ ] Update documentation with ChatGPT connection instructions (ngrok required)
+
+**Rationale**: ChatGPT uses StreamableHTTP transport (POST to single endpoint), while MCP Inspector uses SSE transport. Need to support both for full client compatibility.
+
+**Note**: Current SSE-only version works with MCP Inspector. ChatGPT support was attempted but broke MCP Inspector - needs careful implementation.
+
 ### CRITICAL: Eliminate Tool Definition Duplication
 - [ ] Create `src/tools-config.js` as single source of truth for MCP tool definitions
 - [ ] Export `toolsConfig` array with all tool definitions
