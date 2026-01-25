@@ -30,6 +30,7 @@
   "license": "MIT",
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.0.4",
+    "@sentry/node": "^10.36.0",
     "dotenv": "^16.4.5",
     "osm-pbf-parser": "^2.3.0",
     "pg": "^8.16.3",

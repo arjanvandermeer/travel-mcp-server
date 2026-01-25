@@ -61,14 +61,14 @@ export class TravelDatabase {
   async getConfig(key, defaultValue = null) {
     try {
       const result = await this.pool.query(
-        'SELECT value FROM config WHERE key = $1',
+        'SELECT value FROM app_config WHERE key = $1',
         [key]
       );
-      return result.rows.length > 0 ? result.rows[0].value : defaultValue;
+      return result.rows.length > 0 && result.rows[0].value ? result.rows[0].value : defaultValue;
     } catch (error) {
       // Silently fall back to default if config table doesn't exist
       // (config table is optional - using env vars is fine)
-      if (!error.message.includes('relation "config" does not exist')) {
+      if (!error.message.includes('relation "app_config" does not exist')) {
         console.error(`Error reading config ${key}:`, error.message);
       }
       return defaultValue;
@@ -77,13 +77,72 @@ export class TravelDatabase {
 
   async setConfig(key, value, description = null) {
     await this.pool.query(`
-      INSERT INTO config (key, value, description)
-      VALUES ($1, $2, $3)
+      INSERT INTO app_config (key, value, description, updated_at)
+      VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
       ON CONFLICT (key) DO UPDATE SET
         value = EXCLUDED.value,
-        description = COALESCE(EXCLUDED.description, config.description),
+        description = COALESCE(EXCLUDED.description, app_config.description),
         updated_at = CURRENT_TIMESTAMP
     `, [key, value, description]);
+  }
+
+  /**
+   * Get all config values matching a prefix (e.g., 'telemetry_' or 'google_places_')
+   */
+  async getConfigByPrefix(prefix) {
+    try {
+      const result = await this.pool.query(
+        'SELECT key, value FROM app_config WHERE key LIKE $1',
+        [`${prefix}%`]
+      );
+      const config = {};
+      for (const row of result.rows) {
+        // Remove prefix from key for cleaner access
+        const shortKey = row.key.replace(prefix, '');
+        config[shortKey] = row.value;
+      }
+      return config;
+    } catch (error) {
+      if (!error.message.includes('relation "app_config" does not exist')) {
+        console.error(`Error reading config prefix ${prefix}:`, error.message);
+      }
+      return {};
+    }
+  }
+
+  /**
+   * Get telemetry configuration (merged from database and environment)
+   * Database values take precedence over environment variables
+   */
+  async getTelemetryConfig() {
+    // Start with env vars as defaults
+    const config = {
+      sentryDsn: process.env.SENTRY_DSN || null,
+      enabled: process.env.TELEMETRY_ENABLED !== 'false',
+      sampleRate: parseFloat(process.env.TELEMETRY_SAMPLE_RATE || '1.0'),
+      environment: process.env.TELEMETRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
+      sendDev: process.env.SENTRY_SEND_DEV === 'true',
+    };
+
+    // Try to get database config
+    try {
+      const dbSentryDsn = await this.getConfig('sentry_dsn');
+      const dbEnabled = await this.getConfig('telemetry_enabled');
+      const dbSampleRate = await this.getConfig('telemetry_sample_rate');
+      const dbEnvironment = await this.getConfig('telemetry_environment');
+      const dbSendDev = await this.getConfig('sentry_send_dev');
+
+      // Override with database values if present
+      if (dbSentryDsn) config.sentryDsn = dbSentryDsn;
+      if (dbEnabled !== null) config.enabled = dbEnabled !== 'false';
+      if (dbSampleRate) config.sampleRate = parseFloat(dbSampleRate);
+      if (dbEnvironment) config.environment = dbEnvironment;
+      if (dbSendDev !== null) config.sendDev = dbSendDev === 'true';
+    } catch (error) {
+      // Database config is optional, continue with env vars
+    }
+
+    return config;
   }
 
   async initGooglePlaces() {

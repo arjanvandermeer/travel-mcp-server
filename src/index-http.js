@@ -14,6 +14,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
+import * as telemetry from './telemetry.js';
 import http from 'http';
 import { parse } from 'url';
 
@@ -215,146 +216,137 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
 
-  try {
-    switch (name) {
-      case 'search_cities': {
-        const cities = await db.searchCities(args.query, args.country_code, args.limit || 10);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(cities, null, 2),
-            },
-          ],
-        };
-      }
+  // Add breadcrumb for debugging
+  telemetry.addBreadcrumb(`Tool call: ${name}`, 'mcp.tool', args);
 
-      case 'search_hotels': {
-        const result = await db.searchPOIs({
-          name: args.query,
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          latitude: args.latitude,
-          longitude: args.longitude,
-          radius: args.radius_km,
-          poiType: 'hotel',
-          limit: args.limit || 50,
-        });
+  return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
+    try {
+      let result;
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case 'search_restaurants': {
-        // Define all food & drink types
-        const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
-
-        // Use specific type if provided, otherwise search all food types
-        const types = args.type ? [args.type] : foodTypes;
-
-        const result = await db.searchPOIs({
-          name: args.query,
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          latitude: args.latitude,
-          longitude: args.longitude,
-          radius: args.radius_km,
-          poiTypes: types,
-          limit: args.limit || 50,
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case 'search_pois': {
-        const result = await db.searchPOIs({
-          name: args.query,
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          latitude: args.latitude,
-          longitude: args.longitude,
-          radius: args.radius_km,
-          poiType: args.poi_type,
-          limit: args.limit || 50,
-        });
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case 'get_poi_details': {
-        const poi = await db.getPOIDetails(args.osm_id);
-
-        if (!poi) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({ error: 'POI not found', osm_id: args.osm_id }, null, 2),
-              },
-            ],
-          };
+      switch (name) {
+        case 'search_cities': {
+          result = await db.searchCities(args.query, args.country_code, args.limit || 10);
+          break;
         }
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(poi, null, 2),
-            },
-          ],
-        };
+        case 'search_hotels': {
+          result = await db.searchPOIs({
+            name: args.query,
+            cityName: args.city_name,
+            countryCode: args.country_code,
+            latitude: args.latitude,
+            longitude: args.longitude,
+            radius: args.radius_km,
+            poiType: 'hotel',
+            limit: args.limit || 50,
+          });
+          break;
+        }
+
+        case 'search_restaurants': {
+          const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+          const types = args.type ? [args.type] : foodTypes;
+
+          result = await db.searchPOIs({
+            name: args.query,
+            cityName: args.city_name,
+            countryCode: args.country_code,
+            latitude: args.latitude,
+            longitude: args.longitude,
+            radius: args.radius_km,
+            poiTypes: types,
+            limit: args.limit || 50,
+          });
+          break;
+        }
+
+        case 'search_pois': {
+          result = await db.searchPOIs({
+            name: args.query,
+            cityName: args.city_name,
+            countryCode: args.country_code,
+            latitude: args.latitude,
+            longitude: args.longitude,
+            radius: args.radius_km,
+            poiType: args.poi_type,
+            limit: args.limit || 50,
+          });
+          break;
+        }
+
+        case 'get_poi_details': {
+          const poi = await db.getPOIDetails(args.osm_id);
+
+          if (!poi) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({ error: 'POI not found', osm_id: args.osm_id }, null, 2),
+                },
+              ],
+            };
+          }
+          result = poi;
+          break;
+        }
+
+        case 'get_stats': {
+          result = await db.getStats();
+          break;
+        }
+
+        default:
+          throw new Error(`Unknown tool: ${name}`);
       }
 
-      case 'get_stats': {
-        const stats = await db.getStats();
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(stats, null, 2),
-            },
-          ],
-        };
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      telemetry.captureException(error, { tool: name, args });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
     }
-  } catch (error) {
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${error.message}`,
-        },
-      ],
-      isError: true,
-    };
-  }
+  });
 });
 
 // Create HTTP server with SSE support
 async function main() {
+  // Test database connection first
+  try {
+    await db.testConnection();
+    console.log('Database connection successful');
+  } catch (err) {
+    console.error('FATAL: Cannot connect to database:', err.message);
+    console.error('Make sure PostgreSQL is running');
+    process.exit(1);
+  }
+
+  // Initialize telemetry
+  try {
+    const telemetryConfig = await db.getTelemetryConfig();
+    await telemetry.initTelemetry(telemetryConfig);
+    if (telemetry.isEnabled()) {
+      console.log('Telemetry initialized successfully');
+      telemetry.setTag('server.type', 'http');
+    }
+  } catch (err) {
+    console.warn('Failed to initialize telemetry:', err.message);
+  }
+
   // Store active transport (only one at a time for now)
   let activeTransport = null;
 
@@ -440,7 +432,22 @@ async function main() {
   });
 }
 
-main().catch((error) => {
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+  console.log('SIGTERM received, shutting down...');
+  await telemetry.flush();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  console.log('SIGINT received, shutting down...');
+  await telemetry.flush();
+  process.exit(0);
+});
+
+main().catch(async (error) => {
   console.error('Server error:', error);
+  telemetry.captureException(error, { context: 'server_startup' });
+  await telemetry.flush();
   process.exit(1);
 });

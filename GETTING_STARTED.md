@@ -370,6 +370,76 @@ node tests/test-google-places.js
 
 ---
 
+## Step 6.5: Configure Sentry Telemetry (Optional)
+
+Sentry provides error tracking and performance monitoring. It helps you understand how the server is performing and catch errors in production.
+
+**Note:** This step is **optional**. The server works fine without telemetry.
+
+### 6.5.1 Get Sentry DSN
+
+1. Go to [Sentry.io](https://sentry.io/) and create an account
+2. Create a new project (select Node.js)
+3. Go to **Settings** → **Projects** → **YOUR_PROJECT** → **Client Keys (DSN)**
+4. Copy your DSN (looks like: `https://xxxxx@xxx.ingest.sentry.io/xxxxx`)
+
+**Cost:** Sentry has a free tier with 5K errors/month.
+
+### 6.5.2 Store DSN in Database (Recommended)
+
+```bash
+# Set Sentry DSN
+node scripts/manage-config.js set sentry_dsn YOUR_SENTRY_DSN_HERE
+
+# Verify it's saved
+node scripts/manage-config.js list
+```
+
+### 6.5.3 Alternative: Environment Variables
+
+Add to `.env` file:
+
+```bash
+SENTRY_DSN=https://xxxxx@xxx.ingest.sentry.io/xxxxx
+TELEMETRY_ENABLED=true
+TELEMETRY_SAMPLE_RATE=1.0      # 1.0 = 100% of requests traced
+TELEMETRY_ENVIRONMENT=development
+```
+
+### 6.5.4 Configuration Options
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `SENTRY_DSN` | (none) | Your Sentry DSN. Required for telemetry. |
+| `TELEMETRY_ENABLED` | `true` | Set to `false` to disable telemetry even if DSN is set |
+| `TELEMETRY_SAMPLE_RATE` | `1.0` | Trace sample rate 0.0-1.0 (reduce for high-traffic) |
+| `TELEMETRY_ENVIRONMENT` | `development` | Environment name shown in Sentry |
+| `SENTRY_SEND_DEV` | (not set) | Set to `true` to send events in development mode |
+
+### 6.5.5 What Gets Tracked
+
+- **Errors:** All exceptions are captured with context
+- **Performance:** Request duration for each MCP tool call
+- **Breadcrumbs:** Tool calls and their arguments for debugging
+
+### 6.5.6 Verify Telemetry
+
+After configuring, start the server and make a request:
+
+```bash
+npm start
+```
+
+Check the logs for:
+```
+[Telemetry] Sentry initialized successfully
+[Telemetry] Enabled (env: development, sample: 1)
+```
+
+Then visit your Sentry dashboard to see events.
+
+---
+
 ## Step 7: Test the MCP Server
 
 ### Test stdio server (for Claude Desktop):

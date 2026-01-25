@@ -9,6 +9,7 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
+import * as telemetry from './telemetry.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -239,149 +240,123 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
   log('INFO', `Tool call received: ${name}`, args);
 
-  try {
-    switch (name) {
-      case 'search_cities': {
-        const cities = await db.searchCities(args.query, args.country_code, args.limit || 10);
-        log('INFO', `search_cities returned ${cities.length} results`);
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(cities, null, 2),
-            },
-          ],
-        };
-      }
+  // Add breadcrumb for debugging
+  telemetry.addBreadcrumb(`Tool call: ${name}`, 'mcp.tool', args);
 
-      case 'search_hotels': {
-        const result = await db.searchPOIs({
-          name: args.query,
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          latitude: args.latitude,
-          longitude: args.longitude,
-          radius: args.radius_km,  // Let database layer calculate radius based on city population if not specified
-          poiType: 'hotel',
-          limit: args.limit || 50,
-        });
-        log('INFO', `search_hotels returned ${result.length} results`);
+  return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
+    try {
+      let result;
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case 'search_restaurants': {
-        // Define all food & drink types
-        const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
-
-        // Use specific type if provided, otherwise search all food types
-        const types = args.type ? [args.type] : foodTypes;
-
-        const result = await db.searchPOIs({
-          name: args.query,
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          latitude: args.latitude,
-          longitude: args.longitude,
-          radius: args.radius_km,  // Let database layer calculate radius based on city population if not specified
-          poiTypes: types,
-          limit: args.limit || 50,
-        });
-        log('INFO', `search_restaurants returned ${result.length} results`);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case 'search_pois': {
-        const result = await db.searchPOIs({
-          name: args.query,
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          latitude: args.latitude,
-          longitude: args.longitude,
-          radius: args.radius_km,  // Let database layer calculate radius based on city population if not specified
-          poiType: args.poi_type,
-          limit: args.limit || 50,
-        });
-        log('INFO', `search_pois returned ${result.length} results`);
-
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(result, null, 2),
-            },
-          ],
-        };
-      }
-
-      case 'get_poi_details': {
-        const poi = await db.getPOIDetails(args.osm_id);
-        log('INFO', `get_poi_details returned ${poi ? 'found' : 'not found'}`);
-
-        if (!poi) {
-          return {
-            content: [
-              {
-                type: 'text',
-                text: JSON.stringify({ error: 'POI not found', osm_id: args.osm_id }, null, 2),
-              },
-            ],
-          };
+      switch (name) {
+        case 'search_cities': {
+          const cities = await db.searchCities(args.query, args.country_code, args.limit || 10);
+          log('INFO', `search_cities returned ${cities.length} results`);
+          result = cities;
+          break;
         }
 
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(poi, null, 2),
-            },
-          ],
-        };
+        case 'search_hotels': {
+          const hotels = await db.searchPOIs({
+            name: args.query,
+            cityName: args.city_name,
+            countryCode: args.country_code,
+            latitude: args.latitude,
+            longitude: args.longitude,
+            radius: args.radius_km,
+            poiType: 'hotel',
+            limit: args.limit || 50,
+          });
+          log('INFO', `search_hotels returned ${hotels.length} results`);
+          result = hotels;
+          break;
+        }
+
+        case 'search_restaurants': {
+          const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+          const types = args.type ? [args.type] : foodTypes;
+
+          const restaurants = await db.searchPOIs({
+            name: args.query,
+            cityName: args.city_name,
+            countryCode: args.country_code,
+            latitude: args.latitude,
+            longitude: args.longitude,
+            radius: args.radius_km,
+            poiTypes: types,
+            limit: args.limit || 50,
+          });
+          log('INFO', `search_restaurants returned ${restaurants.length} results`);
+          result = restaurants;
+          break;
+        }
+
+        case 'search_pois': {
+          const pois = await db.searchPOIs({
+            name: args.query,
+            cityName: args.city_name,
+            countryCode: args.country_code,
+            latitude: args.latitude,
+            longitude: args.longitude,
+            radius: args.radius_km,
+            poiType: args.poi_type,
+            limit: args.limit || 50,
+          });
+          log('INFO', `search_pois returned ${pois.length} results`);
+          result = pois;
+          break;
+        }
+
+        case 'get_poi_details': {
+          const poi = await db.getPOIDetails(args.osm_id);
+          log('INFO', `get_poi_details returned ${poi ? 'found' : 'not found'}`);
+
+          if (!poi) {
+            return {
+              content: [
+                {
+                  type: 'text',
+                  text: JSON.stringify({ error: 'POI not found', osm_id: args.osm_id }, null, 2),
+                },
+              ],
+            };
+          }
+          result = poi;
+          break;
+        }
+
+        case 'get_stats': {
+          const stats = await db.getStats();
+          log('INFO', 'get_stats returned successfully');
+          result = stats;
+          break;
+        }
+
+        default:
+          throw new Error(`Unknown tool: ${name}`);
       }
 
-      case 'get_stats': {
-        const stats = await db.getStats();
-        log('INFO', 'get_stats returned successfully');
-        return {
-          content: [
-            {
-              type: 'text',
-              text: JSON.stringify(stats, null, 2),
-            },
-          ],
-        };
-      }
-
-      default:
-        throw new Error(`Unknown tool: ${name}`);
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(result, null, 2),
+          },
+        ],
+      };
+    } catch (error) {
+      log('ERROR', `Tool ${name} failed`, { error: error.message, stack: error.stack });
+      telemetry.captureException(error, { tool: name, args });
+      return {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${error.message}`,
+          },
+        ],
+        isError: true,
+      };
     }
-  } catch (error) {
-    log('ERROR', `Tool ${name} failed`, { error: error.message, stack: error.stack });
-    return {
-      content: [
-        {
-          type: 'text',
-          text: `Error: ${error.message}`,
-        },
-      ],
-      isError: true,
-    };
-  }
+  });
 });
 
 // Start server
@@ -400,6 +375,22 @@ async function main() {
     process.exit(1);
   }
 
+  // Initialize telemetry (after database is ready to load config)
+  log('INFO', 'Initializing telemetry...');
+  try {
+    const telemetryConfig = await db.getTelemetryConfig();
+    await telemetry.initTelemetry(telemetryConfig);
+    if (telemetry.isEnabled()) {
+      log('INFO', 'Telemetry initialized successfully');
+      telemetry.setTag('server.type', 'stdio');
+    } else {
+      log('INFO', 'Telemetry is disabled (no SENTRY_DSN configured)');
+    }
+  } catch (err) {
+    log('WARN', 'Failed to initialize telemetry', err.message);
+    // Continue without telemetry
+  }
+
   log('INFO', 'Creating StdioServerTransport...');
   const transport = new StdioServerTransport();
 
@@ -410,8 +401,23 @@ async function main() {
   console.error('Travel MCP Server (PostgreSQL) running on stdio');
 }
 
-main().catch((error) => {
+// Handle graceful shutdown
+process.on('SIGTERM', async () => {
+  log('INFO', 'SIGTERM received, shutting down...');
+  await telemetry.flush();
+  process.exit(0);
+});
+
+process.on('SIGINT', async () => {
+  log('INFO', 'SIGINT received, shutting down...');
+  await telemetry.flush();
+  process.exit(0);
+});
+
+main().catch(async (error) => {
   log('ERROR', 'Server startup failed', { error: error.message, stack: error.stack });
+  telemetry.captureException(error, { context: 'server_startup' });
+  await telemetry.flush();
   console.error('Server error:', error);
   process.exit(1);
 });
