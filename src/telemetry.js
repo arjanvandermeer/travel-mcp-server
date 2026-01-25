@@ -62,6 +62,14 @@ function initSentry(config) {
         }
         return event;
       },
+      beforeSendTransaction(transaction) {
+        // Don't send transactions in development unless explicitly enabled
+        if (config.environment === 'development' && !config.sendDev) {
+          console.error('[Telemetry] Sentry transaction (not sent in dev):', transaction.transaction);
+          return null;
+        }
+        return transaction;
+      },
     });
 
     sentryInitialized = true;
@@ -104,7 +112,7 @@ export async function initTelemetry(dbConfig = null) {
   telemetryEnabled = sentryOk;
 
   if (telemetryEnabled) {
-    console.error(`[Telemetry] Enabled (env: ${config.environment}, sample: ${config.sampleRate})`);
+    console.error(`[Telemetry] Enabled (env: ${config.environment}, sample: ${config.sampleRate}, sendDev: ${config.sendDev})`);
   }
 
   return telemetryEnabled;
@@ -158,25 +166,28 @@ export function startTransaction(name, op = 'function') {
     };
   }
 
-  return Sentry.startSpan({ name, op }, (span) => {
-    return {
-      span,
-      finish: () => span?.end(),
-      startChild: (childOp, description) => {
-        const childSpan = Sentry.startInactiveSpan({
-          name: description || childOp,
-          op: childOp,
-        });
-        return {
-          finish: () => childSpan?.end(),
-          setData: (key, value) => childSpan?.setAttribute(key, value),
-        };
-      },
-      setData: (key, value) => span?.setAttribute(key, value),
-      setTag: (key, value) => span?.setAttribute(key, value),
-      setStatus: (status) => span?.setStatus({ code: status === 'ok' ? 1 : 2 }),
-    };
-  });
+  // Use startInactiveSpan so the span doesn't auto-end when we return
+  // The caller is responsible for calling finish()
+  const span = Sentry.startInactiveSpan({ name, op });
+
+  return {
+    span,
+    finish: () => span?.end(),
+    startChild: (childOp, description) => {
+      const childSpan = Sentry.startInactiveSpan({
+        name: description || childOp,
+        op: childOp,
+        parentSpan: span,
+      });
+      return {
+        finish: () => childSpan?.end(),
+        setData: (key, value) => childSpan?.setAttribute(key, value),
+      };
+    },
+    setData: (key, value) => span?.setAttribute(key, value),
+    setTag: (key, value) => span?.setAttribute(key, value),
+    setStatus: (status) => span?.setStatus({ code: status === 'ok' ? 1 : 2 }),
+  };
 }
 
 /**
