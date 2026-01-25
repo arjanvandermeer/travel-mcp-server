@@ -65,9 +65,10 @@ function initSentry(config) {
       beforeSendTransaction(transaction) {
         // Don't send transactions in development unless explicitly enabled
         if (config.environment === 'development' && !config.sendDev) {
-          console.error('[Telemetry] Sentry transaction (not sent in dev):', transaction.transaction);
+          console.error('[Telemetry] Sentry transaction BLOCKED (sendDev=false):', transaction.transaction);
           return null;
         }
+        console.error('[Telemetry] Sentry transaction SENDING:', transaction.transaction);
         return transaction;
       },
     });
@@ -201,13 +202,20 @@ export async function withTransaction(name, op, fn) {
     return fn();
   }
 
+  console.error(`[Telemetry] Starting span: ${name} (${op})`);
+  const startTime = Date.now();
+
   return Sentry.startSpan({ name, op }, async (span) => {
     try {
       const result = await fn();
       span?.setStatus({ code: 1 }); // OK
+      const duration = Date.now() - startTime;
+      console.error(`[Telemetry] Span completed: ${name} (${duration}ms, status: ok)`);
       return result;
     } catch (error) {
       span?.setStatus({ code: 2, message: error.message }); // ERROR
+      const duration = Date.now() - startTime;
+      console.error(`[Telemetry] Span completed: ${name} (${duration}ms, status: error)`);
       Sentry.captureException(error);
       throw error;
     }

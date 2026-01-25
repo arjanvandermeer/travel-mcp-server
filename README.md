@@ -74,11 +74,28 @@ The server supports two transport modes:
 npm start
 ```
 
-**HTTP/SSE transport** (for web clients, testing):
+**HTTP transport** (for web clients, ChatGPT, MCP Inspector):
 ```bash
 npm run start:http  # Starts on port 3000
-node tests/test-http-client.js  # Test client
 ```
+
+The HTTP server supports two transport protocols simultaneously:
+
+| Endpoint | Protocol | Use Case |
+|----------|----------|----------|
+| `POST /` | StreamableHTTP | ChatGPT and modern MCP clients |
+| `GET /sse` | SSE | MCP Inspector and legacy SSE clients |
+| `GET /mcp` | SSE (alt) | Alternative SSE endpoint |
+| `GET /health` | JSON | Health check endpoint |
+
+**Connecting ChatGPT:**
+1. Start the HTTP server: `npm run start:http`
+2. Expose via ngrok: `ngrok http 3000`
+3. Use the ngrok HTTPS URL in ChatGPT's MCP settings
+
+**Connecting MCP Inspector:**
+1. Start the HTTP server: `npm run start:http`
+2. In MCP Inspector, connect to: `http://localhost:3000/sse`
 
 For Claude Desktop configuration and detailed setup instructions, see [GETTING_STARTED.md](GETTING_STARTED.md).
 
@@ -320,17 +337,26 @@ See [TODO.md](TODO.md) for planned improvements:
 ```
 hotel-mcp-server/
 ├── src/
-│   ├── index.js          # MCP server (stdio)
-│   ├── database.js       # Database layer with all queries
+│   ├── index.js                   # MCP server (stdio transport)
+│   ├── index-http.js              # MCP server (HTTP transport - dual protocol)
+│   ├── database.js                # Database layer with all queries
 │   ├── google-places.js           # Google Places API client
+│   ├── telemetry.js               # Sentry telemetry integration
+│   ├── templates/                 # Handlebars templates for MCP Apps
+│   │   ├── index.js               # Template engine
+│   │   ├── poi-details.hbs        # POI detail page template
+│   │   ├── test-widget.hbs        # Test widget template
+│   │   └── error.hbs              # Error page template
 │   ├── import-geonames.js         # GeoNames city import
 │   ├── import-geonames-extended.js# Extended GeoNames data
 │   └── import-osm.js              # OpenStreetMap POI import
-├── schema.sql                     # PostgreSQL schema with PostGIS
+├── data/
+│   └── schema.sql                 # PostgreSQL schema with PostGIS
 ├── .env                           # Configuration (API keys)
 ├── .env.example                   # Configuration template
 ├── package.json                   # Dependencies and scripts
 ├── TODO.md                        # Planned improvements
+├── GETTING_STARTED.md             # Setup guide
 ├── GOOGLE_PLACES_INTEGRATION.md   # Google Places docs
 └── README.md                      # This file
 ```

@@ -459,13 +459,40 @@ Press `Ctrl+C` to stop.
 
 ### Test HTTP server (for web clients):
 
+The HTTP server supports two MCP transport protocols simultaneously:
+
+| Endpoint | Protocol | Use Case |
+|----------|----------|----------|
+| `POST /` | StreamableHTTP | ChatGPT and modern MCP clients |
+| `GET /sse` | SSE | MCP Inspector and legacy SSE clients |
+| `GET /mcp` | SSE (alt) | Alternative SSE endpoint |
+| `GET /health` | JSON | Health check endpoint |
+
 ```bash
 # Terminal 1: Start server
 npm run start:http
+# Output shows:
+#   Travel MCP Server running on http://localhost:3000
+#   Endpoints:
+#     - StreamableHTTP: POST http://localhost:3000/
+#     - SSE:            GET  http://localhost:3000/sse
+#     - SSE (alt):      GET  http://localhost:3000/mcp
+#     - Health:         GET  http://localhost:3000/health
 
 # Terminal 2: Test with client
 node tests/test-http-client.js
 ```
+
+### Connecting ChatGPT to Your Server
+
+1. Start the HTTP server: `npm run start:http`
+2. Expose via ngrok (ChatGPT requires HTTPS):
+   ```bash
+   ngrok http 3000
+   ```
+3. Copy the ngrok HTTPS URL (e.g., `https://abc123.ngrok.io`)
+4. In ChatGPT, go to Settings > MCP Servers > Add custom server
+5. Use the ngrok URL as your server endpoint
 
 ### Alternative: Test with MCP Inspector
 
@@ -475,7 +502,7 @@ MCP Inspector provides a web-based UI to interactively test your MCP server with
 # Run stdio server with Inspector
 npm run inspect
 
-# Run HTTP server with Inspector
+# Run HTTP server with Inspector (connects to /sse SSE endpoint)
 npm run inspect:http
 
 # With auto-reload on code changes
