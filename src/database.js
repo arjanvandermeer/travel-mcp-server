@@ -392,6 +392,7 @@ export class TravelDatabase {
         match_method,
         mapping_status,
         google_enriched_at,
+        mapped_at,
         best_name,
         best_latitude,
         best_longitude,
@@ -415,7 +416,7 @@ export class TravelDatabase {
     } else if (poi.mapping_status === 'pending') {
       // Enrichment already in progress
       enrichment_status = 'pending';
-      const startedAt = poi.google_enriched_at ? new Date(poi.google_enriched_at) : new Date();
+      const startedAt = poi.mapped_at ? new Date(poi.mapped_at) : new Date();
       const checkBackAt = new Date(startedAt.getTime() + 60000);
       enrichment_message = `Google Places enrichment already in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()} for complete information.`;
     } else if (poi.mapping_status === 'not_found') {

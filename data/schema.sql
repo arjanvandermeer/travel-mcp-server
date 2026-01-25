@@ -319,6 +319,7 @@ SELECT
     g.amenities,
     m.match_confidence,
     m.match_method,
+    m.mapped_at,
 
     -- "Best" fields - prefer Google data when available, fall back to OSM
     COALESCE(g.name, p.name) as best_name,
