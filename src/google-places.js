@@ -489,12 +489,14 @@ export class GooglePlacesClient {
         weekday_text: details.currentOpeningHours.weekdayDescriptions,
       } : null,
 
-      // Photos (up to 10)
+      // Photos (up to 10) with computed URLs
       photos: details.photos ? details.photos.slice(0, 10).map(p => ({
         name: p.name,
         widthPx: p.widthPx,
         heightPx: p.heightPx,
         authorAttributions: p.authorAttributions,
+        url: this.getPhotoUrl(p.name, 800, 600),
+        url_thumbnail: this.getPhotoUrl(p.name, 200, 150),
       })) : null,
 
       // Service options

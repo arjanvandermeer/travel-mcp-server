@@ -38,6 +38,31 @@ CREATE INDEX idx_imports_status ON imports(status);
 CREATE INDEX idx_imports_completed ON imports(completed_at DESC);
 
 -- ============================================================================
+-- Application Configuration
+-- Stores API keys and settings that can be managed via database
+-- ============================================================================
+DROP TABLE IF EXISTS app_config CASCADE;
+CREATE TABLE app_config (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT,
+    encrypted BOOLEAN DEFAULT FALSE,  -- Flag if value is encrypted
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert default configuration entries
+INSERT INTO app_config (key, value, encrypted, description) VALUES
+    ('google_places_api_key', NULL, TRUE, 'Google Places API key'),
+    ('google_places_enabled', 'true', FALSE, 'Enable/disable Google Places enrichment'),
+    ('google_places_cache_hours', '168', FALSE, 'Hours to cache Google Places data (default: 7 days)'),
+    ('sentry_dsn', NULL, TRUE, 'Sentry DSN for error tracking and performance monitoring'),
+    ('telemetry_enabled', 'true', FALSE, 'Enable/disable telemetry (errors + performance)'),
+    ('telemetry_sample_rate', '1.0', FALSE, 'Trace sample rate 0.0-1.0'),
+    ('telemetry_environment', 'development', FALSE, 'Environment name for telemetry'),
+    ('sentry_send_dev', 'true', FALSE, 'Send telemetry events in development mode')
+ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================================
 -- GeoNames Countries
 -- ============================================================================
 CREATE TABLE geonames_countries (
