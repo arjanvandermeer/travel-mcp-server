@@ -49,29 +49,22 @@
 <body>
   <div class="header">
     <div class="type">{{poi_type}}</div>
-    <h1>{{name}}</h1>
+    <h1>{{poiName this}}</h1>
     {{#if google_rating}}
     <div class="rating">
       {{formatRating google_rating}}
-      {{#if google_user_ratings_total}}
-      ({{google_user_ratings_total}} reviews)
+      {{#if google_review_count}}
+      ({{google_review_count}} reviews)
       {{/if}}
     </div>
     {{/if}}
   </div>
 
   <div class="content">
-    {{#if address}}
+    {{#if (or google_address osm_address)}}
     <div class="card">
       <h2>Address</h2>
-      <p>{{address}}</p>
-    </div>
-    {{/if}}
-
-    {{#if google_formatted_address}}
-    <div class="card">
-      <h2>Address</h2>
-      <p>{{google_formatted_address}}</p>
+      <p>{{or google_address osm_address}}</p>
     </div>
     {{/if}}
 
@@ -100,7 +93,7 @@
     </div>
     {{/if}}
 
-    <a class="map-link" href="{{mapsUrl latitude longitude}}" target="_blank">
+    <a class="map-link" href="{{mapsUrl osm_latitude osm_longitude}}" target="_blank">
       Open in Google Maps
     </a>
   </div>

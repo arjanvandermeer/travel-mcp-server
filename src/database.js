@@ -528,6 +528,31 @@ export class TravelDatabase {
     return removeNullFields(response);
   }
 
+  /**
+   * Get a random POI from the database (for testing/demo purposes)
+   * Prefers POIs with Google enrichment data for richer display
+   */
+  async getRandomPOI() {
+    const result = await this.pool.query(`
+      SELECT osm_id
+      FROM enriched_pois
+      WHERE google_place_id IS NOT NULL
+      ORDER BY RANDOM()
+      LIMIT 1
+    `);
+
+    if (result.rows.length === 0) {
+      // Fallback to any POI if no enriched ones exist
+      const fallback = await this.pool.query(`
+        SELECT osm_id FROM osm_pois ORDER BY RANDOM() LIMIT 1
+      `);
+      if (fallback.rows.length === 0) return null;
+      return this.getPOIDetails(fallback.rows[0].osm_id);
+    }
+
+    return this.getPOIDetails(result.rows[0].osm_id);
+  }
+
   // =========================================================================
   // Google Places Enrichment
   // =========================================================================
