@@ -44,7 +44,18 @@ async function testEnrichment() {
     console.log(`  Message: ${details._enrichment?.message || 'None'}`);
 
     if (details._enrichment?.status === 'pending') {
-      console.log('\n⏳ Enrichment is running in background. Wait 30-60 seconds and query again.');
+      console.log('\n⏳ Enrichment is running in background. Waiting 5 seconds...\n');
+
+      // Wait for background enrichment to complete
+      await new Promise(resolve => setTimeout(resolve, 5000));
+
+      // Check again
+      const details2 = await db.getPOIDetails(poi.osm_id);
+      console.log('After waiting:');
+      console.log(`  Google Name: ${details2.google_name || 'Not enriched yet'}`);
+      console.log(`  Google Rating: ${details2.google_rating || 'Not enriched yet'}`);
+      console.log(`  Mapping Status: ${details2.mapping_status || 'None'}`);
+      console.log(`  Enrichment: ${details2._enrichment?.status || 'Unknown'}`);
     }
 
   } catch (error) {
