@@ -211,13 +211,82 @@ export class GooglePlacesClient {
   /**
    * Get detailed information about a place
    * Uses Place Details API (New)
+   * Requests all available fields for comprehensive data
    */
   async getPlaceDetails(placeId) {
     // Ensure place ID has the "places/" prefix
     const formattedPlaceId = placeId.startsWith('places/') ? placeId : `places/${placeId}`;
     const url = `https://places.googleapis.com/v1/${formattedPlaceId}`;
 
-    const fieldMask = 'id,displayName,formattedAddress,rating,userRatingCount,priceLevel,types,nationalPhoneNumber,websiteUri,googleMapsUri,regularOpeningHours,photos,location,reservable,businessStatus,editorialSummary,delivery,dineIn,takeout';
+    // Request ALL available fields for comprehensive enrichment
+    // Organized by SKU tier (costs vary by field):
+    // - Essentials: location, address fields, types
+    // - Pro: business status, display name, contact info, hours
+    // - Enterprise: reviews, amenities, services, summaries
+    const fieldMask = [
+      // Basic identification
+      'id',
+      'displayName',
+      'primaryType',
+      'primaryTypeDisplayName',
+      'types',
+      // Location & Address
+      'location',
+      'formattedAddress',
+      'shortFormattedAddress',
+      'addressComponents',
+      'plusCode',
+      'viewport',
+      // Contact
+      'nationalPhoneNumber',
+      'internationalPhoneNumber',
+      'websiteUri',
+      'googleMapsUri',
+      // Business info
+      'businessStatus',
+      'priceLevel',
+      'utcOffsetMinutes',
+      // Hours
+      'regularOpeningHours',
+      'currentOpeningHours',
+      // Ratings & Reviews
+      'rating',
+      'userRatingCount',
+      'reviews',
+      // Photos
+      'photos',
+      // Service options
+      'dineIn',
+      'takeout',
+      'delivery',
+      'curbsidePickup',
+      'reservable',
+      // Atmosphere & amenities
+      'outdoorSeating',
+      'liveMusic',
+      'menuForChildren',
+      'servesBeer',
+      'servesWine',
+      'servesCocktails',
+      'servesBreakfast',
+      'servesBrunch',
+      'servesLunch',
+      'servesDinner',
+      'servesCoffee',
+      'servesDessert',
+      'servesVegetarianFood',
+      'goodForChildren',
+      'goodForGroups',
+      'goodForWatchingSports',
+      'allowsDogs',
+      'restroom',
+      // Facilities
+      'parkingOptions',
+      'paymentOptions',
+      'accessibilityOptions',
+      // Summaries
+      'editorialSummary',
+    ].join(',');
 
     try {
       const result = await this.makeGetRequest(url, fieldMask);
@@ -338,6 +407,7 @@ export class GooglePlacesClient {
 
   /**
    * Enrich a POI with full Google Places data (New API format)
+   * Returns all available fields for comprehensive enrichment
    */
   async enrichPOI(poi) {
     if (!this.enabled) {
@@ -362,28 +432,113 @@ export class GooglePlacesClient {
       return null;
     }
 
-    // Transform new API format to our schema
+    // Transform new API format to our schema - extract ALL fields
     return {
+      // Core identification
       google_place_id: details.id,
-      google_rating: details.rating || null,
-      google_user_ratings_total: details.userRatingCount || null,
-      google_price_level: details.priceLevel || null,
-      google_types: details.types || [],
-      google_formatted_address: details.formattedAddress || null,
-      google_phone: details.nationalPhoneNumber || null,
-      google_website: details.websiteUri || null,
-      google_opening_hours: details.regularOpeningHours ? {
+      name: details.displayName?.text || details.displayName || null,
+      display_name: details.displayName?.text || details.displayName || null,
+
+      // Location
+      latitude: details.location?.latitude || null,
+      longitude: details.location?.longitude || null,
+      viewport: details.viewport || null,
+
+      // Address
+      formatted_address: details.formattedAddress || null,
+      short_formatted_address: details.shortFormattedAddress || null,
+      address_components: details.addressComponents || null,
+      plus_code: details.plusCode || null,
+
+      // Classification
+      types: details.types || [],
+      primary_type: details.primaryType || null,
+      primary_type_display: details.primaryTypeDisplayName?.text || null,
+
+      // Contact
+      national_phone: details.nationalPhoneNumber || null,
+      international_phone: details.internationalPhoneNumber || null,
+      website_uri: details.websiteUri || null,
+      google_maps_uri: details.googleMapsUri || null,
+
+      // Business info
+      business_status: details.businessStatus || null,
+      price_level: details.priceLevel || null,
+      utc_offset_minutes: details.utcOffsetMinutes || null,
+
+      // Ratings & Reviews
+      rating: details.rating || null,
+      user_rating_count: details.userRatingCount || null,
+      reviews: details.reviews ? details.reviews.slice(0, 5).map(r => ({
+        author: r.authorAttribution?.displayName,
+        rating: r.rating,
+        text: r.text?.text,
+        time: r.publishTime,
+        relativeTime: r.relativePublishTimeDescription,
+      })) : null,
+
+      // Hours
+      opening_hours: details.regularOpeningHours ? {
         open_now: details.regularOpeningHours.openNow,
         periods: details.regularOpeningHours.periods,
         weekday_text: details.regularOpeningHours.weekdayDescriptions,
       } : null,
-      google_photos: details.photos ? details.photos.slice(0, 10).map(p => ({
+      current_opening_hours: details.currentOpeningHours ? {
+        open_now: details.currentOpeningHours.openNow,
+        periods: details.currentOpeningHours.periods,
+        weekday_text: details.currentOpeningHours.weekdayDescriptions,
+      } : null,
+
+      // Photos (up to 10)
+      photos: details.photos ? details.photos.slice(0, 10).map(p => ({
         name: p.name,
         widthPx: p.widthPx,
         heightPx: p.heightPx,
+        authorAttributions: p.authorAttributions,
       })) : null,
-      google_enriched_at: new Date(),
-      google_enrichment_status: 'enriched',
+
+      // Service options
+      service_options: {
+        dine_in: details.dineIn,
+        takeout: details.takeout,
+        delivery: details.delivery,
+        curbside_pickup: details.curbsidePickup,
+        reservable: details.reservable,
+      },
+
+      // Accessibility
+      accessibility: details.accessibilityOptions || null,
+
+      // Amenities - food & drink
+      amenities: {
+        outdoor_seating: details.outdoorSeating,
+        live_music: details.liveMusic,
+        menu_for_children: details.menuForChildren,
+        serves_beer: details.servesBeer,
+        serves_wine: details.servesWine,
+        serves_cocktails: details.servesCocktails,
+        serves_breakfast: details.servesBreakfast,
+        serves_brunch: details.servesBrunch,
+        serves_lunch: details.servesLunch,
+        serves_dinner: details.servesDinner,
+        serves_coffee: details.servesCoffee,
+        serves_dessert: details.servesDessert,
+        serves_vegetarian_food: details.servesVegetarianFood,
+        good_for_children: details.goodForChildren,
+        good_for_groups: details.goodForGroups,
+        good_for_watching_sports: details.goodForWatchingSports,
+        allows_dogs: details.allowsDogs,
+        restroom: details.restroom,
+        parking_options: details.parkingOptions,
+        payment_options: details.paymentOptions,
+      },
+
+      // Summary
+      editorial_summary: details.editorialSummary?.text || null,
+
+      // Metadata
+      enriched_at: new Date(),
+      raw_response: details, // Store complete response for future use
     };
   }
 

@@ -65,6 +65,18 @@ google_places: google_place_id, name, rating, user_ratings_total, ...
 pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
 ```
 
+### Fix Empty Timestamp Fields (google_enriched_at, osm_imported_at)
+- [ ] Add `imported_at TIMESTAMP` column to `osm_pois` table (stores when each POI was imported)
+- [ ] Add `enriched_at TIMESTAMP` column to `google_places` table (stores when each place was enriched)
+- [ ] Update `import-osm-pbf.js` to set `imported_at = NOW()` when inserting POIs
+- [ ] Update `upsertGooglePlace()` to set `enriched_at = NOW()` when inserting/updating
+- [ ] Update `enriched_pois` view to expose these fields as `osm_imported_at` and `google_enriched_at`
+- [ ] Ensure these fields are NOT NULL (use DEFAULT NOW() in schema)
+
+**Rationale**: Currently `google_enriched_at` and `osm_imported_at` are showing empty in query results. These timestamps should be stored directly in the relevant tables (`osm_pois` and `google_places`) rather than in mapping/meta tables, for better data integrity and simpler queries.
+
+**Impact**: High - data quality and traceability
+
 ### Fix Google Places Matching Algorithm
 - [ ] Improve matching algorithm between OSM POIs and Google Places entries
 - [ ] Current issues:
@@ -145,42 +157,48 @@ pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
 - Consider batch refresh during off-peak hours
 
 ### Improve OSM Import Workflow
-- [ ] Create automatic PBF download and import workflow
-- [ ] Add `data/import/` directory for auto-processing PBF files
-- [ ] Implement file watcher or npm script that:
-  - Monitors `data/import/` directory
-  - Automatically imports any `.osm.pbf` files found
-  - Moves processed files to `data/processed/` or deletes them
-  - Logs import results to `data/import-log.txt`
-- [ ] Alternative approach: Create helper script that downloads + imports in one command:
-  ```bash
-  npm run import:osm -- thailand
-  # Downloads thailand-latest.osm.pbf and imports it automatically
-  ```
-- [ ] Add region name mapping for common countries/regions
+- [ ] Create `src/init-osm.js` script for one-command country import
+- [ ] Script should:
+  - Accept country/region name as argument (e.g., `thailand`, `netherlands`, `california`)
+  - Map region names to Geofabrik download URLs
+  - Download the PBF file to `data/` directory
+  - Run the import with `import-osm-pbf.js`
+  - Record the import in the `imports` table with metadata (region, timestamp, POI counts)
+  - Clean up the PBF file after successful import (optional flag)
+- [ ] Add npm script: `npm run init:osm <region>` (e.g., `npm run init:osm thailand`)
+- [ ] Populate the `imports` table on each import:
+  - `region_name` (e.g., 'thailand', 'california')
+  - `geofabrik_url` (download source)
+  - `pbf_file_size` (bytes)
+  - `imported_at` (timestamp)
+  - `poi_counts` (JSON: {hotel: 1234, restaurant: 5678, ...})
+  - `duration_seconds` (how long import took)
+- [ ] Add region name mapping for common countries/regions (geofabrik URL patterns)
 - [ ] Add progress indicator for download + import
-- [ ] Clean up data directory after successful import (optional)
+- [ ] Handle errors gracefully (network failures, disk space, etc.)
 
 **Rationale**: Current workflow requires manual curl download + manual node command. This is error-prone and not user-friendly. Users need to know the Geofabrik URL structure and remember the exact import command syntax.
 
 **Proposed workflow:**
 ```bash
 # Simple one-command import
-npm run import:osm thailand
+npm run init:osm thailand
 # or
-npm run import:osm netherlands
+npm run init:osm netherlands
 # or
-npm run import:osm california
+npm run init:osm california
 
-# Or auto-import anything dropped in data/import/
-cp ~/Downloads/germany-latest.osm.pbf data/import/
-# Script auto-detects and imports it
+# Script automatically:
+# 1. Downloads https://download.geofabrik.de/asia/thailand-latest.osm.pbf
+# 2. Imports all POI types
+# 3. Records import in imports table
+# 4. Reports summary stats
 ```
 
 **Benefits:**
 - Simpler user experience
 - Less error-prone
-- Automatic cleanup
+- Tracks import history in database
 - Better for CI/CD pipelines
 - Reduces documentation complexity
 
