@@ -480,6 +480,9 @@ async function main() {
     const parsedUrl = parse(req.url, true);
     const pathname = parsedUrl.pathname;
 
+    // Log all incoming requests
+    console.error(`[${req.method}] ${pathname}`);
+
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -552,9 +555,9 @@ async function main() {
   });
 
   httpServer.listen(PORT, () => {
-    console.error(`Travel MCP Server (HTTP/SSE) running on http://localhost:${PORT}`);
-    console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
-    console.error(`Health check: http://localhost:${PORT}/health`);
+    console.log(`Travel MCP Server (HTTP/SSE) running on http://localhost:${PORT}`);
+    console.log(`SSE endpoint: http://localhost:${PORT}/sse`);
+    console.log(`Health check: http://localhost:${PORT}/health`);
   });
 }
 
