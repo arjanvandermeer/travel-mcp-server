@@ -397,6 +397,28 @@ npm run start:http
 node tests/test-http-client.js
 ```
 
+### Alternative: Test with MCP Inspector
+
+MCP Inspector provides a web-based UI to interactively test your MCP server without configuring Claude Desktop:
+
+```bash
+# Run stdio server with Inspector
+npm run inspect
+
+# Run HTTP server with Inspector
+npm run inspect:http
+
+# With auto-reload on code changes
+npm run inspect:watch
+npm run inspect:watch:http
+```
+
+This opens a browser UI where you can:
+- Browse available tools
+- Execute tools with custom parameters
+- See full request/response payloads
+- Debug issues before connecting to Claude Desktop
+
 ---
 
 ## Step 8: Configure Claude Desktop
@@ -693,6 +715,10 @@ npm run start:http
 # Development mode (auto-reload)
 npm run dev
 npm run dev:http
+
+# MCP Inspector (interactive testing UI)
+npm run inspect
+npm run inspect:http
 
 # Import data
 npm run db:import-geonames                         # Import GeoNames cities

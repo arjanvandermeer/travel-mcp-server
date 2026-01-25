@@ -289,6 +289,8 @@ SELECT
     p.website as osm_website,
     p.stars as osm_stars,
     p.cuisine,
+    p.tags->>'brand' as brand,
+    p.tags->>'operator' as operator,
 
     -- Extract city and country from nearest city relationship
     c.name as city,

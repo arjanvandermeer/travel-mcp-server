@@ -9,8 +9,38 @@ import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ListToolsRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-const db = new TravelDatabase();
+// Debug logging - writes to file since stdio is used for MCP protocol
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const LOG_FILE = path.join(__dirname, '..', 'mcp-debug.log');
+
+function log(level, message, data = null) {
+  const timestamp = new Date().toISOString();
+  const logLine = data
+    ? `[${timestamp}] [${level}] ${message}: ${JSON.stringify(data)}`
+    : `[${timestamp}] [${level}] ${message}`;
+
+  // Write to log file
+  fs.appendFileSync(LOG_FILE, logLine + '\n');
+
+  // Also write to stderr for immediate visibility
+  console.error(logLine);
+}
+
+log('INFO', 'MCP Server starting...');
+log('INFO', 'Log file', LOG_FILE);
+
+let db;
+try {
+  db = new TravelDatabase();
+  log('INFO', 'TravelDatabase instance created');
+} catch (err) {
+  log('ERROR', 'Failed to create TravelDatabase', err.message);
+  process.exit(1);
+}
 
 const server = new Server(
   {
@@ -26,6 +56,7 @@ const server = new Server(
 
 // List available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
+  log('INFO', 'ListTools request received');
   return {
     tools: [
       {
@@ -206,11 +237,13 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 // Handle tool calls
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args } = request.params;
+  log('INFO', `Tool call received: ${name}`, args);
 
   try {
     switch (name) {
       case 'search_cities': {
         const cities = await db.searchCities(args.query, args.country_code, args.limit || 10);
+        log('INFO', `search_cities returned ${cities.length} results`);
         return {
           content: [
             {
@@ -232,6 +265,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           poiType: 'hotel',
           limit: args.limit || 50,
         });
+        log('INFO', `search_hotels returned ${result.length} results`);
 
         return {
           content: [
@@ -260,6 +294,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           poiTypes: types,
           limit: args.limit || 50,
         });
+        log('INFO', `search_restaurants returned ${result.length} results`);
 
         return {
           content: [
@@ -282,6 +317,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
           poiType: args.poi_type,
           limit: args.limit || 50,
         });
+        log('INFO', `search_pois returned ${result.length} results`);
 
         return {
           content: [
@@ -295,6 +331,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'get_poi_details': {
         const poi = await db.getPOIDetails(args.osm_id);
+        log('INFO', `get_poi_details returned ${poi ? 'found' : 'not found'}`);
 
         if (!poi) {
           return {
@@ -319,6 +356,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
       case 'get_stats': {
         const stats = await db.getStats();
+        log('INFO', 'get_stats returned successfully');
         return {
           content: [
             {
@@ -333,6 +371,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
         throw new Error(`Unknown tool: ${name}`);
     }
   } catch (error) {
+    log('ERROR', `Tool ${name} failed`, { error: error.message, stack: error.stack });
     return {
       content: [
         {
@@ -347,12 +386,32 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 
 // Start server
 async function main() {
+  // Test database connection before starting
+  log('INFO', 'Testing database connection...');
+  try {
+    await db.testConnection();
+    log('INFO', 'Database connection successful');
+  } catch (err) {
+    // Handle AggregateError (multiple connection attempts failed)
+    const errorMsg = err.code || err.message || (err.errors ? err.errors.map(e => e.code || e.message).join(', ') : 'Unknown error');
+    log('ERROR', 'Database connection failed', { error: errorMsg, code: err.code });
+    console.error(`FATAL: Cannot connect to database: ${errorMsg}`);
+    console.error('Make sure PostgreSQL is running (docker start travel-postgres or brew services start postgresql@16)');
+    process.exit(1);
+  }
+
+  log('INFO', 'Creating StdioServerTransport...');
   const transport = new StdioServerTransport();
+
+  log('INFO', 'Connecting server to transport...');
   await server.connect(transport);
+
+  log('INFO', 'Travel MCP Server (PostgreSQL) running on stdio');
   console.error('Travel MCP Server (PostgreSQL) running on stdio');
 }
 
 main().catch((error) => {
+  log('ERROR', 'Server startup failed', { error: error.message, stack: error.stack });
   console.error('Server error:', error);
   process.exit(1);
 });

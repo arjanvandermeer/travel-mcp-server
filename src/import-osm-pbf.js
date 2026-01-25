@@ -203,32 +203,154 @@ async function importPBF(pbfPath, poiType = 'hotel') {
 }
 
 async function parsePBFFile(pbfPath, pool, poiType, regionName) {
-  return new Promise((resolve, reject) => {
-    const osm = parseOSM();
-    let processed = 0;
-    let pois = [];
-    const batchSize = 1000;
+  // Three-pass approach (memory efficient):
+  // Pass 1: Find ways with POI tags and collect their node IDs
+  // Pass 2: Collect coordinates only for needed nodes
+  // Pass 3: Process nodes AND ways with POI tags
 
-    console.log('Parsing PBF file (this may take a few minutes)...\n');
+  console.log('Parsing PBF file (three-pass for nodes + ways)...\n');
+
+  // Pass 1: Find POI ways and collect their node refs
+  console.log('Pass 1: Finding POI ways and collecting required node IDs...');
+  const neededNodeIds = new Set();
+  const poiWays = []; // Store way data for pass 3
+
+  await new Promise((resolve, reject) => {
+    const osm = parseOSM();
+    let waysFound = 0;
+
+    fs.createReadStream(pbfPath)
+      .pipe(osm)
+      .pipe(through2.obj((items, enc, next) => {
+        for (const item of items) {
+          if (item.type === 'way' && item.tags && item.refs && item.refs.length > 0) {
+            const matchedType = matchPOIType(item.tags, poiType);
+            if (matchedType) {
+              // Store this way for later processing
+              poiWays.push({
+                id: item.id,
+                tags: item.tags,
+                refs: item.refs,
+                matchedType,
+              });
+              // Mark its nodes as needed
+              for (const ref of item.refs) {
+                neededNodeIds.add(ref);
+              }
+              waysFound++;
+              if (waysFound % 1000 === 0) {
+                console.log(`  Found ${waysFound} POI ways, need ${neededNodeIds.size.toLocaleString()} nodes...`);
+              }
+            }
+          }
+        }
+        next();
+      }))
+      .on('finish', () => {
+        console.log(`  ✓ Found ${poiWays.length} POI ways, need ${neededNodeIds.size.toLocaleString()} node coordinates\n`);
+        resolve();
+      })
+      .on('error', reject);
+  });
+
+  // Pass 2: Collect coordinates only for needed nodes
+  console.log('Pass 2: Collecting coordinates for needed nodes...');
+  const nodeCoords = new Map();
+
+  await new Promise((resolve, reject) => {
+    const osm = parseOSM();
+    let collected = 0;
+
+    fs.createReadStream(pbfPath)
+      .pipe(osm)
+      .pipe(through2.obj((items, enc, next) => {
+        for (const item of items) {
+          if (item.type === 'node' && item.lat && item.lon && neededNodeIds.has(item.id)) {
+            nodeCoords.set(item.id, { lat: item.lat, lon: item.lon });
+            collected++;
+            if (collected % 10000 === 0) {
+              console.log(`  Collected ${collected.toLocaleString()} / ${neededNodeIds.size.toLocaleString()} node coordinates...`);
+            }
+          }
+        }
+        next();
+      }))
+      .on('finish', () => {
+        console.log(`  ✓ Collected ${nodeCoords.size.toLocaleString()} node coordinates\n`);
+        resolve();
+      })
+      .on('error', reject);
+  });
+
+  // Clear the set to free memory
+  neededNodeIds.clear();
+
+  // Pass 3: Process POI nodes and use collected way data
+  console.log('Pass 3: Processing POIs (nodes + ways)...');
+
+  let processed = 0;
+  let nodesPOIs = 0;
+  let waysPOIs = 0;
+  let pois = [];
+  const batchSize = 1000;
+
+  // First, process all the ways we collected
+  for (const way of poiWays) {
+    const coords = way.refs
+      .map(ref => nodeCoords.get(ref))
+      .filter(c => c !== undefined);
+
+    if (coords.length > 0) {
+      const centroid = {
+        lat: coords.reduce((sum, c) => sum + c.lat, 0) / coords.length,
+        lon: coords.reduce((sum, c) => sum + c.lon, 0) / coords.length,
+      };
+
+      const wayItem = {
+        id: way.id,
+        type: 'way',
+        lat: centroid.lat,
+        lon: centroid.lon,
+        tags: way.tags,
+      };
+
+      const poi = extractPOIData(wayItem, way.matchedType, regionName);
+      pois.push(poi);
+      waysPOIs++;
+
+      if (pois.length >= batchSize) {
+        await insertBatch(pool, pois);
+        processed += pois.length;
+        console.log(`  Processed: ${processed} POIs (${nodesPOIs} nodes, ${waysPOIs} ways)`);
+        pois = [];
+      }
+    }
+  }
+
+  // Clear way data and node coords to free memory
+  poiWays.length = 0;
+  nodeCoords.clear();
+
+  // Now process POI nodes (single pass through file)
+  await new Promise((resolve, reject) => {
+    const osm = parseOSM();
 
     fs.createReadStream(pbfPath)
       .pipe(osm)
       .pipe(through2.obj(async (items, enc, next) => {
         try {
           for (const item of items) {
-            // Only process nodes with coordinates
             if (item.type === 'node' && item.lat && item.lon && item.tags) {
-              // Check if this matches our POI type
               const matchedType = matchPOIType(item.tags, poiType);
               if (matchedType) {
                 const poi = extractPOIData(item, matchedType, regionName);
                 pois.push(poi);
+                nodesPOIs++;
 
-                // Batch insert
                 if (pois.length >= batchSize) {
                   await insertBatch(pool, pois);
                   processed += pois.length;
-                  console.log(`  Processed: ${processed} ${poiType}s`);
+                  console.log(`  Processed: ${processed} POIs (${nodesPOIs} nodes, ${waysPOIs} ways)`);
                   pois = [];
                 }
               }
@@ -241,20 +363,21 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
       }))
       .on('finish', async () => {
         try {
-          // Insert remaining POIs
           if (pois.length > 0) {
             await insertBatch(pool, pois);
             processed += pois.length;
-            console.log(`  Processed: ${processed} ${poiType}s`);
           }
-          console.log('\n✓ PBF parsing complete');
-          resolve(processed); // Return count of records imported
+          console.log(`\n✓ PBF parsing complete`);
+          console.log(`  Total: ${processed} POIs (${nodesPOIs} nodes, ${waysPOIs} ways)`);
+          resolve(processed);
         } catch (error) {
           reject(error);
         }
       })
       .on('error', reject);
   });
+
+  return processed;
 }
 
 function matchPOIType(tags, requestedType) {
@@ -284,8 +407,8 @@ function evaluatePOICondition(tags, osmTag) {
   return tags[key] === value;
 }
 
-function extractPOIData(node, poiType, regionName) {
-  const tags = node.tags || {};
+function extractPOIData(item, poiType, regionName) {
+  const tags = item.tags || {};
 
   // Helper to truncate long strings
   const truncate = (str, maxLen) => str && str.length > maxLen ? str.substring(0, maxLen) : str;
@@ -319,12 +442,12 @@ function extractPOIData(node, poiType, regionName) {
   if (beds !== null && (isNaN(beds) || beds < 0)) beds = null;
 
   return {
-    osm_id: node.id,
-    osm_type: 'node',
+    osm_id: item.id,
+    osm_type: item.type || 'node',
     poi_type: poiType,
     name: truncate(tags.name, 500),
-    latitude: node.lat,
-    longitude: node.lon,
+    latitude: item.lat,
+    longitude: item.lon,
     address,
     phone: truncate(tags.phone || tags['contact:phone'], 100),
     email: truncate(tags.email || tags['contact:email'], 200),

@@ -36,6 +36,18 @@ export class TravelDatabase {
     await this.pool.end();
   }
 
+  /**
+   * Test database connection - throws if connection fails
+   */
+  async testConnection() {
+    const client = await this.pool.connect();
+    try {
+      await client.query('SELECT 1');
+    } finally {
+      client.release();
+    }
+  }
+
   async ensureGooglePlacesReady() {
     if (!this.googlePlaces) {
       await this.googlePlacesReady;
@@ -191,10 +203,14 @@ export class TravelDatabase {
           google_price_level,
           business_status,
           osm_stars,
-          similarity(best_name, $1) as name_similarity
+          brand,
+          GREATEST(
+            similarity(best_name, $1),
+            COALESCE(similarity(brand, $1), 0)
+          ) as name_similarity
         FROM enriched_pois
         WHERE best_name IS NOT NULL
-          AND best_name ILIKE $2
+          AND (best_name ILIKE $2 OR brand ILIKE $2)
       `;
       queryParams = [name, `%${name}%`];
 
@@ -267,14 +283,18 @@ export class TravelDatabase {
           google_price_level,
           business_status,
           osm_stars,
-          similarity(best_name, $1) as name_similarity,
+          brand,
+          GREATEST(
+            similarity(best_name, $1),
+            COALESCE(similarity(brand, $1), 0)
+          ) as name_similarity,
           ST_Distance(
             osm_location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
           ) / 1000.0 as distance_km
         FROM enriched_pois
         WHERE best_name IS NOT NULL
-          AND best_name ILIKE $4
+          AND (best_name ILIKE $4 OR brand ILIKE $4)
           AND ST_DWithin(
             osm_location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
