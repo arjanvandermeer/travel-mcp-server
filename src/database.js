@@ -512,6 +512,18 @@ export class TravelDatabase {
       }
     };
 
+    // Add computed URLs to photos if present
+    if (response.google_photos && Array.isArray(response.google_photos)) {
+      await this.ensureGooglePlacesReady();
+      if (this.googlePlaces && this.googlePlaces.isEnabled()) {
+        response.google_photos = response.google_photos.map(photo => ({
+          ...photo,
+          url: photo.url || this.googlePlaces.getPhotoUrl(photo.name, 800, 600),
+          url_thumbnail: photo.url_thumbnail || this.googlePlaces.getPhotoUrl(photo.name, 200, 150),
+        }));
+      }
+    }
+
     // Remove null/undefined fields from the response
     return removeNullFields(response);
   }

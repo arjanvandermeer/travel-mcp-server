@@ -353,30 +353,104 @@ export class GooglePlacesClient {
     const textResults = await this.searchText(textQuery, latitude, longitude);
 
     if (textResults.length > 0) {
-      const firstResult = textResults[0];
-      return {
-        place_id: firstResult.id,
-        name: firstResult.displayName?.text || firstResult.displayName,
-        rating: firstResult.rating,
-        user_ratings_total: firstResult.userRatingCount,
-        types: firstResult.types,
-      };
+      // Also validate text search results with name matching
+      const textMatch = this.findBestNameMatch(name, textResults);
+      if (textMatch) {
+        return {
+          place_id: textMatch.id,
+          name: textMatch.displayName?.text || textMatch.displayName,
+          rating: textMatch.rating,
+          user_ratings_total: textMatch.userRatingCount,
+          types: textMatch.types,
+        };
+      }
     }
 
+    // No confident match found
+    if (process.env.DEBUG_MATCHING) {
+      console.log(`  No Google Places match found for: "${name}"`);
+    }
     return null;
   }
 
   /**
+   * Calculate Levenshtein distance between two strings
+   */
+  levenshteinDistance(str1, str2) {
+    const m = str1.length;
+    const n = str2.length;
+    const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (str1[i - 1] === str2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        }
+      }
+    }
+    return dp[m][n];
+  }
+
+  /**
+   * Calculate name similarity score (0-1, higher is better)
+   */
+  calculateNameSimilarity(name1, name2) {
+    if (!name1 || !name2) return 0;
+
+    // Normalize: lowercase, remove special chars, collapse whitespace
+    const normalize = (str) => str.toLowerCase().trim()
+      .replace(/[^\w\s]/g, ' ')  // Replace special chars with space
+      .replace(/\s+/g, ' ')      // Collapse multiple spaces
+      .trim();
+
+    const n1 = normalize(name1);
+    const n2 = normalize(name2);
+
+    // Exact match after normalization
+    if (n1 === n2) return 1.0;
+
+    // Extract significant words (filter out common filler words)
+    const fillerWords = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'in', 'at', 'to', 'for', 'bar', 'restaurant', 'cafe', 'hotel', 'hostel', 'bistro']);
+    const getWords = (str) => str.split(' ').filter(w => w.length > 1 && !fillerWords.has(w));
+
+    const words1 = getWords(n1);
+    const words2 = getWords(n2);
+
+    // Check for word overlap (important words match)
+    const commonWords = words1.filter(w => words2.some(w2 => w === w2 || w.includes(w2) || w2.includes(w)));
+    const wordOverlapScore = commonWords.length > 0
+      ? (commonWords.length * 2) / (words1.length + words2.length)
+      : 0;
+
+    // Levenshtein-based similarity
+    const maxLen = Math.max(n1.length, n2.length);
+    const levenshteinScore = maxLen > 0
+      ? 1 - (this.levenshteinDistance(n1, n2) / maxLen)
+      : 0;
+
+    // Contains match (one name is substring of other)
+    let containsScore = 0;
+    if (n1.includes(n2) || n2.includes(n1)) {
+      containsScore = Math.min(n1.length, n2.length) / Math.max(n1.length, n2.length);
+    }
+
+    // Return the highest score from different methods
+    return Math.max(wordOverlapScore, levenshteinScore, containsScore);
+  }
+
+  /**
    * Find best name match from search results (New API format)
+   * Returns null if no confident match found (prevents wrong matches)
    */
   findBestNameMatch(targetName, results) {
     if (!results || results.length === 0) {
       return null;
     }
-
-    // Simple name similarity scoring
-    const normalized = (str) => str.toLowerCase().trim().replace(/[^\w\s]/g, '');
-    const target = normalized(targetName);
 
     let bestMatch = null;
     let bestScore = 0;
@@ -384,25 +458,36 @@ export class GooglePlacesClient {
     for (const result of results) {
       // Handle new API format: displayName can be {text: "name"} or just "name"
       const resultName = result.displayName?.text || result.displayName || '';
-      const candidate = normalized(resultName);
+      const score = this.calculateNameSimilarity(targetName, resultName);
 
-      // Exact match
-      if (candidate === target) {
-        return result;
+      // Debug logging for matching
+      if (process.env.DEBUG_MATCHING) {
+        console.log(`  Match score: "${targetName}" vs "${resultName}" = ${score.toFixed(3)}`);
       }
 
-      // Contains match
-      if (candidate.includes(target) || target.includes(candidate)) {
-        const score = Math.min(target.length, candidate.length) / Math.max(target.length, candidate.length);
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = result;
-        }
+      if (score > bestScore) {
+        bestScore = score;
+        bestMatch = result;
       }
     }
 
-    // Return best match if score is good enough (> 0.6)
-    return bestScore > 0.6 ? bestMatch : results[0];
+    // IMPORTANT: Only return a match if we have good confidence
+    // Previously this returned results[0] even with score=0, causing wrong matches
+    const MIN_CONFIDENCE = 0.4; // Require at least 40% similarity
+
+    if (bestScore >= MIN_CONFIDENCE) {
+      if (process.env.DEBUG_MATCHING) {
+        const matchName = bestMatch.displayName?.text || bestMatch.displayName;
+        console.log(`  Best match: "${matchName}" with score ${bestScore.toFixed(3)}`);
+      }
+      return bestMatch;
+    }
+
+    // No confident match found - return null instead of wrong match
+    if (process.env.DEBUG_MATCHING) {
+      console.log(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
+    }
+    return null;
   }
 
   /**
