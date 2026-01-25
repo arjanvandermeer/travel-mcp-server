@@ -454,7 +454,7 @@ async function main() {
   // Test database connection first
   try {
     await db.testConnection();
-    console.log('Database connection successful');
+    console.error('Database connection successful');
   } catch (err) {
     console.error('FATAL: Cannot connect to database:', err.message);
     console.error('Make sure PostgreSQL is running');
@@ -466,7 +466,7 @@ async function main() {
     const telemetryConfig = await db.getTelemetryConfig();
     await telemetry.initTelemetry(telemetryConfig);
     if (telemetry.isEnabled()) {
-      console.log('Telemetry initialized successfully');
+      console.error('Telemetry initialized successfully');
       telemetry.setTag('server.type', 'http');
     }
   } catch (err) {
@@ -511,7 +511,7 @@ async function main() {
 
     // SSE endpoint - establishes SSE connection
     if (pathname === '/sse' && req.method === 'GET') {
-      console.log('New SSE connection established');
+      console.error('New SSE connection established');
 
       const transport = new SSEServerTransport('/message', res);
       activeTransport = transport;
@@ -520,7 +520,7 @@ async function main() {
 
       // Handle connection close
       req.on('close', () => {
-        console.log('SSE connection closed');
+        console.error('SSE connection closed');
         activeTransport = null;
       });
 
@@ -552,21 +552,21 @@ async function main() {
   });
 
   httpServer.listen(PORT, () => {
-    console.log(`Travel MCP Server (HTTP/SSE) running on http://localhost:${PORT}`);
-    console.log(`SSE endpoint: http://localhost:${PORT}/sse`);
-    console.log(`Health check: http://localhost:${PORT}/health`);
+    console.error(`Travel MCP Server (HTTP/SSE) running on http://localhost:${PORT}`);
+    console.error(`SSE endpoint: http://localhost:${PORT}/sse`);
+    console.error(`Health check: http://localhost:${PORT}/health`);
   });
 }
 
 // Handle graceful shutdown
 process.on('SIGTERM', async () => {
-  console.log('SIGTERM received, shutting down...');
+  console.error('SIGTERM received, shutting down...');
   await telemetry.flush();
   process.exit(0);
 });
 
 process.on('SIGINT', async () => {
-  console.log('SIGINT received, shutting down...');
+  console.error('SIGINT received, shutting down...');
   await telemetry.flush();
   process.exit(0);
 });

@@ -2,6 +2,8 @@
 
 MCP server for travel information using GeoNames city data, OpenStreetMap POI data, and Google Places API enrichment.
 
+This MCP server uses publicly available data and API's. All code is written by me (and Claude) in my own time and has no correlation to my employer or colleagues. 
+
 ## Features
 
 - **Multi-Source Data Integration**: Combines GeoNames cities, OpenStreetMap POIs, and Google Places enrichment
