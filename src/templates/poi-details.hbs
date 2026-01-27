@@ -13,7 +13,7 @@
     }
     .hero-image {
       width: 100%;
-      height: 200px;
+      height: 220px;
       object-fit: cover;
     }
     .header {
@@ -22,8 +22,23 @@
       padding: 24px;
     }
     .header h1 { font-size: 24px; margin-bottom: 8px; }
-    .header .type { opacity: 0.8; font-size: 14px; text-transform: capitalize; }
+    .header .type-row { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+    .header .type { opacity: 0.9; font-size: 14px; text-transform: capitalize; }
+    .header .stars { font-size: 14px; }
+    .header .brand { opacity: 0.8; font-size: 13px; margin-top: 4px; }
     .header .rating { margin-top: 12px; font-size: 18px; }
+    .header .price-level { opacity: 0.9; font-size: 14px; margin-left: 8px; }
+    .status-badge {
+      display: inline-block;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      margin-top: 8px;
+    }
+    .status-open { background: rgba(76, 175, 80, 0.9); }
+    .status-closed { background: rgba(244, 67, 54, 0.9); }
+    .status-temp-closed { background: rgba(255, 152, 0, 0.9); }
     .content { padding: 20px; }
     .card {
       background: white;
@@ -32,14 +47,56 @@
       margin-bottom: 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     }
-    .card h2 { font-size: 14px; color: #666; margin-bottom: 8px; }
+    .card h2 { font-size: 14px; color: #666; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
     .card p { font-size: 16px; }
     .card a { color: #667eea; text-decoration: none; }
+    .card a:hover { text-decoration: underline; }
+    .description { font-size: 15px; line-height: 1.6; color: #444; }
     .address-line { display: block; }
-    .phone { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+    .contact-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
+    .contact-row a { display: block; margin-bottom: 6px; }
+    .contact-row a:last-child { margin-bottom: 0; }
     .hours-list { list-style: none; font-size: 14px; }
     .hours-list li { padding: 4px 0; border-bottom: 1px solid #eee; }
     .hours-list li:last-child { border-bottom: none; }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag {
+      background: #f0f0f0;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 14px;
+      text-transform: capitalize;
+    }
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 12px;
+    }
+    .info-item { font-size: 14px; }
+    .info-item .label { color: #666; font-size: 12px; display: block; }
+    .info-item .value { font-weight: 500; }
+    .amenities-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 8px;
+    }
+    .amenity {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 14px;
+    }
+    .amenity .icon { font-size: 16px; }
+    .review-card {
+      border-left: 3px solid #667eea;
+      padding-left: 12px;
+      margin-bottom: 16px;
+    }
+    .review-card:last-child { margin-bottom: 0; }
+    .review-author { font-weight: 600; font-size: 14px; }
+    .review-rating { color: #f5a623; font-size: 13px; margin: 4px 0; }
+    .review-text { font-size: 14px; color: #555; line-height: 1.5; }
+    .review-date { font-size: 12px; color: #999; margin-top: 4px; }
     .map-link {
       display: block;
       background: #667eea;
@@ -51,14 +108,6 @@
       font-weight: 600;
     }
     .map-link:hover { background: #5a6fd6; }
-    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
-    .tag {
-      background: #f0f0f0;
-      padding: 4px 12px;
-      border-radius: 16px;
-      font-size: 14px;
-      text-transform: capitalize;
-    }
   </style>
 </head>
 <body>
@@ -67,29 +116,93 @@
   {{/if}}
 
   <div class="header">
-    <div class="type">{{poi_type}}</div>
+    <div class="type-row">
+      <span class="type">{{poi_type}}</span>
+      {{#if osm_stars}}
+      <span class="stars">{{starDisplay}}</span>
+      {{/if}}
+    </div>
     <h1>{{poiName this}}</h1>
+    {{#if osm_brand}}
+    <div class="brand">by {{osm_brand}}</div>
+    {{else}}
+    {{#if osm_operator}}
+    <div class="brand">by {{osm_operator}}</div>
+    {{/if}}
+    {{/if}}
     {{#if google_rating}}
     <div class="rating">
       {{formatRating google_rating}}
       {{#if google_review_count}}
       ({{google_review_count}} reviews)
       {{/if}}
+      {{#if price_display}}
+      <span class="price-level">{{price_display}}</span>
+      {{/if}}
     </div>
+    {{/if}}
+    {{#if business_status_display}}
+    <span class="status-badge {{business_status_class}}">{{business_status_display}}</span>
     {{/if}}
   </div>
 
   <div class="content">
+    {{#if google_editorial_summary}}
+    <div class="card">
+      <h2>About</h2>
+      <p class="description">{{google_editorial_summary}}</p>
+    </div>
+    {{/if}}
+
     {{#if (or osm_address google_address)}}
     <div class="card">
-      <h2>Address</h2>
+      <h2>Location & Contact</h2>
       {{#each address_lines}}
       <span class="address-line">{{this}}</span>
       {{/each}}
-      {{#if ../google_phone}}
-      <p class="phone"><a href="tel:{{../google_phone}}">{{../google_phone}}</a></p>
+      {{#if ../has_contact}}
+      <div class="contact-row">
+        {{#if ../google_phone}}
+        <a href="tel:{{../google_phone}}">{{../google_phone}}</a>
+        {{else}}
+        {{#if ../osm_phone}}
+        <a href="tel:{{../osm_phone}}">{{../osm_phone}}</a>
+        {{/if}}
+        {{/if}}
+        {{#if ../osm_email}}
+        <a href="mailto:{{../osm_email}}">{{../osm_email}}</a>
+        {{/if}}
+      </div>
       {{/if}}
     </div>
+    {{/if}}
+
+    {{#if is_accommodation}}
+    {{#if has_hotel_info}}
+    <div class="card">
+      <h2>Hotel Details</h2>
+      <div class="info-grid">
+        {{#if osm_rooms}}
+        <div class="info-item">
+          <span class="label">Rooms</span>
+          <span class="value">{{osm_rooms}}</span>
+        </div>
+        {{/if}}
+        {{#if osm_beds}}
+        <div class="info-item">
+          <span class="label">Beds</span>
+          <span class="value">{{osm_beds}}</span>
+        </div>
+        {{/if}}
+        {{#if osm_stars}}
+        <div class="info-item">
+          <span class="label">Star Rating</span>
+          <span class="value">{{osm_stars}} stars</span>
+        </div>
+        {{/if}}
+      </div>
+    </div>
+    {{/if}}
     {{/if}}
 
     {{#if is_food}}
@@ -105,10 +218,50 @@
     {{/if}}
     {{/if}}
 
-    {{#if google_website}}
+    {{#if service_options_list}}
+    <div class="card">
+      <h2>Services</h2>
+      <div class="tags">
+        {{#each service_options_list}}
+        <span class="tag">{{this}}</span>
+        {{/each}}
+      </div>
+    </div>
+    {{/if}}
+
+    {{#if amenities_list}}
+    <div class="card">
+      <h2>Amenities</h2>
+      <div class="amenities-grid">
+        {{#each amenities_list}}
+        <div class="amenity">
+          <span class="icon">{{icon}}</span>
+          <span>{{name}}</span>
+        </div>
+        {{/each}}
+      </div>
+    </div>
+    {{/if}}
+
+    {{#if accessibility_list}}
+    <div class="card">
+      <h2>Accessibility</h2>
+      <div class="tags">
+        {{#each accessibility_list}}
+        <span class="tag">{{this}}</span>
+        {{/each}}
+      </div>
+    </div>
+    {{/if}}
+
+    {{#if (or google_website osm_website)}}
     <div class="card">
       <h2>Website</h2>
-      <p><a href="{{google_website}}" target="_blank">{{google_website}}</a></p>
+      {{#if google_website}}
+      <p><a href="{{google_website}}" target="_blank">{{website_display}}</a></p>
+      {{else}}
+      <p><a href="{{osm_website}}" target="_blank">{{osm_website}}</a></p>
+      {{/if}}
     </div>
     {{/if}}
 
@@ -120,6 +273,22 @@
         <li>{{this}}</li>
         {{/each}}
       </ul>
+    </div>
+    {{/if}}
+
+    {{#if reviews_list}}
+    <div class="card">
+      <h2>Reviews</h2>
+      {{#each reviews_list}}
+      <div class="review-card">
+        <div class="review-author">{{author}}</div>
+        <div class="review-rating">{{ratingStars}}</div>
+        <p class="review-text">{{text}}</p>
+        {{#if relativeTime}}
+        <div class="review-date">{{relativeTime}}</div>
+        {{/if}}
+      </div>
+      {{/each}}
     </div>
     {{/if}}
 
