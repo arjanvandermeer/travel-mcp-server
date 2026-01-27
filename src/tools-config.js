@@ -213,14 +213,12 @@ export const resourcesConfig = {
 };
 
 /**
- * Helper to build content response with embedded resources for MCP Apps
+ * Helper to build content response for search results
  */
 function buildSearchResponse(pois) {
-  const content = [{ type: 'text', text: JSON.stringify(pois, null, 2) }];
-  pois.slice(0, 3).forEach(poi => {
-    content.push({ type: 'resource', resource: { uri: poi.resource_uri, mimeType: 'text/html+skybridge' } });
-  });
-  return { content };
+  return {
+    content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }],
+  };
 }
 
 /**
@@ -317,12 +315,8 @@ export async function executeToolHandler(name, args, db, options = {}) {
         poi.preview_url = `${options.previewUrlBase}/preview/poi/${poi.osm_id}`;
       }
 
-      // Return with embedded resource for MCP Apps
       return {
-        content: [
-          { type: 'text', text: JSON.stringify(poi, null, 2) },
-          { type: 'resource', resource: { uri: poi.resource_uri, mimeType: 'text/html+skybridge' } },
-        ],
+        content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],
       };
     }
 
@@ -339,6 +333,30 @@ export async function executeToolHandler(name, args, db, options = {}) {
 }
 
 /**
+ * Render POI details HTML (shared logic for all POI rendering)
+ * @param {object} poi - POI object from database
+ * @param {function} render - Template render function
+ * @returns {string} - Rendered HTML
+ */
+export function renderPOIPreview(poi, render) {
+  const opening_hours = poi.google_opening_hours?.weekdayDescriptions || null;
+  const photo_url = poi.google_photos?.[0]?.url || null;
+  const address = poi.osm_address || poi.google_address || '';
+  const address_lines = address.split(',').map(s => s.trim()).filter(Boolean);
+
+  // Computed flags for template conditionals
+  const is_food = foodTypes.includes(poi.poi_type);
+  const is_accommodation = accommodationTypes.includes(poi.poi_type);
+
+  // Parse cuisine (stored as "thai;international;fusion" in OSM)
+  const cuisine_list = poi.osm_cuisine
+    ? poi.osm_cuisine.split(/[;,]/).map(c => c.trim().replace(/_/g, ' ')).filter(Boolean)
+    : null;
+
+  return render('poi-details', { ...poi, opening_hours, photo_url, address_lines, is_food, is_accommodation, cuisine_list });
+}
+
+/**
  * Handle reading a resource
  * @param {string} uri - Resource URI
  * @param {object} db - Database instance
@@ -352,15 +370,8 @@ export async function handleReadResource(uri, db, render) {
       title: 'Travel MCP Server',
       message: 'MCP Apps UI is working!',
     });
-
     return {
-      contents: [
-        {
-          uri,
-          mimeType: 'text/html+skybridge',
-          text: html,
-        },
-      ],
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
     };
   }
 
@@ -381,15 +392,8 @@ export async function handleReadResource(uri, db, render) {
       };
     }
 
-    // Extract data for template (prefer OSM data over Google)
-    const opening_hours = poi.google_opening_hours?.weekdayDescriptions || null;
-    const photo_url = poi.google_photos?.[0]?.url || null;
-    const address = poi.osm_address || poi.google_address || '';
-    const address_lines = address.split(',').map(s => s.trim()).filter(Boolean);
-
-    const html = render('poi-details', { ...poi, opening_hours, photo_url, address_lines });
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render) }],
     };
   }
 
@@ -408,32 +412,10 @@ export async function handleReadResource(uri, db, render) {
       };
     }
 
-    // Extract data for template (prefer OSM data over Google)
-    const opening_hours = poi.google_opening_hours?.weekdayDescriptions || null;
-    const photo_url = poi.google_photos?.[0]?.url || null;
-    const address = poi.osm_address || poi.google_address || '';
-    const address_lines = address.split(',').map(s => s.trim()).filter(Boolean);
-
-    const html = render('poi-details', { ...poi, opening_hours, photo_url, address_lines });
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render) }],
     };
   }
 
   throw new Error(`Unknown resource: ${uri}`);
-}
-
-/**
- * Render POI for preview endpoint (shared logic for HTTP server)
- * @param {object} poi - POI object from database
- * @param {function} render - Template render function
- * @returns {string} - Rendered HTML
- */
-export function renderPOIPreview(poi, render) {
-  const opening_hours = poi.google_opening_hours?.weekdayDescriptions || null;
-  const photo_url = poi.google_photos?.[0]?.url || null;
-  const address = poi.osm_address || poi.google_address || '';
-  const address_lines = address.split(',').map(s => s.trim()).filter(Boolean);
-
-  return render('poi-details', { ...poi, opening_hours, photo_url, address_lines });
 }
