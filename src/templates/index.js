@@ -55,9 +55,14 @@ Handlebars.registerHelper('formatRating', function (rating) {
 
 /**
  * Helper to create Google Maps URL
- * Usage: {{mapsUrl latitude longitude}}
+ * Usage: {{mapsUrl latitude longitude placeId}}
+ * If placeId is provided, uses place link; otherwise falls back to coordinates
  */
-Handlebars.registerHelper('mapsUrl', function (lat, lon) {
+Handlebars.registerHelper('mapsUrl', function (lat, lon, placeId) {
+  // placeId might be the Handlebars options object if not provided
+  if (placeId && typeof placeId === 'string') {
+    return `https://www.google.com/maps/search/?api=1&query=${lat},${lon}&query_place_id=${placeId}`;
+  }
   return `https://www.google.com/maps?q=${lat},${lon}`;
 });
 

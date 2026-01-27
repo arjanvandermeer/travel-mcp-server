@@ -25,6 +25,22 @@ function removeNullFields(obj) {
   return obj;
 }
 
+/**
+ * Add resource_uri to POI results for MCP Apps integration
+ */
+function addResourceUri(pois) {
+  if (Array.isArray(pois)) {
+    return pois.map(poi => ({
+      ...poi,
+      resource_uri: `ui://poi/${poi.osm_id}`,
+    }));
+  }
+  if (pois && pois.osm_id) {
+    return { ...pois, resource_uri: `ui://poi/${pois.osm_id}` };
+  }
+  return pois;
+}
+
 export class TravelDatabase {
   constructor() {
     this.pool = new pg.Pool({ connectionString: CONNECTION_STRING });
@@ -375,7 +391,7 @@ export class TravelDatabase {
     }
 
     const result = await this.pool.query(query, queryParams);
-    return removeNullFields(result.rows);
+    return addResourceUri(removeNullFields(result.rows));
   }
 
   async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50) {
@@ -417,7 +433,7 @@ export class TravelDatabase {
     params.push(limit);
 
     const result = await this.pool.query(query, params);
-    return removeNullFields(result.rows);
+    return addResourceUri(removeNullFields(result.rows));
   }
 
   async getCityByName(name, countryCode = null) {
@@ -437,15 +453,31 @@ export class TravelDatabase {
   // POI Details
   // =========================================================================
 
-  async getPOIDetails(osmId) {
-    const result = await this.pool.query(`
-      SELECT *
-      FROM enriched_pois
-      WHERE osm_id = $1
-    `, [osmId]);
+  async getPOIDetails(osmId = null, googlePlaceId = null) {
+    let result;
+    if (googlePlaceId) {
+      // Look up by Google Places ID
+      result = await this.pool.query(`
+        SELECT *
+        FROM enriched_pois
+        WHERE google_place_id = $1
+      `, [googlePlaceId]);
+    } else if (osmId) {
+      // Look up by OSM ID
+      result = await this.pool.query(`
+        SELECT *
+        FROM enriched_pois
+        WHERE osm_id = $1
+      `, [osmId]);
+    } else {
+      return null;
+    }
 
     const poi = result.rows[0] || null;
     if (!poi) return null;
+
+    // Get the osm_id for enrichment logic (needed below)
+    osmId = poi.osm_id;
 
     // Determine enrichment status and add helpful metadata
     let enrichment_status = 'complete';
@@ -524,8 +556,8 @@ export class TravelDatabase {
       }
     }
 
-    // Remove null/undefined fields from the response
-    return removeNullFields(response);
+    // Remove null/undefined fields and add resource URI
+    return addResourceUri(removeNullFields(response));
   }
 
   /**
