@@ -51,6 +51,14 @@
       font-weight: 600;
     }
     .map-link:hover { background: #5a6fd6; }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag {
+      background: #f0f0f0;
+      padding: 4px 12px;
+      border-radius: 16px;
+      font-size: 14px;
+      text-transform: capitalize;
+    }
   </style>
 </head>
 <body>
@@ -82,6 +90,19 @@
       <p class="phone"><a href="tel:{{../google_phone}}">{{../google_phone}}</a></p>
       {{/if}}
     </div>
+    {{/if}}
+
+    {{#if is_food}}
+    {{#if cuisine_list}}
+    <div class="card">
+      <h2>Cuisine</h2>
+      <div class="tags">
+        {{#each cuisine_list}}
+        <span class="tag">{{this}}</span>
+        {{/each}}
+      </div>
+    </div>
+    {{/if}}
     {{/if}}
 
     {{#if google_website}}
