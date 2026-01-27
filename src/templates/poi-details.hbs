@@ -11,6 +11,11 @@
       color: #333;
       line-height: 1.5;
     }
+    .hero-image {
+      width: 100%;
+      height: 200px;
+      object-fit: cover;
+    }
     .header {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
       color: white;
@@ -30,6 +35,8 @@
     .card h2 { font-size: 14px; color: #666; margin-bottom: 8px; }
     .card p { font-size: 16px; }
     .card a { color: #667eea; text-decoration: none; }
+    .address-line { display: block; }
+    .phone { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
     .hours-list { list-style: none; font-size: 14px; }
     .hours-list li { padding: 4px 0; border-bottom: 1px solid #eee; }
     .hours-list li:last-child { border-bottom: none; }
@@ -47,6 +54,10 @@
   </style>
 </head>
 <body>
+  {{#if photo_url}}
+  <img class="hero-image" src="{{photo_url}}" alt="{{poiName this}}">
+  {{/if}}
+
   <div class="header">
     <div class="type">{{poi_type}}</div>
     <h1>{{poiName this}}</h1>
@@ -61,17 +72,15 @@
   </div>
 
   <div class="content">
-    {{#if (or google_address osm_address)}}
+    {{#if (or osm_address google_address)}}
     <div class="card">
       <h2>Address</h2>
-      <p>{{or google_address osm_address}}</p>
-    </div>
-    {{/if}}
-
-    {{#if google_phone}}
-    <div class="card">
-      <h2>Phone</h2>
-      <p><a href="tel:{{google_phone}}">{{google_phone}}</a></p>
+      {{#each address_lines}}
+      <span class="address-line">{{this}}</span>
+      {{/each}}
+      {{#if ../google_phone}}
+      <p class="phone"><a href="tel:{{../google_phone}}">{{../google_phone}}</a></p>
+      {{/if}}
     </div>
     {{/if}}
 
@@ -93,7 +102,7 @@
     </div>
     {{/if}}
 
-    <a class="map-link" href="{{mapsUrl osm_latitude osm_longitude}}" target="_blank">
+    <a class="map-link" href="{{mapsUrl osm_latitude osm_longitude google_place_id}}" target="_blank">
       Open in Google Maps
     </a>
   </div>
