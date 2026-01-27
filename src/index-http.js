@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
 /**
- * MCP Server with HTTP/SSE transport
- * Provides travel information tools over HTTP with Server-Sent Events
+ * MCP Server with Streamable HTTP transport
+ * Provides travel information tools over HTTP
  *
  * Usage:
  *   node src/index-http.js [port]
@@ -11,12 +11,13 @@
  */
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
+import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
 import http from 'http';
+import crypto from 'crypto';
 import { parse } from 'url';
 
 const db = new TravelDatabase();
@@ -449,7 +450,7 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   throw new Error(`Unknown resource: ${uri}`);
 });
 
-// Create HTTP server with SSE support
+// Create HTTP server with Streamable HTTP transport
 async function main() {
   // Test database connection first
   try {
@@ -473,8 +474,14 @@ async function main() {
     console.warn('Failed to initialize telemetry:', err.message);
   }
 
-  // Store active transport (only one at a time for now)
-  let activeTransport = null;
+  // Create the transport once
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: () => crypto.randomUUID(),
+  });
+
+  // Connect the MCP server to the transport
+  await server.connect(transport);
+  console.error('MCP server connected to transport');
 
   const httpServer = http.createServer(async (req, res) => {
     const parsedUrl = parse(req.url, true);
@@ -485,8 +492,9 @@ async function main() {
 
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id');
+    res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
 
     // Handle CORS preflight
     if (req.method === 'OPTIONS') {
@@ -496,53 +504,32 @@ async function main() {
     }
 
     // Health check endpoint
-    if (pathname === '/health' || pathname === '/') {
+    if (pathname === '/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         status: 'healthy',
         server: 'travel-mcp-server',
         version: '1.0.0',
-        transport: 'http-sse',
+        transport: 'streamable-http',
         endpoints: {
-          sse: '/sse',
+          mcp: '/mcp',
           health: '/health',
-          message: '/message',
         },
       }));
       return;
     }
 
-    // SSE endpoint - establishes SSE connection
-    if (pathname === '/sse' && req.method === 'GET') {
-      console.error('New SSE connection established');
-
-      const transport = new SSEServerTransport('/message', res);
-      activeTransport = transport;
-
-      await server.connect(transport);
-
-      // Handle connection close
-      req.on('close', () => {
-        console.error('SSE connection closed');
-        activeTransport = null;
-      });
-
-      return;
-    }
-
-    // Message endpoint - handles POST requests from SSE client
-    if (pathname === '/message' && req.method === 'POST') {
-      if (!activeTransport) {
-        res.writeHead(503, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({
-          error: 'Service Unavailable',
-          message: 'No active SSE connection. Connect to /sse first.',
-        }));
-        return;
+    // MCP endpoint - handles all MCP requests
+    if (pathname === '/mcp' || pathname === '/') {
+      try {
+        await transport.handleRequest(req, res);
+      } catch (err) {
+        console.error('Error handling MCP request:', err);
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal server error' }));
+        }
       }
-
-      // Let the transport handle the POST message
-      await activeTransport.handlePostMessage(req, res);
       return;
     }
 
@@ -550,14 +537,14 @@ async function main() {
     res.writeHead(404, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       error: 'Not Found',
-      message: `Path ${pathname} not found. Try /sse for SSE connection or /health for status.`,
+      message: `Path ${pathname} not found. POST to /mcp for MCP or GET /health for status.`,
     }));
   });
 
   httpServer.listen(PORT, () => {
-    console.log(`Travel MCP Server (HTTP/SSE) running on http://localhost:${PORT}`);
-    console.log(`SSE endpoint: http://localhost:${PORT}/sse`);
-    console.log(`Health check: http://localhost:${PORT}/health`);
+    console.error(`Travel MCP Server (Streamable HTTP) running on http://localhost:${PORT}`);
+    console.error(`MCP endpoint: http://localhost:${PORT}/mcp`);
+    console.error(`Health check: http://localhost:${PORT}/health`);
   });
 }
 
