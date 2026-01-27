@@ -353,7 +353,139 @@ export function renderPOIPreview(poi, render) {
     ? poi.osm_cuisine.split(/[;,]/).map(c => c.trim().replace(/_/g, ' ')).filter(Boolean)
     : null;
 
-  return render('poi-details', { ...poi, opening_hours, photo_url, address_lines, is_food, is_accommodation, cuisine_list });
+  // Star display for hotels
+  const starDisplay = poi.osm_stars ? '★'.repeat(parseInt(poi.osm_stars, 10) || 0) : null;
+
+  // Has hotel info (rooms, beds, or stars)
+  const has_hotel_info = poi.osm_rooms || poi.osm_beds || poi.osm_stars;
+
+  // Has contact info
+  const has_contact = poi.google_phone || poi.osm_phone || poi.osm_email;
+
+  // Price level display
+  const priceLevelMap = {
+    PRICE_LEVEL_FREE: 'Free',
+    PRICE_LEVEL_INEXPENSIVE: '$',
+    PRICE_LEVEL_MODERATE: '$$',
+    PRICE_LEVEL_EXPENSIVE: '$$$',
+    PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
+  };
+  const price_display = poi.google_price_level ? priceLevelMap[poi.google_price_level] || null : null;
+
+  // Business status display
+  let business_status_display = null;
+  let business_status_class = null;
+  if (poi.google_business_status) {
+    if (poi.google_business_status === 'CLOSED_PERMANENTLY') {
+      business_status_display = 'Permanently Closed';
+      business_status_class = 'status-closed';
+    } else if (poi.google_business_status === 'CLOSED_TEMPORARILY') {
+      business_status_display = 'Temporarily Closed';
+      business_status_class = 'status-temp-closed';
+    }
+    // Don't show badge for OPERATIONAL - that's the default
+  }
+
+  // Website display (shortened URL)
+  let website_display = null;
+  if (poi.google_website) {
+    try {
+      const url = new URL(poi.google_website);
+      website_display = url.hostname.replace(/^www\./, '');
+    } catch {
+      website_display = poi.google_website;
+    }
+  }
+
+  // Service options (dine-in, takeout, delivery, etc.)
+  let service_options_list = null;
+  if (poi.google_service_options) {
+    const opts = poi.google_service_options;
+    const services = [];
+    if (opts.dineIn) services.push('Dine-in');
+    if (opts.takeout) services.push('Takeout');
+    if (opts.delivery) services.push('Delivery');
+    if (opts.curbsidePickup) services.push('Curbside pickup');
+    if (opts.servesBreakfast) services.push('Breakfast');
+    if (opts.servesLunch) services.push('Lunch');
+    if (opts.servesDinner) services.push('Dinner');
+    if (opts.servesBrunch) services.push('Brunch');
+    if (opts.servesBeer) services.push('Beer');
+    if (opts.servesWine) services.push('Wine');
+    if (opts.servesCocktails) services.push('Cocktails');
+    if (opts.servesCoffee) services.push('Coffee');
+    if (opts.servesDessert) services.push('Dessert');
+    if (opts.servesVegetarianFood) services.push('Vegetarian options');
+    if (opts.outdoorSeating) services.push('Outdoor seating');
+    if (opts.liveMusic) services.push('Live music');
+    if (opts.reservable) services.push('Reservations');
+    if (services.length > 0) service_options_list = services;
+  }
+
+  // Amenities with icons
+  let amenities_list = null;
+  if (poi.google_amenities) {
+    const amenities = poi.google_amenities;
+    const items = [];
+    if (amenities.restroom) items.push({ icon: '🚻', name: 'Restroom' });
+    if (amenities.goodForChildren) items.push({ icon: '👶', name: 'Good for children' });
+    if (amenities.goodForGroups) items.push({ icon: '👥', name: 'Good for groups' });
+    if (amenities.goodForWatchingSports) items.push({ icon: '📺', name: 'Sports viewing' });
+    if (amenities.menuForChildren) items.push({ icon: '🍽️', name: 'Kids menu' });
+    if (amenities.paymentOptions?.acceptsCreditCards) items.push({ icon: '💳', name: 'Credit cards' });
+    if (amenities.paymentOptions?.acceptsCashOnly) items.push({ icon: '💵', name: 'Cash only' });
+    if (amenities.parkingOptions?.paidParkingLot) items.push({ icon: '🅿️', name: 'Paid parking' });
+    if (amenities.parkingOptions?.freeParkingLot) items.push({ icon: '🅿️', name: 'Free parking' });
+    if (amenities.parkingOptions?.streetParking) items.push({ icon: '🚗', name: 'Street parking' });
+    if (amenities.parkingOptions?.valetParking) items.push({ icon: '🔑', name: 'Valet parking' });
+    if (items.length > 0) amenities_list = items;
+  }
+
+  // Accessibility
+  let accessibility_list = null;
+  const accessItems = [];
+  if (poi.osm_wheelchair === 'yes') accessItems.push('Wheelchair accessible');
+  if (poi.osm_wheelchair === 'limited') accessItems.push('Limited wheelchair access');
+  if (poi.google_accessibility) {
+    const acc = poi.google_accessibility;
+    if (acc.wheelchairAccessibleEntrance) accessItems.push('Wheelchair entrance');
+    if (acc.wheelchairAccessibleRestroom) accessItems.push('Wheelchair restroom');
+    if (acc.wheelchairAccessibleSeating) accessItems.push('Wheelchair seating');
+    if (acc.wheelchairAccessibleParking) accessItems.push('Wheelchair parking');
+  }
+  if (accessItems.length > 0) accessibility_list = [...new Set(accessItems)]; // Remove duplicates
+
+  // Reviews (top 3)
+  let reviews_list = null;
+  if (poi.google_reviews && Array.isArray(poi.google_reviews) && poi.google_reviews.length > 0) {
+    reviews_list = poi.google_reviews.slice(0, 3).map(review => ({
+      author: review.authorAttribution?.displayName || 'Anonymous',
+      ratingStars: '★'.repeat(review.rating || 0) + '☆'.repeat(5 - (review.rating || 0)),
+      text: review.text?.text || review.originalText?.text || '',
+      relativeTime: review.relativePublishTimeDescription || null,
+    })).filter(r => r.text); // Only include reviews with text
+  }
+
+  return render('poi-details', {
+    ...poi,
+    opening_hours,
+    photo_url,
+    address_lines,
+    is_food,
+    is_accommodation,
+    cuisine_list,
+    starDisplay,
+    has_hotel_info,
+    has_contact,
+    price_display,
+    business_status_display,
+    business_status_class,
+    website_display,
+    service_options_list,
+    amenities_list,
+    accessibility_list,
+    reviews_list,
+  });
 }
 
 /**
