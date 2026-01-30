@@ -29,58 +29,68 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const db = new TravelDatabase();
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
 
-const server = new Server(
-  {
-    name: 'travel-mcp-server',
-    version: '1.0.0',
-  },
-  {
-    capabilities: {
-      tools: {},
-      resources: {},
+// Store active sessions: sessionId -> { server, transport }
+const sessions = new Map();
+
+/**
+ * Create a new MCP Server instance with all handlers configured
+ */
+function createMCPServer() {
+  const server = new Server(
+    {
+      name: 'travel-mcp-server',
+      version: '1.0.0',
     },
-  }
-);
-
-// List available tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  return { tools: toolsConfig };
-});
-
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-
-  // Add breadcrumb for debugging
-  telemetry.addBreadcrumb(`Tool call: ${name}`, 'mcp.tool', args);
-
-  return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
-    try {
-      return await executeToolHandler(name, args, db, {
-        previewUrlBase: `http://localhost:${PORT}`,
-      });
-    } catch (error) {
-      telemetry.captureException(error, { tool: name, args });
-      return {
-        content: [{ type: 'text', text: `Error: ${error.message}` }],
-        isError: true,
-      };
+    {
+      capabilities: {
+        tools: {},
+        resources: {},
+      },
     }
+  );
+
+  // List available tools
+  server.setRequestHandler(ListToolsRequestSchema, async () => {
+    return { tools: toolsConfig };
   });
-});
 
-// List available resources (MCP Apps)
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  return resourcesConfig;
-});
+  // Handle tool calls
+  server.setRequestHandler(CallToolRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
 
-// Read resource content (MCP Apps)
-server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  const { uri } = request.params;
-  return handleReadResource(uri, db, render);
-});
+    // Add breadcrumb for debugging
+    telemetry.addBreadcrumb(`Tool call: ${name}`, 'mcp.tool', args);
 
-// Create HTTP server with Streamable HTTP transport
+    return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
+      try {
+        return await executeToolHandler(name, args, db, {
+          previewUrlBase: `http://localhost:${PORT}`,
+        });
+      } catch (error) {
+        telemetry.captureException(error, { tool: name, args });
+        return {
+          content: [{ type: 'text', text: `Error: ${error.message}` }],
+          isError: true,
+        };
+      }
+    });
+  });
+
+  // List available resources (MCP Apps)
+  server.setRequestHandler(ListResourcesRequestSchema, async () => {
+    return resourcesConfig;
+  });
+
+  // Read resource content (MCP Apps)
+  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
+    const { uri } = request.params;
+    return handleReadResource(uri, db, render);
+  });
+
+  return server;
+}
+
+// Create HTTP server with Streamable HTTP transport (multi-session support)
 async function main() {
   // Test database connection first
   try {
@@ -103,15 +113,6 @@ async function main() {
   } catch (err) {
     console.warn('Failed to initialize telemetry:', err.message);
   }
-
-  // Create the transport once
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: () => crypto.randomUUID(),
-  });
-
-  // Connect the MCP server to the transport
-  await server.connect(transport);
-  console.error('MCP server connected to transport');
 
   const httpServer = http.createServer(async (req, res) => {
     const parsedUrl = parse(req.url, true);
@@ -141,6 +142,7 @@ async function main() {
         server: 'travel-mcp-server',
         version: '1.0.0',
         transport: 'streamable-http',
+        activeSessions: sessions.size,
         endpoints: {
           mcp: '/mcp',
           health: '/health',
@@ -210,10 +212,42 @@ async function main() {
       return;
     }
 
-    // MCP endpoint - handles all MCP requests
+    // MCP endpoint - handles all MCP requests with multi-session support
     if (pathname === '/mcp' || pathname === '/') {
       try {
-        await transport.handleRequest(req, res);
+        // Check for existing session
+        const sessionId = req.headers['mcp-session-id'];
+
+        if (sessionId && sessions.has(sessionId)) {
+          // Existing session - route to its transport
+          const session = sessions.get(sessionId);
+          await session.transport.handleRequest(req, res);
+        } else if (sessionId && !sessions.has(sessionId)) {
+          // Invalid session ID
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32000, message: 'Invalid or expired session ID' },
+            id: null,
+          }));
+        } else {
+          // No session ID - create new session for initialize request
+          const newSessionId = crypto.randomUUID();
+          const server = createMCPServer();
+          const transport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => newSessionId,
+          });
+
+          // Connect server to transport
+          await server.connect(transport);
+
+          // Store session
+          sessions.set(newSessionId, { server, transport, createdAt: Date.now() });
+          console.error(`New session created: ${newSessionId} (total: ${sessions.size})`);
+
+          // Handle the request
+          await transport.handleRequest(req, res);
+        }
       } catch (err) {
         console.error('Error handling MCP request:', err);
         if (!res.headersSent) {
@@ -232,8 +266,21 @@ async function main() {
     }));
   });
 
+  // Clean up stale sessions every 5 minutes
+  setInterval(() => {
+    const maxAge = 30 * 60 * 1000; // 30 minutes
+    const now = Date.now();
+    for (const [sessionId, session] of sessions) {
+      if (now - session.createdAt > maxAge) {
+        sessions.delete(sessionId);
+        console.error(`Session expired: ${sessionId} (remaining: ${sessions.size})`);
+      }
+    }
+  }, 5 * 60 * 1000);
+
   httpServer.listen(PORT, () => {
     console.error(`Travel MCP Server (Streamable HTTP) running on port ${PORT}`);
+    console.error(`Multi-session support: enabled`);
     console.error(`MCP endpoint: /mcp`);
     console.error(`Health check: /health`);
     console.error(`Preview: /preview/poi/{osm_id}`);

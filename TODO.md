@@ -2,6 +2,13 @@
 
 ## High Priority
 
+### ~~PostgreSQL Performance Optimizations (AWS RDS)~~ COMPLETED 2026-01-30
+All optimizations applied. Results:
+- Spatial POI search: 106ms → 0.27ms (**417x faster**)
+- City ILIKE search: 85ms → 0.67ms (**127x faster**)
+- Dropped 9 unused indexes, added 3 new optimized indexes
+- Applied SSD-optimized settings (random_page_cost=1.1, effective_io_concurrency=200, work_mem=16MB)
+
 ### Add ChatGPT Support (StreamableHTTP Transport)
 - [ ] Add StreamableHTTP transport to index-http.js alongside SSE
 - [ ] StreamableHTTP at `/mcp` for ChatGPT (POST requests)
