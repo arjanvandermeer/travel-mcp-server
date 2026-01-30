@@ -233,12 +233,12 @@ async function main() {
   });
 
   httpServer.listen(PORT, () => {
-    console.error(`Travel MCP Server (Streamable HTTP) running on http://localhost:${PORT}`);
-    console.error(`MCP endpoint: http://localhost:${PORT}/mcp`);
-    console.error(`Health check: http://localhost:${PORT}/health`);
-    console.error(`Preview: http://localhost:${PORT}/preview/poi/{osm_id}`);
-    console.error(`Preview random: http://localhost:${PORT}/preview/poi/random`);
-    console.error(`Template demo: http://localhost:${PORT}/preview/demo`);
+    console.error(`Travel MCP Server (Streamable HTTP) running on port ${PORT}`);
+    console.error(`MCP endpoint: /mcp`);
+    console.error(`Health check: /health`);
+    console.error(`Preview: /preview/poi/{osm_id}`);
+    console.error(`Preview random: /preview/poi/random`);
+    console.error(`Template demo: /preview/demo`);
   });
 }
 
