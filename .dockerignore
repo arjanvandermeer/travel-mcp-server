@@ -1,0 +1,13 @@
+node_modules
+npm-debug.log
+.git
+.gitignore
+.env
+.env.*
+*.md
+tests
+doc
+data
+*.log
+.DS_Store
+.claude

@@ -26,7 +26,7 @@ import pg from 'pg';
 import parseOSM from 'osm-pbf-parser';
 import through2 from 'through2';
 
-const PG_CONNECTION = 'postgresql://traveluser:travelpass@localhost:5432/travel';
+const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
 
 // POI type mappings: OSM tag -> our poi_type
 const POI_MAPPINGS = {
