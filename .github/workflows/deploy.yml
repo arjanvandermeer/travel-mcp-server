@@ -46,7 +46,7 @@ jobs:
       - name: Download task definition
         run: |
           aws ecs describe-task-definition \
-            --task-definition hotel-mcp-task \
+            --task-definition travel-mcp-task \
             --query taskDefinition > task-definition.json
 
       - name: Update task definition with new image
