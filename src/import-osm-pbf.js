@@ -315,6 +315,10 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
       };
 
       const poi = extractPOIData(wayItem, way.matchedType, regionName);
+      // Skip POIs without a valid name
+      if (!poi.name || poi.name.trim() === '' || poi.name.toLowerCase() === 'unknown') {
+        continue;
+      }
       pois.push(poi);
       waysPOIs++;
 
@@ -344,6 +348,10 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
               const matchedType = matchPOIType(item.tags, poiType);
               if (matchedType) {
                 const poi = extractPOIData(item, matchedType, regionName);
+                // Skip POIs without a valid name
+                if (!poi.name || poi.name.trim() === '' || poi.name.toLowerCase() === 'unknown') {
+                  continue;
+                }
                 pois.push(poi);
                 nodesPOIs++;
 
