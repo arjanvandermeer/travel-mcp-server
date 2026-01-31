@@ -18,6 +18,8 @@ postgresql://traveluser:travelpass@localhost:5432/travel
 | `osm_pois` | Points of Interest from OpenStreetMap |
 | `google_places` | Cached Google Places data |
 | `osm_google_mappings` | Links OSM POIs to Google Places |
+| `google_api_usage` | Daily API call tracking for rate limiting |
+| `app_config` | Application configuration settings |
 | `regions` | Named geographic regions (future use) |
 | `imports` | Import tracking and history |
 
@@ -231,6 +233,47 @@ CREATE TABLE imports (
     metadata JSONB
 );
 ```
+
+### app_config
+
+Application configuration settings (API keys, feature flags, etc.).
+
+```sql
+CREATE TABLE app_config (
+    key VARCHAR(100) PRIMARY KEY,
+    value TEXT,
+    encrypted BOOLEAN DEFAULT FALSE,
+    description TEXT,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Default configuration keys:**
+- `google_places_api_key` - Google Places API key
+- `google_places_enabled` - Enable/disable enrichment (default: true)
+- `google_places_cache_hours` - Cache duration (default: 168 = 7 days)
+- `google_api_daily_limit` - Daily API call limit (default: 100)
+- `server_base_url` - Base URL for preview URLs (e.g., https://example.com)
+- `sentry_dsn` - Sentry DSN for error tracking
+- `telemetry_enabled` - Enable/disable telemetry (default: true)
+
+### google_api_usage
+
+Tracks daily Google API call counts for rate limiting.
+
+```sql
+CREATE TABLE google_api_usage (
+    date_key VARCHAR(10) PRIMARY KEY,    -- YYYY-MM-DD format
+    call_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+**Rate Limiting:**
+- Default daily limit: 100 API calls
+- Override via `app_config` key `google_api_daily_limit`
+- Each POI enrichment uses 2 API calls (search + details)
+- Limit resets at midnight UTC
 
 ## Views
 

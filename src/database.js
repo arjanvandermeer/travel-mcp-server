@@ -653,6 +653,121 @@ export class TravelDatabase {
   }
 
   // =========================================================================
+  // Google API Rate Limiting
+  // =========================================================================
+
+  // Default daily limit (can be overridden in app_config with key 'google_api_daily_limit')
+  static DEFAULT_GOOGLE_API_DAILY_LIMIT = 100;
+
+  /**
+   * Get today's date as YYYY-MM-DD string (UTC)
+   */
+  getTodayDateKey() {
+    return new Date().toISOString().split('T')[0];
+  }
+
+  /**
+   * Check if we can make another Google API call today
+   * Returns { allowed: boolean, current: number, limit: number }
+   */
+  async checkGoogleApiLimit() {
+    const dateKey = this.getTodayDateKey();
+    const limit = parseInt(await this.getConfig('google_api_daily_limit', String(TravelDatabase.DEFAULT_GOOGLE_API_DAILY_LIMIT)));
+
+    try {
+      const result = await this.pool.query(
+        'SELECT call_count FROM google_api_usage WHERE date_key = $1',
+        [dateKey]
+      );
+
+      const current = result.rows.length > 0 ? parseInt(result.rows[0].call_count) : 0;
+      return {
+        allowed: current < limit,
+        current,
+        limit,
+      };
+    } catch (error) {
+      // If table doesn't exist, allow the call (will be created on increment)
+      if (error.message.includes('relation "google_api_usage" does not exist')) {
+        return { allowed: true, current: 0, limit };
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Increment the Google API call counter for today
+   * Creates the table and/or row if they don't exist
+   */
+  async incrementGoogleApiCounter() {
+    const dateKey = this.getTodayDateKey();
+
+    try {
+      // Upsert: insert or increment
+      await this.pool.query(`
+        INSERT INTO google_api_usage (date_key, call_count, updated_at)
+        VALUES ($1, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (date_key) DO UPDATE SET
+          call_count = google_api_usage.call_count + 1,
+          updated_at = CURRENT_TIMESTAMP
+      `, [dateKey]);
+    } catch (error) {
+      // If table doesn't exist, create it and retry
+      if (error.message.includes('relation "google_api_usage" does not exist')) {
+        await this.pool.query(`
+          CREATE TABLE IF NOT EXISTS google_api_usage (
+            date_key VARCHAR(10) PRIMARY KEY,
+            call_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        // Retry the insert
+        await this.pool.query(`
+          INSERT INTO google_api_usage (date_key, call_count, updated_at)
+          VALUES ($1, 1, CURRENT_TIMESTAMP)
+          ON CONFLICT (date_key) DO UPDATE SET
+            call_count = google_api_usage.call_count + 1,
+            updated_at = CURRENT_TIMESTAMP
+        `, [dateKey]);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  /**
+   * Get current Google API usage stats
+   */
+  async getGoogleApiUsage() {
+    const dateKey = this.getTodayDateKey();
+    const limit = parseInt(await this.getConfig('google_api_daily_limit', String(TravelDatabase.DEFAULT_GOOGLE_API_DAILY_LIMIT)));
+
+    try {
+      const result = await this.pool.query(
+        'SELECT date_key, call_count, updated_at FROM google_api_usage WHERE date_key = $1',
+        [dateKey]
+      );
+
+      if (result.rows.length === 0) {
+        return { date: dateKey, calls: 0, limit, remaining: limit };
+      }
+
+      const row = result.rows[0];
+      return {
+        date: row.date_key,
+        calls: parseInt(row.call_count),
+        limit,
+        remaining: Math.max(0, limit - parseInt(row.call_count)),
+      };
+    } catch (error) {
+      if (error.message.includes('relation "google_api_usage" does not exist')) {
+        return { date: dateKey, calls: 0, limit, remaining: limit };
+      }
+      throw error;
+    }
+  }
+
+  // =========================================================================
   // Google Places Enrichment
   // =========================================================================
 
@@ -716,8 +831,16 @@ export class TravelDatabase {
         }
       }
 
+      // Check rate limit before making API calls
+      const limitCheck = await this.checkGoogleApiLimit();
+      if (!limitCheck.allowed) {
+        console.error(`Google API daily limit reached (${limitCheck.current}/${limitCheck.limit}). Skipping enrichment for OSM ${osmId}`);
+        return;
+      }
+
       // Find matching Google Place
       const matchResult = await this.googlePlaces.findMatchingPlace(osmPOI);
+      await this.incrementGoogleApiCounter(); // Count the search API call
 
       if (!matchResult) {
         // Mark as not_found
@@ -728,8 +851,20 @@ export class TravelDatabase {
         return;
       }
 
+      // Check rate limit again before details call
+      const limitCheck2 = await this.checkGoogleApiLimit();
+      if (!limitCheck2.allowed) {
+        console.error(`Google API daily limit reached (${limitCheck2.current}/${limitCheck2.limit}). Skipping details for OSM ${osmId}`);
+        await this.createMapping(osmId, matchResult.place_id, {
+          mapping_status: 'pending',
+          mapping_notes: 'Rate limit reached before details fetch'
+        });
+        return;
+      }
+
       // Get full place details
       const placeDetails = await this.googlePlaces.getPlaceDetails(matchResult.place_id);
+      await this.incrementGoogleApiCounter(); // Count the details API call
 
       if (!placeDetails) {
         await this.createMapping(osmId, matchResult.place_id, {

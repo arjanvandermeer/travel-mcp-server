@@ -116,18 +116,51 @@ When a POI is enriched, these fields are available:
 - **Place Details**: $17 per 1,000 requests
 - **Cost per POI**: ~$0.05 (1-2 searches + 1 details)
 
+### Daily Rate Limiting
+
+The server enforces a configurable daily API call limit to prevent unexpected costs:
+
+- **Default limit**: 100 API calls per day
+- **Per enrichment**: 2 API calls (search + details)
+- **Effective limit**: ~50 POI enrichments per day
+- **Reset**: Midnight UTC
+
+**Configure the limit:**
+
+```bash
+# Set daily limit to 200 calls
+node scripts/manage-config.js set google_api_daily_limit 200
+```
+
+Or directly in the database:
+
+```sql
+INSERT INTO app_config (key, value, description)
+VALUES ('google_api_daily_limit', '200', 'Daily Google API call limit')
+ON CONFLICT (key) DO UPDATE SET value = '200';
+```
+
+**Check current usage:**
+
+```sql
+SELECT * FROM google_api_usage WHERE date_key = CURRENT_DATE::text;
+```
+
 ### Cost Optimization
 
-1. **Caching**: Data cached for 7 days (configurable)
-2. **Lazy Loading**: Only enriches POIs that are actually searched
-3. **Batch Limiting**: Only enriches top 10 results per search
-4. **Retry Prevention**: Failed lookups cached for 24 hours
+1. **Daily Limit**: Hard cap prevents runaway costs (default: 100 calls)
+2. **Caching**: Data cached for 7 days (configurable)
+3. **Lazy Loading**: Only enriches POIs that are actually searched
+4. **Batch Limiting**: Only enriches top 10 results per search
+5. **Retry Prevention**: Failed lookups cached for 7 days
 
 ### Free Tier
 
 Google provides **$200 free credit per month**, covering:
 - ~4,000 POI enrichments per month
 - ~130 enrichments per day
+
+With the default 100-call daily limit, you'll stay well within the free tier.
 
 ## Troubleshooting
 
@@ -171,6 +204,8 @@ Google Places integration uses these tables:
 
 - `google_places` - Cached Google Places data
 - `osm_google_mappings` - Links OSM POIs to Google Places
+- `google_api_usage` - Daily API call tracking for rate limiting
+- `app_config` - Configuration settings (API key, limits, etc.)
 - `enriched_pois` (view) - Combined OSM + Google data with "best" fields
 
 See [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) for full schema details.
