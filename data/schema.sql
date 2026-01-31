@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS imports CASCADE;
 DROP TABLE IF EXISTS osm_pois CASCADE;
 DROP TABLE IF EXISTS hotels CASCADE;
 DROP TABLE IF EXISTS geonames_cities CASCADE;
+DROP TABLE IF EXISTS geonames_admin1_codes CASCADE;
 DROP TABLE IF EXISTS geonames_countries CASCADE;
 DROP TABLE IF EXISTS regions CASCADE;
 
@@ -89,6 +90,24 @@ CREATE TABLE geonames_countries (
 
 CREATE INDEX idx_countries_name ON geonames_countries(country);
 CREATE INDEX idx_countries_geoname_id ON geonames_countries(geoname_id);
+
+-- ============================================================================
+-- GeoNames Admin1 Codes (States/Provinces)
+-- ============================================================================
+CREATE TABLE geonames_admin1_codes (
+    code VARCHAR(15) PRIMARY KEY,           -- e.g., 'US.NY', 'GB.ENG'
+    country_code VARCHAR(2) NOT NULL,       -- ISO country code
+    admin1_code VARCHAR(20) NOT NULL,       -- Admin1 code (e.g., 'NY', 'ENG')
+    name VARCHAR(200) NOT NULL,             -- Full name (e.g., 'New York')
+    ascii_name VARCHAR(200),                -- ASCII version of name
+    geoname_id INTEGER,                     -- GeoNames ID for this admin1
+    FOREIGN KEY (country_code) REFERENCES geonames_countries(iso_alpha2)
+);
+
+CREATE INDEX idx_admin1_country ON geonames_admin1_codes(country_code);
+CREATE INDEX idx_admin1_code ON geonames_admin1_codes(admin1_code);
+CREATE INDEX idx_admin1_name ON geonames_admin1_codes(name);
+CREATE INDEX idx_admin1_country_code ON geonames_admin1_codes(country_code, admin1_code);
 
 -- ============================================================================
 -- GeoNames Cities

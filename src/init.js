@@ -108,6 +108,7 @@ async function initializeDatabase() {
     console.log('\nDatabase statistics:');
     const stats = await Promise.all([
       client.query('SELECT COUNT(*) FROM geonames_countries'),
+      client.query('SELECT COUNT(*) FROM geonames_admin1_codes'),
       client.query('SELECT COUNT(*) FROM geonames_cities'),
       client.query('SELECT COUNT(*) FROM osm_pois'),
       client.query('SELECT COUNT(*) FROM regions'),
@@ -115,14 +116,15 @@ async function initializeDatabase() {
     ]);
 
     console.log(`  - Countries: ${stats[0].rows[0].count}`);
-    console.log(`  - Cities: ${stats[1].rows[0].count}`);
-    console.log(`  - POIs: ${stats[2].rows[0].count}`);
-    console.log(`  - Regions: ${stats[3].rows[0].count}`);
-    console.log(`  - Import records: ${stats[4].rows[0].count}`);
+    console.log(`  - Admin1 Codes (States/Provinces): ${stats[1].rows[0].count}`);
+    console.log(`  - Cities: ${stats[2].rows[0].count}`);
+    console.log(`  - POIs: ${stats[3].rows[0].count}`);
+    console.log(`  - Regions: ${stats[4].rows[0].count}`);
+    console.log(`  - Import records: ${stats[5].rows[0].count}`);
 
     console.log('\n✅ Database initialization complete!');
     console.log('\nNext steps:');
-    console.log('  1. Import GeoNames data: npm run db:import-geonames');
+    console.log('  1. Import GeoNames data (countries, admin1 codes, cities): npm run db:import-geonames');
     console.log('  2. Download OSM data: curl -L -o data/thailand-latest.osm.pbf https://download.geofabrik.de/asia/thailand-latest.osm.pbf');
     console.log('  3. Import OSM POI data: node src/import-osm-pbf.js data/thailand-latest.osm.pbf all');
 

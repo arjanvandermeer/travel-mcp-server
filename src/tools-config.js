@@ -12,7 +12,7 @@ export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food
 export const toolsConfig = [
   {
     name: 'search_cities',
-    description: 'Search for cities by name. Optionally filter by country code. Returns city information including coordinates, population, and timezone.',
+    description: 'Search for cities by name. Optionally filter by country code and/or state/province. Returns city information including coordinates, population, timezone, and state/province details.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -23,6 +23,10 @@ export const toolsConfig = [
         country_code: {
           type: 'string',
           description: 'Optional 2-letter country code (e.g., "TH", "US") to narrow results',
+        },
+        state: {
+          type: 'string',
+          description: 'Optional state/province code (e.g., "NY", "CA") or full name (e.g., "New York", "California"). Works for US states and other countries with admin1 divisions.',
         },
         limit: {
           type: 'number',
@@ -232,7 +236,7 @@ function buildSearchResponse(pois) {
 export async function executeToolHandler(name, args, db, options = {}) {
   switch (name) {
     case 'search_cities': {
-      const cities = await db.searchCities(args.query, args.country_code, args.limit || 10);
+      const cities = await db.searchCities(args.query, args.country_code, args.state, args.limit || 10);
       return {
         content: [{ type: 'text', text: JSON.stringify(cities, null, 2) }],
       };
@@ -310,10 +314,8 @@ export async function executeToolHandler(name, args, db, options = {}) {
         };
       }
 
-      // Add preview URL if base is provided (HTTP server)
-      if (options.previewUrlBase) {
-        poi.preview_url = `${options.previewUrlBase}/preview/poi/${poi.osm_id}`;
-      }
+      // Add preview URL (relative path)
+      poi.preview_url = `/preview/poi/${poi.osm_id}`;
 
       return {
         content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],

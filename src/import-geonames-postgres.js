@@ -30,6 +30,7 @@ const PG_CONNECTION = process.env.DATABASE_URL ||
 const GEONAMES_URLS = {
   countries: 'https://download.geonames.org/export/dump/countryInfo.txt',
   cities: 'https://download.geonames.org/export/dump/cities1000.zip',
+  admin1: 'https://download.geonames.org/export/dump/admin1CodesASCII.txt',
 };
 
 async function download(url, outputPath) {
@@ -304,6 +305,104 @@ async function importCities(pool) {
   }
 }
 
+async function importAdmin1Codes(pool) {
+  console.log('\n=== Importing Admin1 Codes (States/Provinces) ===');
+
+  const filePath = join(DATA_DIR, 'admin1CodesASCII.txt');
+  let importId = null;
+
+  if (!fs.existsSync(filePath)) {
+    console.log('Downloading admin1CodesASCII.txt...');
+    await download(GEONAMES_URLS.admin1, filePath);
+    console.log('✓ Downloaded');
+  }
+
+  const content = fs.readFileSync(filePath, 'utf-8');
+  const lines = content.split('\n').filter(line => line.trim());
+
+  console.log(`Found ${lines.length} admin1 codes`);
+  console.log('Importing into PostgreSQL...');
+
+  // Start import tracking
+  const importResult = await pool.query(`
+    INSERT INTO imports (
+      import_type, source_file, source_url, metadata, status
+    ) VALUES ($1, $2, $3, $4, 'running')
+    RETURNING id
+  `, ['geonames_admin1', 'admin1CodesASCII.txt', GEONAMES_URLS.admin1, null]);
+
+  importId = importResult.rows[0].id;
+
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // Clear existing data
+    await client.query('DELETE FROM geonames_admin1_codes');
+
+    let imported = 0;
+
+    for (const line of lines) {
+      // Format: US.NY	New York	New York	5128638
+      const parts = line.split('\t');
+      if (parts.length < 2) continue;
+
+      const code = parts[0]; // e.g., 'US.NY'
+      const name = parts[1];
+      const asciiName = parts[2] || parts[1];
+      const geonameId = parts[3] ? parseInt(parts[3]) : null;
+
+      // Split code into country and admin1
+      const [countryCode, admin1Code] = code.split('.');
+      if (!countryCode || !admin1Code) continue;
+
+      await client.query(`
+        INSERT INTO geonames_admin1_codes (code, country_code, admin1_code, name, ascii_name, geoname_id)
+        VALUES ($1, $2, $3, $4, $5, $6)
+        ON CONFLICT (code) DO UPDATE SET
+          name = EXCLUDED.name,
+          ascii_name = EXCLUDED.ascii_name,
+          geoname_id = EXCLUDED.geoname_id
+      `, [code, countryCode, admin1Code, name, asciiName, geonameId]);
+
+      imported++;
+      if (imported % 500 === 0) {
+        console.log(`  Imported ${imported} admin1 codes...`);
+      }
+    }
+
+    await client.query('COMMIT');
+    console.log(`✓ Imported ${imported} admin1 codes`);
+
+    // Update import status
+    await pool.query(`
+      UPDATE imports
+      SET status = 'completed',
+          completed_at = CURRENT_TIMESTAMP,
+          records_imported = $2
+      WHERE id = $1
+    `, [importId, imported]);
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+
+    if (importId) {
+      await pool.query(`
+        UPDATE imports
+        SET status = 'failed',
+            completed_at = CURRENT_TIMESTAMP,
+            error_message = $2
+        WHERE id = $1
+      `, [importId, error.message]).catch(e => console.error('Failed to update import status:', e.message));
+    }
+
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 async function main() {
   // Ensure data directory exists
   if (!fs.existsSync(DATA_DIR)) {
@@ -318,14 +417,17 @@ async function main() {
 
     await importCountries(pool);
     await importCities(pool);
+    await importAdmin1Codes(pool);
 
     // Show statistics
     console.log('\n=== Database Statistics ===');
     const countriesCount = await pool.query('SELECT COUNT(*) FROM geonames_countries');
     const citiesCount = await pool.query('SELECT COUNT(*) FROM geonames_cities');
+    const admin1Count = await pool.query('SELECT COUNT(*) FROM geonames_admin1_codes');
 
     console.log(`Countries: ${countriesCount.rows[0].count}`);
     console.log(`Cities: ${citiesCount.rows[0].count}`);
+    console.log(`Admin1 Codes (States/Provinces): ${admin1Count.rows[0].count}`);
 
     console.log('\n✅ GeoNames import complete!');
 

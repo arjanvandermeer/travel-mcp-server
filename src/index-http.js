@@ -63,9 +63,7 @@ function createMCPServer() {
 
     return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
       try {
-        return await executeToolHandler(name, args, db, {
-          previewUrlBase: `http://localhost:${PORT}`,
-        });
+        return await executeToolHandler(name, args, db);
       } catch (error) {
         telemetry.captureException(error, { tool: name, args });
         return {
