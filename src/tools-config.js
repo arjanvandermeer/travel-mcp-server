@@ -364,8 +364,15 @@ export async function executeToolHandler(name, args, db, options = {}) {
         };
       }
 
-      // Add preview URL (relative path)
-      poi.preview_url = `/preview/poi/${poi.osm_id}`;
+      // Add preview URL - use full URL if server_base_url is configured, otherwise relative
+      const serverBaseUrl = await db.getConfig('server_base_url');
+      if (serverBaseUrl) {
+        // Remove trailing slash if present
+        const baseUrl = serverBaseUrl.replace(/\/$/, '');
+        poi.preview_url = `${baseUrl}/preview/poi/${poi.osm_id}`;
+      } else {
+        poi.preview_url = `/preview/poi/${poi.osm_id}`;
+      }
 
       return {
         content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],
