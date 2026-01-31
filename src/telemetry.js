@@ -278,6 +278,105 @@ export function getConfig() {
   };
 }
 
+// =============================================================================
+// Metrics API (Sentry Metrics)
+// =============================================================================
+
+/**
+ * Increment a counter metric
+ * @param {string} name - Metric name (e.g., 'google_api.calls')
+ * @param {number} value - Amount to increment (default: 1)
+ * @param {object} tags - Optional tags for filtering (e.g., { endpoint: 'places_search' })
+ */
+export function incrementCounter(name, value = 1, tags = {}) {
+  if (!telemetryEnabled) return;
+
+  try {
+    Sentry.metrics.increment(name, value, { tags });
+  } catch (error) {
+    console.error('[Telemetry] Failed to increment counter:', error.message);
+  }
+}
+
+/**
+ * Record a distribution metric (for timing, sizes, etc.)
+ * @param {string} name - Metric name (e.g., 'google_api.latency')
+ * @param {number} value - The value to record
+ * @param {object} options - Optional { tags, unit } (unit: 'millisecond', 'second', 'byte', etc.)
+ */
+export function recordDistribution(name, value, options = {}) {
+  if (!telemetryEnabled) return;
+
+  const { tags = {}, unit = 'none' } = options;
+  try {
+    Sentry.metrics.distribution(name, value, { tags, unit });
+  } catch (error) {
+    console.error('[Telemetry] Failed to record distribution:', error.message);
+  }
+}
+
+/**
+ * Record a gauge metric (current value, like queue size or remaining quota)
+ * @param {string} name - Metric name (e.g., 'google_api.daily_remaining')
+ * @param {number} value - Current value
+ * @param {object} tags - Optional tags for filtering
+ */
+export function recordGauge(name, value, tags = {}) {
+  if (!telemetryEnabled) return;
+
+  try {
+    Sentry.metrics.gauge(name, value, { tags });
+  } catch (error) {
+    console.error('[Telemetry] Failed to record gauge:', error.message);
+  }
+}
+
+/**
+ * Record a set metric (track unique values)
+ * @param {string} name - Metric name (e.g., 'users.unique')
+ * @param {string|number} value - Unique value to track
+ * @param {object} tags - Optional tags for filtering
+ */
+export function recordSet(name, value, tags = {}) {
+  if (!telemetryEnabled) return;
+
+  try {
+    Sentry.metrics.set(name, value, { tags });
+  } catch (error) {
+    console.error('[Telemetry] Failed to record set:', error.message);
+  }
+}
+
+/**
+ * Time an async operation and record the duration
+ * @param {string} name - Metric name for the timing (e.g., 'google_api.latency')
+ * @param {Function} fn - Async function to time
+ * @param {object} options - Optional { tags, onSuccess, onError }
+ * @returns {Promise<any>} - Result of the function
+ */
+export async function timeAsync(name, fn, options = {}) {
+  const { tags = {}, onSuccess, onError } = options;
+  const startTime = Date.now();
+
+  try {
+    const result = await fn();
+    const duration = Date.now() - startTime;
+
+    recordDistribution(name, duration, { tags: { ...tags, status: 'success' }, unit: 'millisecond' });
+    if (onSuccess) onSuccess(result, duration);
+
+    return result;
+  } catch (error) {
+    const duration = Date.now() - startTime;
+
+    recordDistribution(name, duration, { tags: { ...tags, status: 'error' }, unit: 'millisecond' });
+    incrementCounter(`${name}.errors`, 1, tags);
+    if (onError) onError(error, duration);
+
+    throw error;
+  }
+}
+
 // Export Sentry for advanced usage
 export { Sentry };
 
@@ -293,5 +392,10 @@ export default {
   setTag,
   flush,
   getConfig,
+  incrementCounter,
+  recordDistribution,
+  recordGauge,
+  recordSet,
+  timeAsync,
   Sentry,
 };

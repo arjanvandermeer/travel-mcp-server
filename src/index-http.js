@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 
+// IMPORTANT: Import Sentry first for auto-instrumentation of pg, http, etc.
+import './sentry-init.js';
+
 /**
  * MCP Server with Streamable HTTP transport
  * Provides travel information tools over HTTP
