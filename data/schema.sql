@@ -56,12 +56,24 @@ INSERT INTO app_config (key, value, encrypted, description) VALUES
     ('google_places_api_key', NULL, TRUE, 'Google Places API key'),
     ('google_places_enabled', 'true', FALSE, 'Enable/disable Google Places enrichment'),
     ('google_places_cache_hours', '168', FALSE, 'Hours to cache Google Places data (default: 7 days)'),
+    ('google_api_daily_limit', '100', FALSE, 'Daily limit for Google Places API calls (default: 100)'),
     ('sentry_dsn', NULL, TRUE, 'Sentry DSN for error tracking and performance monitoring'),
     ('telemetry_enabled', 'true', FALSE, 'Enable/disable telemetry (errors + performance)'),
     ('telemetry_sample_rate', '1.0', FALSE, 'Trace sample rate 0.0-1.0'),
     ('telemetry_environment', 'development', FALSE, 'Environment name for telemetry'),
     ('sentry_send_dev', 'true', FALSE, 'Send telemetry events in development mode')
 ON CONFLICT (key) DO NOTHING;
+
+-- ============================================================================
+-- Google API Usage Tracking
+-- Tracks daily API call counts for rate limiting
+-- ============================================================================
+DROP TABLE IF EXISTS google_api_usage CASCADE;
+CREATE TABLE google_api_usage (
+    date_key VARCHAR(10) PRIMARY KEY,    -- YYYY-MM-DD format
+    call_count INTEGER NOT NULL DEFAULT 0,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 
 -- ============================================================================
 -- GeoNames Countries

@@ -250,6 +250,25 @@ function buildSearchResponse(pois) {
 }
 
 /**
+ * Trigger background enrichment for search results (fire-and-forget)
+ * Extracts osm_ids and calls batchEnrichPOIs
+ */
+function triggerBackgroundEnrichment(pois, db) {
+  if (!pois || pois.length === 0) return;
+
+  const osmIds = pois
+    .filter(poi => poi.osm_id)
+    .map(poi => poi.osm_id);
+
+  if (osmIds.length > 0) {
+    // Fire-and-forget - don't await, don't block response
+    db.batchEnrichPOIs(osmIds).catch(err => {
+      console.error('Background batch enrichment error:', err.message);
+    });
+  }
+}
+
+/**
  * Execute a tool handler
  * @param {string} name - Tool name
  * @param {object} args - Tool arguments
@@ -301,6 +320,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         poiTypes: accommodationTypes,
         limit: Math.min(args.limit || 50, 100),
       });
+      triggerBackgroundEnrichment(pois, db);
       return buildSearchResponse(pois);
     }
 
@@ -317,6 +337,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         poiTypes: types,
         limit: Math.min(args.limit || 50, 100),
       });
+      triggerBackgroundEnrichment(pois, db);
       return buildSearchResponse(pois);
     }
 
@@ -332,6 +353,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         poiType: args.poi_type,
         limit: Math.min(args.limit || 50, 100),
       });
+      triggerBackgroundEnrichment(pois, db);
       return buildSearchResponse(pois);
     }
 
