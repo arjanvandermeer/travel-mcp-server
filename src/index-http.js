@@ -17,14 +17,10 @@ import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
 import { toolsConfig, resourcesConfig, executeToolHandler, handleReadResource, renderPOIPreview } from './tools-config.js';
+import { versionInfo } from './version.js';
 import http from 'http';
 import crypto from 'crypto';
-import fs from 'fs';
-import path from 'path';
 import { parse } from 'url';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const db = new TravelDatabase();
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
@@ -39,7 +35,7 @@ function createMCPServer() {
   const server = new Server(
     {
       name: 'travel-mcp-server',
-      version: '1.0.0',
+      version: `${versionInfo.version} (${versionInfo.gitCommitShort})`,
     },
     {
       capabilities: {
@@ -138,7 +134,11 @@ async function main() {
       res.end(JSON.stringify({
         status: 'healthy',
         server: 'travel-mcp-server',
-        version: '1.0.0',
+        version: versionInfo.version,
+        gitTag: versionInfo.gitTag,
+        gitCommit: versionInfo.gitCommitShort,
+        gitBranch: versionInfo.gitBranch,
+        buildTime: versionInfo.buildTime,
         transport: 'streamable-http',
         activeSessions: sessions.size,
         endpoints: {
@@ -150,26 +150,7 @@ async function main() {
       return;
     }
 
-    // Preview endpoints - serve rendered HTML directly in browser
-    if (pathname === '/preview/test-widget') {
-      const html = render('test-widget', {
-        title: 'Travel MCP Server',
-        message: 'MCP Apps UI is working!',
-      });
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
-      return;
-    }
-
-    // Demo page - static HTML with sample data
-    if (pathname === '/preview/demo') {
-      const demoPath = path.join(__dirname, 'templates', 'demo.html');
-      const html = fs.readFileSync(demoPath, 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
-      return;
-    }
-
+    // Random POI preview endpoint
     if (pathname === '/preview/poi/random') {
       try {
         const poi = await db.getRandomPOI();
@@ -275,12 +256,12 @@ async function main() {
 
   httpServer.listen(PORT, () => {
     console.error(`Travel MCP Server (Streamable HTTP) running on port ${PORT}`);
+    console.error(`Version: ${versionInfo.version} (${versionInfo.gitCommitShort})`);
     console.error(`Multi-session support: enabled`);
     console.error(`MCP endpoint: /mcp`);
     console.error(`Health check: /health`);
     console.error(`Preview: /preview/poi/{osm_id}`);
     console.error(`Preview random: /preview/poi/random`);
-    console.error(`Template demo: /preview/demo`);
   });
 }
 
