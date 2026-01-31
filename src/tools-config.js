@@ -217,7 +217,24 @@ export const toolsConfig = [
 ];
 
 // Resource definitions
+/**
+ * MCP Resources Configuration
+ *
+ * Resources use custom URI protocols to distinguish different content types:
+ *
+ * - info:// - Informational JSON resources (version info, config, links)
+ * - ui://   - User interface resources (HTML pages for display)
+ *
+ * The ui:// protocol resources include the server host in the URI:
+ *   ui://{host}/poi/{osm_id}
+ *   Example: ui://mcp.arjanvandermeer.com/poi/1313852747
+ *
+ * This allows MCP clients to:
+ * 1. Recognize these as displayable content (not raw data)
+ * 2. Match resources to the correct server in multi-server scenarios
+ */
 export const resourcesConfig = {
+  // Static resources - fixed URIs that always return the same type of content
   resources: [
     {
       uri: 'info://version',
@@ -232,6 +249,9 @@ export const resourcesConfig = {
       mimeType: 'application/json',
     },
   ],
+  // Resource templates - dynamic URIs with variable placeholders
+  // Note: The template shows the pattern; actual URIs include the server host
+  // e.g., template "ui://poi/{osm_id}" matches "ui://mcp.example.com/poi/123"
   resourceTemplates: [
     {
       uriTemplate: 'ui://poi/{osm_id}',
@@ -586,8 +606,10 @@ export async function handleReadResource(uri, db, render) {
     };
   }
 
-  // POI detail page: ui://poi/{osm_id}
-  const poiMatch = uri.match(/^ui:\/\/poi\/(\d+)$/);
+  // POI detail page: ui://{host}/poi/{osm_id}
+  // Format: ui://mcp.arjanvandermeer.com/poi/1313852747
+  // The host part is dynamic (from server_base_url config), so we match any host
+  const poiMatch = uri.match(/^ui:\/\/[^\/]+\/poi\/(\d+)$/);
   if (poiMatch) {
     const osmId = parseInt(poiMatch[1], 10);
     const poi = await db.getPOIDetails(osmId);

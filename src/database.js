@@ -26,20 +26,54 @@ function removeNullFields(obj) {
 }
 
 /**
- * Add preview_url to POI results
- * @param {Array|Object} pois - POI(s) to add URL to
+ * Add resource_uri and preview_url to POI results
+ *
+ * Each POI gets two URLs for different use cases:
+ *
+ * 1. resource_uri (ui:// protocol) - MCP resource identifier
+ *    Format: ui://{host}/poi/{osm_id}
+ *    Example: ui://mcp.arjanvandermeer.com/poi/1313852747
+ *    Purpose: MCP clients can request this URI to get the rich POI detail page
+ *    via the ReadResource method. The ui:// protocol indicates this is a
+ *    user-interface resource (rendered HTML for display).
+ *
+ * 2. preview_url (https:// protocol) - Direct browser link
+ *    Format: {baseUrl}/preview/poi/{osm_id}
+ *    Example: https://mcp.arjanvandermeer.com/preview/poi/1313852747
+ *    Purpose: Direct HTTP URL that users can click to open the POI preview
+ *    in their browser. Served by the HTTP server's /preview endpoint.
+ *
+ * @param {Array|Object} pois - POI(s) to add URIs to
  * @param {string} baseUrl - Base URL from server_base_url config (e.g., "https://mcp.example.com")
  */
-function addPreviewUrl(pois, baseUrl) {
+function addResourceUris(pois, baseUrl) {
+  // Normalize base URL (remove trailing slash for consistent concatenation)
   const base = baseUrl ? baseUrl.replace(/\/$/, '') : '';
+
+  // Extract host from baseUrl for ui:// protocol
+  // e.g., "https://mcp.example.com" -> "mcp.example.com"
+  let uiHost = '';
+  if (baseUrl) {
+    try {
+      uiHost = new URL(baseUrl).host;
+    } catch {
+      uiHost = '';
+    }
+  }
+
   if (Array.isArray(pois)) {
     return pois.map(poi => ({
       ...poi,
+      resource_uri: `ui://${uiHost}/poi/${poi.osm_id}`,
       preview_url: `${base}/preview/poi/${poi.osm_id}`,
     }));
   }
   if (pois && pois.osm_id) {
-    return { ...pois, preview_url: `${base}/preview/poi/${pois.osm_id}` };
+    return {
+      ...pois,
+      resource_uri: `ui://${uiHost}/poi/${pois.osm_id}`,
+      preview_url: `${base}/preview/poi/${pois.osm_id}`,
+    };
   }
   return pois;
 }
@@ -470,7 +504,7 @@ export class TravelDatabase {
 
     const result = await this.pool.query(query, queryParams);
     const baseUrl = await this.getServerBaseUrl();
-    return addPreviewUrl(removeNullFields(result.rows), baseUrl);
+    return addResourceUris(removeNullFields(result.rows), baseUrl);
   }
 
   async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50) {
@@ -513,7 +547,7 @@ export class TravelDatabase {
 
     const result = await this.pool.query(query, params);
     const baseUrl = await this.getServerBaseUrl();
-    return addPreviewUrl(removeNullFields(result.rows), baseUrl);
+    return addResourceUris(removeNullFields(result.rows), baseUrl);
   }
 
   async getCityByName(name, countryCode = null, state = null) {
@@ -641,9 +675,9 @@ export class TravelDatabase {
       }
     }
 
-    // Remove null/undefined fields and add preview URL
+    // Remove null/undefined fields and add resource URIs
     const baseUrl = await this.getServerBaseUrl();
-    return addPreviewUrl(removeNullFields(response), baseUrl);
+    return addResourceUris(removeNullFields(response), baseUrl);
   }
 
   /**
