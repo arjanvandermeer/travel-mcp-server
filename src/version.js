@@ -1,6 +1,7 @@
 /**
  * Version information module
  * Captures git commit hash and version info at startup
+ * Falls back to environment variables when git is not available (Docker)
  */
 
 import { execSync } from 'child_process';
@@ -21,33 +22,37 @@ function getPackageVersion() {
   }
 }
 
-// Get git commit hash
+// Get git commit hash (try git first, then env vars)
 function getGitCommit() {
+  // Try git command first
   try {
-    const hash = execSync('git rev-parse HEAD', { encoding: 'utf8', cwd: path.join(__dirname, '..') }).trim();
-    const shortHash = execSync('git rev-parse --short HEAD', { encoding: 'utf8', cwd: path.join(__dirname, '..') }).trim();
+    const hash = execSync('git rev-parse HEAD', { encoding: 'utf8', cwd: path.join(__dirname, '..'), stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    const shortHash = execSync('git rev-parse --short HEAD', { encoding: 'utf8', cwd: path.join(__dirname, '..'), stdio: ['pipe', 'pipe', 'pipe'] }).trim();
     return { hash, shortHash };
   } catch {
-    return { hash: 'unknown', shortHash: 'unknown' };
+    // Fall back to environment variables (set during Docker build)
+    const hash = process.env.GIT_COMMIT || null;
+    const shortHash = process.env.GIT_COMMIT_SHORT || null;
+    return { hash, shortHash };
   }
 }
 
-// Get git branch
+// Get git branch (try git first, then env vars)
 function getGitBranch() {
   try {
-    return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8', cwd: path.join(__dirname, '..') }).trim();
+    return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8', cwd: path.join(__dirname, '..'), stdio: ['pipe', 'pipe', 'pipe'] }).trim();
   } catch {
-    return 'unknown';
+    return process.env.GIT_BRANCH || null;
   }
 }
 
-// Get latest git tag (if any)
+// Get latest git tag (try git first, then env vars)
 function getGitTag() {
   try {
-    // Get the most recent tag reachable from HEAD
-    return execSync('git describe --tags --abbrev=0 2>/dev/null', { encoding: 'utf8', cwd: path.join(__dirname, '..') }).trim();
+    const tag = execSync('git describe --tags --abbrev=0 2>/dev/null', { encoding: 'utf8', cwd: path.join(__dirname, '..'), stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+    return tag || null;
   } catch {
-    return null;
+    return process.env.GIT_TAG || null;
   }
 }
 
@@ -57,7 +62,8 @@ const buildTime = new Date().toISOString();
 // Capture all version info at module load time (startup)
 const gitInfo = getGitCommit();
 
-export const versionInfo = {
+// Build version info object, excluding null/empty values
+const rawVersionInfo = {
   version: getPackageVersion(),
   gitTag: getGitTag(),
   gitCommit: gitInfo.hash,
@@ -66,12 +72,20 @@ export const versionInfo = {
   buildTime,
 };
 
+// Filter out null/empty values
+export const versionInfo = Object.fromEntries(
+  Object.entries(rawVersionInfo).filter(([, v]) => v != null && v !== '')
+);
+
 /**
- * Get version string (for display)
- * Format: "1.0.0 (abc1234)"
+ * Get version string for MCP server identification
+ * Prefers: tag > commit > build date
+ * Format: "1.0.0-v1.0.0" or "1.0.0-abc1234" or "1.0.0-20240131"
  */
 export function getVersionString() {
-  return `${versionInfo.version} (${versionInfo.gitCommitShort})`;
+  const shortDate = versionInfo.buildTime.split('T')[0].replace(/-/g, '');
+  const identifier = versionInfo.gitTag || versionInfo.gitCommitShort || shortDate;
+  return `${versionInfo.version}-${identifier}`;
 }
 
 export default versionInfo;

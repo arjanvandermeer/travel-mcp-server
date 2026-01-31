@@ -26,17 +26,20 @@ function removeNullFields(obj) {
 }
 
 /**
- * Add resource_uri to POI results for MCP Apps integration
+ * Add preview_url to POI results
+ * @param {Array|Object} pois - POI(s) to add URL to
+ * @param {string} baseUrl - Base URL from server_base_url config (e.g., "https://mcp.example.com")
  */
-function addResourceUri(pois) {
+function addPreviewUrl(pois, baseUrl) {
+  const base = baseUrl ? baseUrl.replace(/\/$/, '') : '';
   if (Array.isArray(pois)) {
     return pois.map(poi => ({
       ...poi,
-      resource_uri: `ui://poi/${poi.osm_id}`,
+      preview_url: `${base}/preview/poi/${poi.osm_id}`,
     }));
   }
   if (pois && pois.osm_id) {
-    return { ...pois, resource_uri: `ui://poi/${pois.osm_id}` };
+    return { ...pois, preview_url: `${base}/preview/poi/${pois.osm_id}` };
   }
   return pois;
 }
@@ -46,6 +49,19 @@ export class TravelDatabase {
     this.pool = new pg.Pool({ connectionString: CONNECTION_STRING });
     this.googlePlaces = null; // Initialize later with config
     this.googlePlacesReady = this.initGooglePlaces(); // Store promise
+    this._serverBaseUrl = null; // Cached server base URL
+    this._serverBaseUrlLoaded = false;
+  }
+
+  /**
+   * Get cached server base URL (lazy loaded on first use)
+   */
+  async getServerBaseUrl() {
+    if (!this._serverBaseUrlLoaded) {
+      this._serverBaseUrl = await this.getConfig('server_base_url');
+      this._serverBaseUrlLoaded = true;
+    }
+    return this._serverBaseUrl;
   }
 
   async close() {
@@ -453,7 +469,8 @@ export class TravelDatabase {
     }
 
     const result = await this.pool.query(query, queryParams);
-    return addResourceUri(removeNullFields(result.rows));
+    const baseUrl = await this.getServerBaseUrl();
+    return addPreviewUrl(removeNullFields(result.rows), baseUrl);
   }
 
   async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50) {
@@ -495,7 +512,8 @@ export class TravelDatabase {
     params.push(limit);
 
     const result = await this.pool.query(query, params);
-    return addResourceUri(removeNullFields(result.rows));
+    const baseUrl = await this.getServerBaseUrl();
+    return addPreviewUrl(removeNullFields(result.rows), baseUrl);
   }
 
   async getCityByName(name, countryCode = null, state = null) {
@@ -623,8 +641,9 @@ export class TravelDatabase {
       }
     }
 
-    // Remove null/undefined fields and add resource URI
-    return addResourceUri(removeNullFields(response));
+    // Remove null/undefined fields and add preview URL
+    const baseUrl = await this.getServerBaseUrl();
+    return addPreviewUrl(removeNullFields(response), baseUrl);
   }
 
   /**
