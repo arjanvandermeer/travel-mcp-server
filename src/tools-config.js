@@ -4,6 +4,8 @@
  * Used by both stdio (index.js) and HTTP (index-http.js) servers
  */
 
+import { versionInfo } from './version.js';
+
 // Shared constants
 export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
 export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
@@ -218,16 +220,16 @@ export const toolsConfig = [
 export const resourcesConfig = {
   resources: [
     {
-      uri: 'ui://test-widget',
-      name: 'Test MCP Apps Widget',
-      description: 'A simple test widget to verify MCP Apps infrastructure',
-      mimeType: 'text/html+skybridge',
+      uri: 'info://version',
+      name: 'Server Version',
+      description: 'Returns server version info including git commit hash',
+      mimeType: 'application/json',
     },
     {
-      uri: 'ui://poi/random',
-      name: 'Random POI',
-      description: 'Shows a random POI from the database (for testing)',
-      mimeType: 'text/html+skybridge',
+      uri: 'info://random-poi',
+      name: 'Random POI Preview',
+      description: 'Returns a link to view a random POI in the browser',
+      mimeType: 'application/json',
     },
   ],
   resourceTemplates: [
@@ -577,14 +579,20 @@ export function renderPOIPreview(poi, render) {
  * @returns {object} - MCP resource contents
  */
 export async function handleReadResource(uri, db, render) {
-  // Test widget
-  if (uri === 'ui://test-widget') {
-    const html = render('test-widget', {
-      title: 'Travel MCP Server',
-      message: 'MCP Apps UI is working!',
-    });
+  // Version info
+  if (uri === 'info://version') {
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(versionInfo, null, 2) }],
+    };
+  }
+
+  // Random POI link
+  if (uri === 'info://random-poi') {
+    const serverBaseUrl = await db.getConfig('server_base_url');
+    const baseUrl = serverBaseUrl ? serverBaseUrl.replace(/\/$/, '') : '';
+    const previewUrl = `${baseUrl}/preview/poi/random`;
+    return {
+      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify({ url: previewUrl }, null, 2) }],
     };
   }
 
@@ -599,26 +607,6 @@ export async function handleReadResource(uri, db, render) {
         title: 'POI Not Found',
         message: `No POI found with OSM ID: ${osmId}`,
         code: osmId,
-      });
-      return {
-        contents: [{ uri, mimeType: 'text/html+skybridge', text: errorHtml }],
-      };
-    }
-
-    return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render) }],
-    };
-  }
-
-  // Random POI: ui://poi/random
-  if (uri === 'ui://poi/random') {
-    const poi = await db.getRandomPOI();
-
-    if (!poi) {
-      const errorHtml = render('error', {
-        title: 'No POIs Found',
-        message: 'No POIs available in the database',
-        code: 'EMPTY_DB',
       });
       return {
         contents: [{ uri, mimeType: 'text/html+skybridge', text: errorHtml }],

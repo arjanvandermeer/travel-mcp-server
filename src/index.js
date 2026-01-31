@@ -12,6 +12,7 @@ import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
 import { toolsConfig, resourcesConfig, executeToolHandler, handleReadResource } from './tools-config.js';
+import { versionInfo } from './version.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -48,7 +49,7 @@ try {
 const server = new Server(
   {
     name: 'travel-mcp-server',
-    version: '1.0.0',
+    version: `${versionInfo.version} (${versionInfo.gitCommitShort})`,
   },
   {
     capabilities: {
