@@ -12,34 +12,46 @@ export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food
 export const toolsConfig = [
   {
     name: 'search_cities',
-    description: 'Search for cities by name. Optionally filter by country code and/or state/province. Returns city information including coordinates, population, timezone, and state/province details.',
+    description: 'Search for cities. REQUIRES either country_code OR coordinates (latitude + longitude). Valid combinations: (1) query + country_code, (2) query + country_code + state, (3) query + lat/long, (4) country_code only, (5) country_code + state, (6) lat/long only. Returns city info with coordinates, population, timezone, country and state/province.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'City name to search for',
+          description: 'Optional city name to search for. If omitted, returns cities in the specified country/state or near coordinates.',
         },
         country_code: {
           type: 'string',
-          description: 'Optional 2-letter country code (e.g., "TH", "US") to narrow results',
+          description: '2-letter country code (e.g., "TH", "US"). Required if not using coordinates.',
         },
         state: {
           type: 'string',
           description: 'Optional state/province code (e.g., "NY", "CA") or full name (e.g., "New York", "California"). Works for US states and other countries with admin1 divisions.',
         },
+        latitude: {
+          type: 'number',
+          description: 'Latitude coordinate. Required with longitude if not using country_code.',
+        },
+        longitude: {
+          type: 'number',
+          description: 'Longitude coordinate. Required with latitude if not using country_code.',
+        },
+        radius_km: {
+          type: 'number',
+          description: 'Search radius in kilometers when using coordinates (default: 50, max: 100)',
+          default: 50,
+        },
         limit: {
           type: 'number',
-          description: 'Maximum number of results (default: 10)',
+          description: 'Maximum number of results (default: 10, max: 100)',
           default: 10,
         },
       },
-      required: ['query'],
     },
   },
   {
     name: 'search_hotels',
-    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs) by name AND/OR location. Supports: (1) name only, (2) location only (city or coordinates), or (3) both combined.',
+    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -49,28 +61,32 @@ export const toolsConfig = [
         },
         city_name: {
           type: 'string',
-          description: 'Optional city name to search in (use with country_code to narrow results)',
+          description: 'City name to search in. Use with country_code to narrow results.',
         },
         country_code: {
           type: 'string',
-          description: 'Optional 2-letter country code (e.g., "TH") - only used WITH city_name, not with coordinates',
+          description: '2-letter country code (e.g., "TH", "US"). Used with city_name.',
+        },
+        state: {
+          type: 'string',
+          description: 'Optional state/province code (e.g., "NY") or full name. Use with country_code.',
         },
         latitude: {
           type: 'number',
-          description: 'Optional latitude coordinate (must be used WITH longitude)',
+          description: 'Latitude coordinate (must be used WITH longitude)',
         },
         longitude: {
           type: 'number',
-          description: 'Optional longitude coordinate (must be used WITH latitude)',
+          description: 'Longitude coordinate (must be used WITH latitude)',
         },
         radius_km: {
           type: 'number',
-          description: 'Search radius in kilometers when using coordinates (default: 15)',
+          description: 'Search radius in kilometers when using coordinates (default: 15, max: 50)',
           default: 15,
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of results (default: 50)',
+          description: 'Maximum number of results (default: 50, max: 100)',
           default: 50,
         },
       },
@@ -78,7 +94,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_restaurants',
-    description: 'Search for food & drink establishments (restaurants, cafes, bars, fast food, etc.) by name AND/OR location. Supports: (1) name only, (2) location only (city or coordinates), or (3) both combined. Examples: "starbucks", "restaurants in Bangkok", "starbucks in Bangkok".',
+    description: 'Search for food & drink (restaurants, cafes, bars, fast food, etc.). REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -88,23 +104,27 @@ export const toolsConfig = [
         },
         city_name: {
           type: 'string',
-          description: 'Optional city name to search in (use with country_code to narrow results)',
+          description: 'City name to search in. Use with country_code to narrow results.',
         },
         country_code: {
           type: 'string',
-          description: 'Optional 2-letter country code (e.g., "TH") - only used WITH city_name, not with coordinates',
+          description: '2-letter country code (e.g., "TH", "US"). Used with city_name.',
+        },
+        state: {
+          type: 'string',
+          description: 'Optional state/province code (e.g., "NY") or full name. Use with country_code.',
         },
         latitude: {
           type: 'number',
-          description: 'Optional latitude coordinate (must be used WITH longitude)',
+          description: 'Latitude coordinate (must be used WITH longitude)',
         },
         longitude: {
           type: 'number',
-          description: 'Optional longitude coordinate (must be used WITH latitude)',
+          description: 'Longitude coordinate (must be used WITH latitude)',
         },
         radius_km: {
           type: 'number',
-          description: 'Search radius in kilometers when using coordinates (default: 15)',
+          description: 'Search radius in kilometers when using coordinates (default: 15, max: 50)',
           default: 15,
         },
         type: {
@@ -114,7 +134,7 @@ export const toolsConfig = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of results (default: 50)',
+          description: 'Maximum number of results (default: 50, max: 100)',
           default: 50,
         },
       },
@@ -122,7 +142,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_pois',
-    description: 'Search for Points of Interest (attractions, monuments, museums, cafes, bars, etc.) by name AND/OR location. Supports: (1) name only, (2) location only, or (3) both combined. Examples: "democracy monument", "attractions in Bangkok", "grand palace in Bangkok".',
+    description: 'Search for Points of Interest (attractions, monuments, museums, etc.). REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -132,23 +152,27 @@ export const toolsConfig = [
         },
         city_name: {
           type: 'string',
-          description: 'Optional city name to search in (use with country_code to narrow results)',
+          description: 'City name to search in. Use with country_code to narrow results.',
         },
         country_code: {
           type: 'string',
-          description: 'Optional 2-letter country code (e.g., "TH") - only used WITH city_name, not with coordinates',
+          description: '2-letter country code (e.g., "TH", "US"). Used with city_name.',
+        },
+        state: {
+          type: 'string',
+          description: 'Optional state/province code (e.g., "NY") or full name. Use with country_code.',
         },
         latitude: {
           type: 'number',
-          description: 'Optional latitude coordinate (must be used WITH longitude)',
+          description: 'Latitude coordinate (must be used WITH longitude)',
         },
         longitude: {
           type: 'number',
-          description: 'Optional longitude coordinate (must be used WITH latitude)',
+          description: 'Longitude coordinate (must be used WITH latitude)',
         },
         radius_km: {
           type: 'number',
-          description: 'Search radius in kilometers when using coordinates (default: 15)',
+          description: 'Search radius in kilometers when using coordinates (default: 15, max: 50)',
           default: 15,
         },
         poi_type: {
@@ -157,7 +181,7 @@ export const toolsConfig = [
         },
         limit: {
           type: 'number',
-          description: 'Maximum number of results (default: 50)',
+          description: 'Maximum number of results (default: 50, max: 100)',
           default: 50,
         },
       },
@@ -236,7 +260,30 @@ function buildSearchResponse(pois) {
 export async function executeToolHandler(name, args, db, options = {}) {
   switch (name) {
     case 'search_cities': {
-      const cities = await db.searchCities(args.query, args.country_code, args.state, args.limit || 10);
+      const hasCountry = !!args.country_code;
+      const hasCoords = args.latitude !== undefined && args.longitude !== undefined;
+
+      if (!hasCountry && !hasCoords) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              error: 'Either country_code OR coordinates (latitude + longitude) is required',
+            }, null, 2),
+          }],
+        };
+      }
+
+      const limit = Math.min(args.limit || 10, 100);
+      const cities = await db.searchCities({
+        query: args.query,
+        countryCode: args.country_code,
+        state: args.state,
+        latitude: args.latitude,
+        longitude: args.longitude,
+        radiusKm: args.radius_km,
+        limit,
+      });
       return {
         content: [{ type: 'text', text: JSON.stringify(cities, null, 2) }],
       };
@@ -247,11 +294,12 @@ export async function executeToolHandler(name, args, db, options = {}) {
         name: args.query,
         cityName: args.city_name,
         countryCode: args.country_code,
+        state: args.state,
         latitude: args.latitude,
         longitude: args.longitude,
         radius: args.radius_km,
         poiTypes: accommodationTypes,
-        limit: args.limit || 50,
+        limit: Math.min(args.limit || 50, 100),
       });
       return buildSearchResponse(pois);
     }
@@ -262,11 +310,12 @@ export async function executeToolHandler(name, args, db, options = {}) {
         name: args.query,
         cityName: args.city_name,
         countryCode: args.country_code,
+        state: args.state,
         latitude: args.latitude,
         longitude: args.longitude,
         radius: args.radius_km,
         poiTypes: types,
-        limit: args.limit || 50,
+        limit: Math.min(args.limit || 50, 100),
       });
       return buildSearchResponse(pois);
     }
@@ -276,11 +325,12 @@ export async function executeToolHandler(name, args, db, options = {}) {
         name: args.query,
         cityName: args.city_name,
         countryCode: args.country_code,
+        state: args.state,
         latitude: args.latitude,
         longitude: args.longitude,
         radius: args.radius_km,
         poiType: args.poi_type,
-        limit: args.limit || 50,
+        limit: Math.min(args.limit || 50, 100),
       });
       return buildSearchResponse(pois);
     }
