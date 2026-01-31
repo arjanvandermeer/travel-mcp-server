@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.5;
+      padding: 16px;
+    }
+    .header {
+      margin-bottom: 16px;
+    }
+    .header h1 {
+      font-size: 20px;
+      color: #333;
+    }
+    .header .count {
+      font-size: 14px;
+      color: #666;
+      margin-top: 4px;
+    }
+    .results-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .result-card {
+      background: white;
+      border-radius: 12px;
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.15s;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+    .result-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+    .result-card:active {
+      transform: translateY(0);
+    }
+    .card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 8px;
+    }
+    .card-title {
+      font-size: 16px;
+      font-weight: 600;
+      color: #333;
+    }
+    .card-type {
+      font-size: 12px;
+      color: #667eea;
+      background: rgba(102, 126, 234, 0.1);
+      padding: 2px 8px;
+      border-radius: 12px;
+      text-transform: capitalize;
+    }
+    .card-meta {
+      display: flex;
+      gap: 16px;
+      font-size: 13px;
+      color: #666;
+      margin-top: 8px;
+    }
+    .rating {
+      color: #f5a623;
+    }
+    .distance {
+      color: #888;
+    }
+    .card-address {
+      font-size: 13px;
+      color: #888;
+      margin-top: 4px;
+    }
+    .card-cuisine {
+      font-size: 12px;
+      color: #667eea;
+      margin-top: 6px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 40px 20px;
+      color: #888;
+    }
+    .empty-state h2 {
+      font-size: 18px;
+      margin-bottom: 8px;
+    }
+    .loading {
+      text-align: center;
+      padding: 40px 20px;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 id="title">{{title}}</h1>
+    <div class="count" id="count">{{count}} results found</div>
+  </div>
+
+  <div id="results-container">
+    {{!-- Server-side rendered results (fallback) --}}
+    {{#if results}}
+    <div class="results-list">
+      {{#each results}}
+      <a class="result-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
+        <div class="card-header">
+          <span class="card-title">{{or name osm_name "Unknown"}}</span>
+          <span class="card-type">{{poi_type}}</span>
+        </div>
+        {{#if (or google_rating osm_stars)}}
+        <div class="card-meta">
+          {{#if google_rating}}
+          <span class="rating">&#11088; {{google_rating}}{{#if google_review_count}} ({{google_review_count}}){{/if}}</span>
+          {{else}}
+          {{#if osm_stars}}
+          <span class="rating">{{osm_stars}} stars</span>
+          {{/if}}
+          {{/if}}
+          {{#if distance_km}}
+          <span class="distance">{{distance_km}} km away</span>
+          {{/if}}
+        </div>
+        {{/if}}
+        {{#if (or osm_city osm_country_code)}}
+        <div class="card-address">{{osm_city}}{{#if osm_country_code}}, {{osm_country_code}}{{/if}}</div>
+        {{/if}}
+        {{#if osm_cuisine}}
+        <div class="card-cuisine">{{osm_cuisine}}</div>
+        {{/if}}
+      </a>
+      {{/each}}
+    </div>
+    {{else}}
+    <div class="loading" id="loading">Loading results...</div>
+    {{/if}}
+  </div>
+
+  <script>
+    /**
+     * ChatGPT Skybridge Integration for Search Results
+     *
+     * This template supports two rendering modes:
+     *
+     * 1. Server-side (Handlebars): Results pre-rendered when loaded via MCP ReadResource
+     * 2. Client-side (Skybridge): Results rendered dynamically from window.openai.toolOutput
+     *
+     * When running in ChatGPT:
+     * - window.openai.toolOutput contains the structured search results
+     * - window.openai.readResource(uri) requests a POI detail page
+     */
+
+    // Render a single result card
+    function renderCard(poi) {
+      var name = poi.name || poi.osm_name || 'Unknown';
+      var rating = '';
+      if (poi.google_rating) {
+        rating = '<span class="rating">&#11088; ' + poi.google_rating;
+        if (poi.google_review_count) {
+          rating += ' (' + poi.google_review_count + ')';
+        }
+        rating += '</span>';
+      } else if (poi.osm_stars) {
+        rating = '<span class="rating">' + poi.osm_stars + ' stars</span>';
+      }
+
+      var distance = '';
+      if (poi.distance_km) {
+        distance = '<span class="distance">' + poi.distance_km + ' km away</span>';
+      }
+
+      var address = '';
+      if (poi.osm_city || poi.osm_country_code) {
+        address = '<div class="card-address">' + (poi.osm_city || '') + (poi.osm_country_code ? ', ' + poi.osm_country_code : '') + '</div>';
+      }
+
+      var cuisine = '';
+      if (poi.osm_cuisine) {
+        cuisine = '<div class="card-cuisine">' + poi.osm_cuisine + '</div>';
+      }
+
+      var card = document.createElement('a');
+      card.className = 'result-card';
+      card.href = poi.resource_uri || '#';
+      card.setAttribute('data-osm-id', poi.osm_id);
+      card.setAttribute('data-resource-uri', poi.resource_uri || '');
+      card.setAttribute('data-preview-url', poi.preview_url || '');
+      card.innerHTML =
+        '<div class="card-header">' +
+          '<span class="card-title">' + escapeHtml(name) + '</span>' +
+          '<span class="card-type">' + (poi.poi_type || '') + '</span>' +
+        '</div>' +
+        (rating || distance ? '<div class="card-meta">' + rating + distance + '</div>' : '') +
+        address +
+        cuisine;
+
+      return card;
+    }
+
+    // Escape HTML to prevent XSS
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    // Render all results
+    function renderResults(data) {
+      var container = document.getElementById('results-container');
+      var title = document.getElementById('title');
+      var count = document.getElementById('count');
+
+      // Handle different data formats (array or object with results property)
+      var results = Array.isArray(data) ? data : (data.results || data);
+      if (!Array.isArray(results)) {
+        results = [];
+      }
+
+      // Update header
+      if (data.title) {
+        title.textContent = data.title;
+      } else if (results.length > 0 && results[0].poi_type) {
+        // Infer title from first result type
+        var type = results[0].poi_type;
+        title.textContent = type.charAt(0).toUpperCase() + type.slice(1) + 's';
+      }
+      count.textContent = results.length + ' results found';
+
+      // Clear and render
+      container.innerHTML = '';
+      if (results.length === 0) {
+        container.innerHTML = '<div class="empty-state"><h2>No results found</h2><p>Try adjusting your search criteria</p></div>';
+        return;
+      }
+
+      var list = document.createElement('div');
+      list.className = 'results-list';
+
+      results.forEach(function(poi) {
+        var card = renderCard(poi);
+        list.appendChild(card);
+      });
+
+      container.appendChild(list);
+
+      // Attach click handlers
+      attachCardHandlers();
+    }
+
+    // Attach click handlers to cards
+    function attachCardHandlers() {
+      document.querySelectorAll('.result-card').forEach(function(card) {
+        card.addEventListener('click', function(e) {
+          e.preventDefault();
+          var resourceUri = this.getAttribute('data-resource-uri');
+          var previewUrl = this.getAttribute('data-preview-url');
+          var osmId = this.getAttribute('data-osm-id');
+
+          console.log('Card clicked:', { osmId: osmId, resourceUri: resourceUri, previewUrl: previewUrl });
+
+          // If OpenAI bridge is available, request the POI detail resource
+          if (window.openai && window.openai.readResource) {
+            window.openai.readResource(resourceUri);
+          } else if (previewUrl) {
+            // Fallback: open preview URL in new tab
+            window.open(previewUrl, '_blank');
+          }
+        });
+      });
+    }
+
+    // Initialize
+    document.addEventListener('DOMContentLoaded', function() {
+      // Check for OpenAI bridge and tool output
+      if (window.openai && window.openai.toolOutput) {
+        console.log('OpenAI bridge connected, rendering from toolOutput');
+        renderResults(window.openai.toolOutput);
+      } else {
+        // Server-side rendered - just attach handlers
+        console.log('No OpenAI bridge, using server-rendered content');
+        var loading = document.getElementById('loading');
+        if (loading) {
+          loading.style.display = 'none';
+        }
+        attachCardHandlers();
+      }
+    });
+  </script>
+</body>
+</html>

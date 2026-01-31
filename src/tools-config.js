@@ -93,6 +93,12 @@ export const toolsConfig = [
         },
       },
     },
+    // ChatGPT Skybridge: point to UI template for rendering results
+    _meta: {
+      ui: {
+        resourceUri: 'ui://search-results',
+      },
+    },
   },
   {
     name: 'search_restaurants',
@@ -139,6 +145,12 @@ export const toolsConfig = [
           description: 'Maximum number of results (default: 50, max: 100)',
           default: 50,
         },
+      },
+    },
+    // ChatGPT Skybridge: point to UI template for rendering results
+    _meta: {
+      ui: {
+        resourceUri: 'ui://search-results',
       },
     },
   },
@@ -188,6 +200,12 @@ export const toolsConfig = [
         },
       },
     },
+    // ChatGPT Skybridge: point to UI template for rendering results
+    _meta: {
+      ui: {
+        resourceUri: 'ui://search-results',
+      },
+    },
   },
   {
     name: 'get_poi_details',
@@ -203,6 +221,13 @@ export const toolsConfig = [
           type: 'string',
           description: 'The Google Places ID of the POI to get details for',
         },
+      },
+    },
+    // ChatGPT Skybridge: point to UI template for rendering POI details
+    // The actual URI will include the osm_id: ui://{host}/poi/{osm_id}
+    _meta: {
+      ui: {
+        resourceUri: 'ui://poi/{osm_id}',
       },
     },
   },
@@ -259,15 +284,34 @@ export const resourcesConfig = {
       description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
       mimeType: 'text/html+skybridge',
     },
+    {
+      uriTemplate: 'ui://search-results',
+      name: 'Search Results',
+      description: 'Interactive list of search results (hotels, restaurants, POIs). Renders tool output as clickable cards.',
+      mimeType: 'text/html+skybridge',
+    },
   ],
 };
 
 /**
  * Helper to build content response for search results
+ *
+ * Returns both:
+ * - content: Text representation for model narration
+ * - structuredContent: Structured data for UI rendering (ChatGPT Skybridge)
+ *
+ * ChatGPT uses structuredContent with the tool's _meta.ui.resourceUri template
+ * to render interactive search results that users can click.
  */
 function buildSearchResponse(pois) {
   return {
+    // Text content for model narration (summarizes results)
     content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }],
+    // Structured content for UI rendering (passed to window.openai.toolOutput)
+    structuredContent: {
+      results: pois,
+      count: pois.length,
+    },
   };
 }
 
@@ -409,7 +453,11 @@ export async function executeToolHandler(name, args, db, options = {}) {
       }
 
       return {
+        // Text content for model narration
         content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],
+        // Structured content for UI rendering (ChatGPT Skybridge)
+        // The POI detail template uses this to render the full detail page
+        structuredContent: poi,
       };
     }
 
@@ -627,6 +675,21 @@ export async function handleReadResource(uri, db, render) {
 
     return {
       contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render) }],
+    };
+  }
+
+  // Search results page: ui://search-results or ui://{host}/search-results
+  // Returns an HTML template that renders search results from window.openai.toolOutput
+  const searchResultsMatch = uri.match(/^ui:\/\/(?:[^\/]+\/)?search-results$/);
+  if (searchResultsMatch) {
+    // Return the search results template - data is populated client-side via skybridge
+    const html = render('search-results', {
+      title: 'Search Results',
+      count: 0,
+      results: [],
+    });
+    return {
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
     };
   }
 

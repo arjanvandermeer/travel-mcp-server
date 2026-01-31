@@ -298,10 +298,22 @@
   </div>
 
   <script>
-    // Check for OpenAI bridge (when running in ChatGPT)
-    if (window.openai) {
-      console.log('OpenAI bridge connected');
-    }
+    /**
+     * ChatGPT Skybridge Integration for POI Details
+     *
+     * This template is primarily server-side rendered via Handlebars.
+     * When loaded in ChatGPT:
+     * - window.openai.toolOutput contains the POI data from get_poi_details
+     * - The page is already rendered, but toolOutput can be used for additional interactions
+     */
+    document.addEventListener('DOMContentLoaded', function() {
+      if (window.openai) {
+        console.log('OpenAI bridge connected');
+        if (window.openai.toolOutput) {
+          console.log('POI data available:', window.openai.toolOutput);
+        }
+      }
+    });
   </script>
 </body>
 </html>
