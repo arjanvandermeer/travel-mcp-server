@@ -93,11 +93,11 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Skybridge: point to UI template for rendering results
+    // ChatGPT Apps SDK: point to UI template for rendering results
     _meta: {
-      ui: {
-        resourceUri: 'ui://search-results',
-      },
+      'openai/outputTemplate': 'ui://widget/search-results.html',
+      'openai/toolInvocation/invoking': 'Searching...',
+      'openai/toolInvocation/invoked': 'Results ready.',
     },
   },
   {
@@ -147,11 +147,11 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Skybridge: point to UI template for rendering results
+    // ChatGPT Apps SDK: point to UI template for rendering results
     _meta: {
-      ui: {
-        resourceUri: 'ui://search-results',
-      },
+      'openai/outputTemplate': 'ui://widget/search-results.html',
+      'openai/toolInvocation/invoking': 'Searching...',
+      'openai/toolInvocation/invoked': 'Results ready.',
     },
   },
   {
@@ -200,11 +200,11 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Skybridge: point to UI template for rendering results
+    // ChatGPT Apps SDK: point to UI template for rendering results
     _meta: {
-      ui: {
-        resourceUri: 'ui://search-results',
-      },
+      'openai/outputTemplate': 'ui://widget/search-results.html',
+      'openai/toolInvocation/invoking': 'Searching...',
+      'openai/toolInvocation/invoked': 'Results ready.',
     },
   },
   {
@@ -223,12 +223,11 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Skybridge: point to UI template for rendering POI details
-    // The actual URI will include the osm_id: ui://{host}/poi/{osm_id}
+    // ChatGPT Apps SDK: point to UI template for rendering POI details
     _meta: {
-      ui: {
-        resourceUri: 'ui://poi/{osm_id}',
-      },
+      'openai/outputTemplate': 'ui://widget/poi-details.html',
+      'openai/toolInvocation/invoking': 'Loading details...',
+      'openai/toolInvocation/invoked': 'Details ready.',
     },
   },
   {
@@ -274,20 +273,26 @@ export const resourcesConfig = {
       mimeType: 'application/json',
     },
   ],
-  // Resource templates - dynamic URIs with variable placeholders
-  // Note: The template shows the pattern; actual URIs include the server host
-  // e.g., template "ui://poi/{osm_id}" matches "ui://mcp.example.com/poi/123"
+  // Resource templates for ChatGPT Apps SDK widgets
+  // These are referenced by tools via _meta["openai/outputTemplate"]
+  // MIME type text/html+skybridge signals ChatGPT to treat as a sandboxed widget
   resourceTemplates: [
     {
-      uriTemplate: 'ui://poi/{osm_id}',
-      name: 'POI Detail Page',
+      uriTemplate: 'ui://widget/poi-details.html',
+      name: 'POI Details Widget',
       description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
       mimeType: 'text/html+skybridge',
     },
     {
-      uriTemplate: 'ui://search-results',
-      name: 'Search Results',
-      description: 'Interactive list of search results (hotels, restaurants, POIs). Renders tool output as clickable cards.',
+      uriTemplate: 'ui://widget/search-results.html',
+      name: 'Search Results Widget',
+      description: 'Interactive list of search results. Renders tool output as clickable cards.',
+      mimeType: 'text/html+skybridge',
+    },
+    {
+      uriTemplate: 'ui://poi/{osm_id}',
+      name: 'POI Detail Page (by ID)',
+      description: 'POI detail page accessed by OSM ID - used when clicking search results.',
       mimeType: 'text/html+skybridge',
     },
   ],
@@ -654,9 +659,33 @@ export async function handleReadResource(uri, db, render) {
     };
   }
 
-  // POI detail page: ui://{host}/poi/{osm_id}
+  // Widget: POI details template (used by get_poi_details tool)
+  // URI: ui://widget/poi-details.html
+  if (uri === 'ui://widget/poi-details.html') {
+    // Return empty template - data is populated client-side via window.openai.toolOutput
+    const html = render('poi-details', {});
+    return {
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+    };
+  }
+
+  // Widget: Search results template (used by search_hotels, search_restaurants, search_pois)
+  // URI: ui://widget/search-results.html
+  if (uri === 'ui://widget/search-results.html') {
+    // Return empty template - data is populated client-side via window.openai.toolOutput
+    const html = render('search-results', {
+      title: 'Search Results',
+      count: 0,
+      results: [],
+    });
+    return {
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+    };
+  }
+
+  // POI detail page by ID: ui://{host}/poi/{osm_id}
   // Format: ui://mcp.arjanvandermeer.com/poi/1313852747
-  // The host part is dynamic (from server_base_url config), so we match any host
+  // Used when user clicks a search result - the host part is dynamic
   const poiMatch = uri.match(/^ui:\/\/[^\/]+\/poi\/(\d+)$/);
   if (poiMatch) {
     const osmId = parseInt(poiMatch[1], 10);
@@ -675,21 +704,6 @@ export async function handleReadResource(uri, db, render) {
 
     return {
       contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render) }],
-    };
-  }
-
-  // Search results page: ui://search-results or ui://{host}/search-results
-  // Returns an HTML template that renders search results from window.openai.toolOutput
-  const searchResultsMatch = uri.match(/^ui:\/\/(?:[^\/]+\/)?search-results$/);
-  if (searchResultsMatch) {
-    // Return the search results template - data is populated client-side via skybridge
-    const html = render('search-results', {
-      title: 'Search Results',
-      count: 0,
-      results: [],
-    });
-    return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
     };
   }
 
