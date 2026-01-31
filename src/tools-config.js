@@ -257,46 +257,78 @@ export const toolsConfig = [
  * 1. Recognize these as displayable content (not raw data)
  * 2. Match resources to the correct server in multi-server scenarios
  */
-export const resourcesConfig = {
-  // Static resources - fixed URIs that always return the same type of content
-  resources: [
-    {
-      uri: 'info://version',
-      name: 'Server Version',
-      description: 'Returns server version info including git commit hash',
-      mimeType: 'application/json',
-    },
-    {
-      uri: 'info://random-poi',
-      name: 'Random POI Preview',
-      description: 'Returns a link to view a random POI in the browser',
-      mimeType: 'application/json',
-    },
-  ],
-  // Resource templates for ChatGPT Apps SDK widgets
-  // These are referenced by tools via _meta["openai/outputTemplate"]
-  // MIME type text/html+skybridge signals ChatGPT to treat as a sandboxed widget
-  resourceTemplates: [
-    {
-      uriTemplate: 'ui://widget/poi-details.html',
-      name: 'POI Details Widget',
-      description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
-      mimeType: 'text/html+skybridge',
-    },
-    {
-      uriTemplate: 'ui://widget/search-results.html',
-      name: 'Search Results Widget',
-      description: 'Interactive list of search results. Renders tool output as clickable cards.',
-      mimeType: 'text/html+skybridge',
-    },
-    {
-      uriTemplate: 'ui://poi/{osm_id}',
-      name: 'POI Detail Page (by ID)',
-      description: 'POI detail page accessed by OSM ID - used when clicking search results.',
-      mimeType: 'text/html+skybridge',
-    },
-  ],
-};
+
+/**
+ * Get resources configuration with dynamic widget domain
+ * @param {string} widgetDomain - Domain from server_base_url config (e.g., "mcp.arjanvandermeer.com")
+ * @returns {object} - MCP resources configuration
+ */
+export function getResourcesConfig(widgetDomain) {
+  return {
+    // Static resources - fixed URIs that always return the same type of content
+    resources: [
+      {
+        uri: 'info://version',
+        name: 'Server Version',
+        description: 'Returns server version info including git commit hash',
+        mimeType: 'application/json',
+      },
+      {
+        uri: 'info://random-poi',
+        name: 'Random POI Preview',
+        description: 'Returns a link to view a random POI in the browser',
+        mimeType: 'application/json',
+      },
+    ],
+    // Resource templates for ChatGPT Apps SDK widgets
+    // These are referenced by tools via _meta["openai/outputTemplate"]
+    // MIME type text/html+skybridge signals ChatGPT to treat as a sandboxed widget
+    resourceTemplates: [
+      {
+        uriTemplate: 'ui://widget/poi-details.html',
+        name: 'POI Details Widget',
+        description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
+        mimeType: 'text/html+skybridge',
+        _meta: {
+          'openai/widgetDomain': widgetDomain,
+          'openai/widgetCSP': {
+            connect_domains: [],
+            resource_domains: [],
+            frame_domains: ['maps.google.com'],
+          },
+        },
+      },
+      {
+        uriTemplate: 'ui://widget/search-results.html',
+        name: 'Search Results Widget',
+        description: 'Interactive list of search results. Renders tool output as clickable cards.',
+        mimeType: 'text/html+skybridge',
+        _meta: {
+          'openai/widgetDomain': widgetDomain,
+          'openai/widgetCSP': {
+            connect_domains: [],
+            resource_domains: [],
+            frame_domains: [],
+          },
+        },
+      },
+      {
+        uriTemplate: 'ui://poi/{osm_id}',
+        name: 'POI Detail Page (by ID)',
+        description: 'POI detail page accessed by OSM ID - used when clicking search results.',
+        mimeType: 'text/html+skybridge',
+        _meta: {
+          'openai/widgetDomain': widgetDomain,
+          'openai/widgetCSP': {
+            connect_domains: [],
+            resource_domains: [],
+            frame_domains: ['maps.google.com'],
+          },
+        },
+      },
+    ],
+  };
+}
 
 /**
  * Helper to build content response for search results

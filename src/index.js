@@ -14,7 +14,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSche
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
-import { toolsConfig, resourcesConfig, executeToolHandler, handleReadResource } from './tools-config.js';
+import { toolsConfig, getResourcesConfig, executeToolHandler, handleReadResource } from './tools-config.js';
 import { versionInfo, getVersionString } from './version.js';
 import fs from 'fs';
 import path from 'path';
@@ -95,7 +95,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // List available resources (MCP Apps)
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   log('INFO', 'ListResources request received');
-  return resourcesConfig;
+  // Get widget domain from database config
+  const serverBaseUrl = await db.getConfig('server_base_url');
+  let widgetDomain = 'localhost';
+  if (serverBaseUrl) {
+    try {
+      widgetDomain = new URL(serverBaseUrl).hostname;
+    } catch {
+      // If URL parsing fails, use the raw value
+      widgetDomain = serverBaseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
+    }
+  }
+  return getResourcesConfig(widgetDomain);
 });
 
 // Read resource content (MCP Apps)
