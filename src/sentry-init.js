@@ -28,6 +28,10 @@ if (dsn && enabled) {
     environment,
     tracesSampleRate: sampleRate,
     profilesSampleRate: sampleRate * 0.1,
+    // Enable Sentry logs for debugging
+    _experiments: {
+      enableLogs: true,
+    },
     integrations: [
       // Auto-instrument postgres queries
       Sentry.postgresIntegration(),
