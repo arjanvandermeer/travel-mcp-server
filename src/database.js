@@ -186,29 +186,42 @@ export class TravelDatabase {
   // City Search
   // =========================================================================
 
-  async searchCities(query, countryCode = null, limit = 10) {
+  async searchCities(query, countryCode = null, state = null, limit = 10) {
     let queryText = `
       SELECT
-        geoname_id,
-        name,
-        ascii_name,
-        country_code,
-        population,
-        ST_Y(location) as latitude,
-        ST_X(location) as longitude,
-        timezone
-      FROM geonames_cities
-      WHERE (name ILIKE $1 OR ascii_name ILIKE $1)
+        c.geoname_id,
+        c.name,
+        c.ascii_name,
+        c.country_code,
+        co.country as country_name,
+        c.admin1_code as state_code,
+        a.name as state_name,
+        c.population,
+        ST_Y(c.location) as latitude,
+        ST_X(c.location) as longitude,
+        c.timezone
+      FROM geonames_cities c
+      LEFT JOIN geonames_countries co ON c.country_code = co.iso_alpha2
+      LEFT JOIN geonames_admin1_codes a
+        ON c.country_code = a.country_code
+        AND c.admin1_code = a.admin1_code
+      WHERE (c.name ILIKE $1 OR c.ascii_name ILIKE $1)
     `;
 
     const params = [`%${query}%`];
 
     if (countryCode) {
-      queryText += ` AND country_code = $${params.length + 1}`;
+      queryText += ` AND c.country_code = $${params.length + 1}`;
       params.push(countryCode.toUpperCase());
     }
 
-    queryText += ` ORDER BY population DESC NULLS LAST LIMIT $${params.length + 1}`;
+    if (state) {
+      // Match by admin1_code (e.g., "NY") or full name (e.g., "New York")
+      queryText += ` AND (c.admin1_code ILIKE $${params.length + 1} OR a.name ILIKE $${params.length + 1} OR a.ascii_name ILIKE $${params.length + 1})`;
+      params.push(state);
+    }
+
+    queryText += ` ORDER BY c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
     params.push(limit);
 
     const result = await this.pool.query(queryText, params);
@@ -218,16 +231,23 @@ export class TravelDatabase {
   async getCityByGeonameId(geonameId) {
     const result = await this.pool.query(`
       SELECT
-        geoname_id,
-        name,
-        ascii_name,
-        country_code,
-        population,
-        ST_Y(location) as latitude,
-        ST_X(location) as longitude,
-        timezone
-      FROM geonames_cities
-      WHERE geoname_id = $1
+        c.geoname_id,
+        c.name,
+        c.ascii_name,
+        c.country_code,
+        co.country as country_name,
+        c.admin1_code as state_code,
+        a.name as state_name,
+        c.population,
+        ST_Y(c.location) as latitude,
+        ST_X(c.location) as longitude,
+        c.timezone
+      FROM geonames_cities c
+      LEFT JOIN geonames_countries co ON c.country_code = co.iso_alpha2
+      LEFT JOIN geonames_admin1_codes a
+        ON c.country_code = a.country_code
+        AND c.admin1_code = a.admin1_code
+      WHERE c.geoname_id = $1
     `, [geonameId]);
 
     const city = result.rows[0] || null;
@@ -437,7 +457,7 @@ export class TravelDatabase {
   }
 
   async getCityByName(name, countryCode = null) {
-    const cities = await this.searchCities(name, countryCode, 1);
+    const cities = await this.searchCities(name, countryCode, null, 1);
     return cities[0] || null;
   }
 
