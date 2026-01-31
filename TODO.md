@@ -15,6 +15,13 @@ StreamableHTTP transport implemented at `/mcp`. Live at https://mcp.arjanvanderm
 ### ~~CRITICAL: Eliminate Tool Definition Duplication~~ COMPLETED
 Tools now defined in `src/tools-config.js` as single source of truth. Both `index.js` and `index-http.js` import from this file.
 
+### RDS Database Maintenance
+- [ ] Import admin1 codes to RDS (currently 0 rows - breaks state filtering)
+- [ ] Clean up stale import records (5 "running" status entries from abandoned imports)
+- [ ] Clean up failed imports (6 "completed" entries with 0 records)
+
+**Impact**: State filtering in search_cities doesn't work on production without admin1 data.
+
 ### CRITICAL: Fix Unhandled Promise in Background Enrichment
 - [ ] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` at database.js:719
 - [ ] Change to `await Promise.allSettled(enrichmentPromises)` to track errors
