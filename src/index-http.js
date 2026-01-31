@@ -222,16 +222,8 @@ async function main() {
           // Existing session - route to its transport
           const session = sessions.get(sessionId);
           await session.transport.handleRequest(req, res);
-        } else if (sessionId && !sessions.has(sessionId)) {
-          // Invalid session ID
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({
-            jsonrpc: '2.0',
-            error: { code: -32000, message: 'Invalid or expired session ID' },
-            id: null,
-          }));
         } else {
-          // No session ID - create new session for initialize request
+          // No session ID or invalid/expired session - create new session
           const newSessionId = crypto.randomUUID();
           const server = createMCPServer();
           const transport = new StreamableHTTPServerTransport({
@@ -243,7 +235,12 @@ async function main() {
 
           // Store session
           sessions.set(newSessionId, { server, transport, createdAt: Date.now() });
-          console.error(`New session created: ${newSessionId} (total: ${sessions.size})`);
+
+          if (sessionId) {
+            console.error(`Session expired, created new: ${newSessionId} (total: ${sessions.size})`);
+          } else {
+            console.error(`New session created: ${newSessionId} (total: ${sessions.size})`);
+          }
 
           // Handle the request
           await transport.handleRequest(req, res);

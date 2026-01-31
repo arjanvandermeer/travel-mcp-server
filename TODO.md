@@ -9,29 +9,11 @@ All optimizations applied. Results:
 - Dropped 9 unused indexes, added 3 new optimized indexes
 - Applied SSD-optimized settings (random_page_cost=1.1, effective_io_concurrency=200, work_mem=16MB)
 
-### Add ChatGPT Support (StreamableHTTP Transport)
-- [ ] Add StreamableHTTP transport to index-http.js alongside SSE
-- [ ] StreamableHTTP at `/mcp` for ChatGPT (POST requests)
-- [ ] Keep SSE at `/sse` + `/message` for MCP Inspector (working now)
-- [ ] Test both transports work simultaneously
-- [ ] Update documentation with ChatGPT connection instructions (ngrok required)
+### ~~Add ChatGPT Support (StreamableHTTP Transport)~~ COMPLETED
+StreamableHTTP transport implemented at `/mcp`. Live at https://mcp.arjanvandermeer.com/mcp
 
-**Rationale**: ChatGPT uses StreamableHTTP transport (POST to single endpoint), while MCP Inspector uses SSE transport. Need to support both for full client compatibility.
-
-**Note**: Current SSE-only version works with MCP Inspector. ChatGPT support was attempted but broke MCP Inspector - needs careful implementation.
-
-### CRITICAL: Eliminate Tool Definition Duplication
-- [ ] Create `src/tools-config.js` as single source of truth for MCP tool definitions
-- [ ] Export `toolsConfig` array with all tool definitions
-- [ ] Export `executeToolHandler()` function with all tool handlers
-- [ ] Update `src/index.js` (stdio server) to import from tools-config.js
-- [ ] Update `src/index-http.js` (HTTP server) to import from tools-config.js
-- [ ] Remove duplicated tool definitions from both servers
-- [ ] Test both servers work after refactor
-
-**Rationale**: Currently tool definitions (~65 lines each) are completely duplicated between index.js and index-http.js. This creates high maintenance burden and risk of servers getting out of sync. Having a single source of truth prevents bugs and follows DRY principle.
-
-**Impact**: High - architectural improvement that prevents future bugs
+### ~~CRITICAL: Eliminate Tool Definition Duplication~~ COMPLETED
+Tools now defined in `src/tools-config.js` as single source of truth. Both `index.js` and `index-http.js` import from this file.
 
 ### CRITICAL: Fix Unhandled Promise in Background Enrichment
 - [ ] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` at database.js:719
