@@ -34,6 +34,14 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      - name: Get git info
+        id: git-info
+        run: |
+          echo "commit=${{ github.sha }}" >> $GITHUB_OUTPUT
+          echo "commit_short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+          echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+
       - name: Build, tag, and push image to ECR
         uses: docker/build-push-action@v5
         id: build-image
@@ -45,6 +53,11 @@ jobs:
           tags: |
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          build-args: |
+            GIT_COMMIT=${{ steps.git-info.outputs.commit }}
+            GIT_COMMIT_SHORT=${{ steps.git-info.outputs.commit_short }}
+            GIT_BRANCH=${{ steps.git-info.outputs.branch }}
+            GIT_TAG=${{ steps.git-info.outputs.tag }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
