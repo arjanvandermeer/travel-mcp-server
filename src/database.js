@@ -186,7 +186,22 @@ export class TravelDatabase {
   // City Search
   // =========================================================================
 
-  async searchCities(query, countryCode = null, state = null, limit = 10) {
+  async searchCities(options) {
+    const {
+      query = null,
+      countryCode = null,
+      state = null,
+      latitude = null,
+      longitude = null,
+      radiusKm = 50,
+      limit = 10,
+    } = options;
+
+    const hasCoords = latitude !== null && longitude !== null;
+    const hasQuery = query && query.trim().length > 0;
+    const params = [];
+
+    // Build SELECT clause
     let queryText = `
       SELECT
         c.geoname_id,
@@ -200,28 +215,54 @@ export class TravelDatabase {
         ST_Y(c.location) as latitude,
         ST_X(c.location) as longitude,
         c.timezone
+    `;
+
+    // Add distance calculation if coordinates provided
+    if (hasCoords) {
+      params.push(longitude, latitude);
+      queryText += `, ST_Distance(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0 as distance_km`;
+    }
+
+    queryText += `
       FROM geonames_cities c
       LEFT JOIN geonames_countries co ON c.country_code = co.iso_alpha2
       LEFT JOIN geonames_admin1_codes a
         ON c.country_code = a.country_code
         AND c.admin1_code = a.admin1_code
-      WHERE (c.name ILIKE $1 OR c.ascii_name ILIKE $1)
+      WHERE 1=1
     `;
 
-    const params = [`%${query}%`];
+    // Add query filter if provided
+    if (hasQuery) {
+      queryText += ` AND (c.name ILIKE $${params.length + 1} OR c.ascii_name ILIKE $${params.length + 1})`;
+      params.push(`%${query}%`);
+    }
 
+    // Add coordinate radius filter
+    if (hasCoords) {
+      const maxRadius = Math.min(radiusKm, 100);
+      queryText += ` AND ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $${params.length + 1} * 1000)`;
+      params.push(maxRadius);
+    }
+
+    // Add country filter
     if (countryCode) {
       queryText += ` AND c.country_code = $${params.length + 1}`;
       params.push(countryCode.toUpperCase());
     }
 
+    // Add state filter
     if (state) {
-      // Match by admin1_code (e.g., "NY") or full name (e.g., "New York")
       queryText += ` AND (c.admin1_code ILIKE $${params.length + 1} OR a.name ILIKE $${params.length + 1} OR a.ascii_name ILIKE $${params.length + 1})`;
       params.push(state);
     }
 
-    queryText += ` ORDER BY c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
+    // Order by distance if coords provided, otherwise by population
+    if (hasCoords) {
+      queryText += ` ORDER BY distance_km ASC, c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
+    } else {
+      queryText += ` ORDER BY c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
+    }
     params.push(limit);
 
     const result = await this.pool.query(queryText, params);
@@ -262,6 +303,7 @@ export class TravelDatabase {
     const {
       cityName = null,
       countryCode = null,
+      state = null,
       latitude = null,
       longitude = null,
       radius = null,
@@ -320,7 +362,7 @@ export class TravelDatabase {
     // Case 2: Location only (city or coordinates)
     else if (!hasName && (hasCity || hasCoords)) {
       if (hasCity) {
-        const city = await this.getCityByName(cityName, countryCode);
+        const city = await this.getCityByName(cityName, countryCode, state);
         if (!city) {
           return [];
         }
@@ -352,7 +394,7 @@ export class TravelDatabase {
       let searchRadius = radius;
 
       if (hasCity) {
-        const city = await this.getCityByName(cityName, countryCode);
+        const city = await this.getCityByName(cityName, countryCode, state);
         if (!city) {
           return [];
         }
@@ -456,8 +498,13 @@ export class TravelDatabase {
     return addResourceUri(removeNullFields(result.rows));
   }
 
-  async getCityByName(name, countryCode = null) {
-    const cities = await this.searchCities(name, countryCode, null, 1);
+  async getCityByName(name, countryCode = null, state = null) {
+    const cities = await this.searchCities({
+      query: name,
+      countryCode,
+      state,
+      limit: 1,
+    });
     return cities[0] || null;
   }
 
