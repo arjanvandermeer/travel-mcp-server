@@ -88,6 +88,27 @@ export const promptsConfig = [
       },
     ],
   },
+  {
+    name: 'find_near_landmark',
+    description: 'Find restaurants or hotels near a specific landmark using two-step coordinate lookup',
+    arguments: [
+      {
+        name: 'landmark',
+        description: 'Landmark name (e.g., "Empire State Building", "Central Park")',
+        required: true,
+      },
+      {
+        name: 'search_type',
+        description: 'What to search for: "restaurants", "hotels", or "both"',
+        required: true,
+      },
+      {
+        name: 'brand',
+        description: 'Optional brand/chain name (e.g., "Starbucks", "Marriott")',
+        required: false,
+      },
+    ],
+  },
 ];
 
 /**
@@ -163,6 +184,26 @@ Please search for each category and give me a summary of the best options.`,
         ],
       };
 
+    case 'find_near_landmark':
+      return {
+        description: `Find ${args.search_type || 'places'}${args.brand ? ` (${args.brand})` : ''} near ${args.landmark || 'the landmark'}`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Please find ${args.brand ? args.brand + ' ' : ''}${args.search_type || 'restaurants'} near ${args.landmark || 'Empire State Building'}.
+
+IMPORTANT: Use this two-step workflow:
+1. First, use search_pois to find "${args.landmark || 'Empire State Building'}" and get its coordinates (osm_latitude, osm_longitude)
+2. Then, use search_${args.search_type === 'hotels' ? 'hotels' : 'restaurants'} with those coordinates${args.brand ? ` and query="${args.brand}"` : ''}
+
+This approach ensures accurate results by first resolving the landmark location, then searching nearby.`,
+            },
+          },
+        ],
+      };
+
     default:
       return {
         description: 'Unknown prompt',
@@ -222,13 +263,13 @@ const baseToolsConfig = [
   },
   {
     name: 'search_hotels',
-    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location. Example: search for "Conrad" with city_name "New York" and country_code "US" to find the Conrad New York Downtown on Vesey Street.',
+    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). Returns JSON results with coordinates, ratings, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location - combine name filter with location. WORKFLOW TIP: To find hotels near a landmark (e.g., "hotels near Times Square"), first use search_pois to get the landmark coordinates, then use search_hotels with those lat/long coordinates. Example: search for "Marriott" with latitude/longitude near Central Park to find Marriott hotels in that area.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Optional hotel name to search for (fuzzy matching)',
+          description: 'Optional hotel/brand name to search for (fuzzy matching). Works with brand names like "Marriott", "Hilton", "Holiday Inn" as well as specific hotel names.',
         },
         city_name: {
           type: 'string',
@@ -265,11 +306,11 @@ const baseToolsConfig = [
   },
   {
     name: 'search_hotels_ui',
-    description: 'Search for accommodations with interactive UI card. Same as search_hotels but renders results in a clickable card interface. Example: search for hotels in New York, US to find places like the Conrad New York Downtown.',
+    description: 'Search for accommodations with interactive UI card. Same as search_hotels but renders results in a clickable card interface. Supports brand names like "Marriott", "Hilton". TIP: To find hotels near a landmark, first get coordinates via search_pois, then search here with lat/long.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Optional hotel name to search for (fuzzy matching)' },
+        query: { type: 'string', description: 'Hotel/brand name to search (fuzzy). Works with chains like "Marriott", "Hilton".' },
         city_name: { type: 'string', description: 'City name to search in. Use with country_code.' },
         country_code: { type: 'string', description: '2-letter country code (e.g., "TH", "US").' },
         state: { type: 'string', description: 'Optional state/province code or full name.' },
@@ -287,13 +328,13 @@ const baseToolsConfig = [
   },
   {
     name: 'search_restaurants',
-    description: 'Search for food & drink (restaurants, cafes, bars, fast food, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location. Example: search for "Rainbow Room" with city_name "New York" and country_code "US" to find the iconic fine dining restaurant at 30 Rockefeller Plaza.',
+    description: 'Search for food & drink (restaurants, cafes, bars, fast food, coffee shops, etc.). Returns JSON results with coordinates, ratings, cuisine, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location - combine name filter with location. WORKFLOW TIP: To find a chain restaurant near a landmark (e.g., "Starbucks near Empire State Building"), first use search_pois to get the landmark coordinates, then use search_restaurants with those lat/long coordinates and query="Starbucks". This two-step approach works for any brand: Starbucks, McDonald\'s, Subway, etc.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Optional name to search for (fuzzy matching) - works for restaurants, cafes, bars, etc.',
+          description: 'Optional restaurant/brand name to search for (fuzzy matching). Works with chain brands like "Starbucks", "McDonald\'s", "Chipotle" as well as specific restaurant names like "Rainbow Room".',
         },
         city_name: {
           type: 'string',
@@ -335,11 +376,11 @@ const baseToolsConfig = [
   },
   {
     name: 'search_restaurants_ui',
-    description: 'Search for food & drink with interactive UI card. Same as search_restaurants but renders results in a clickable card interface. Example: search for restaurants in New York, US to find places like The Rainbow Room at Rockefeller Center.',
+    description: 'Search for food & drink with interactive UI card. Same as search_restaurants but renders results in a clickable card interface. Supports chain brands like "Starbucks", "McDonald\'s". TIP: To find chains near a landmark, first get coordinates via search_pois, then search here with lat/long + query.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Optional name to search for (fuzzy matching)' },
+        query: { type: 'string', description: 'Restaurant/brand name to search (fuzzy). Works with chains like "Starbucks", "McDonald\'s", "Chipotle".' },
         city_name: { type: 'string', description: 'City name to search in. Use with country_code.' },
         country_code: { type: 'string', description: '2-letter country code (e.g., "TH", "US").' },
         state: { type: 'string', description: 'Optional state/province code or full name.' },
@@ -358,13 +399,13 @@ const baseToolsConfig = [
   },
   {
     name: 'search_pois',
-    description: 'Search for Points of Interest (attractions, monuments, museums, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location. Example: search for "Statue of Liberty" with city_name "New York" and country_code "US" to find the famous landmark on Liberty Island.',
+    description: 'Search for Points of Interest (attractions, monuments, museums, landmarks, buildings, etc.). Returns JSON results with coordinates (osm_latitude, osm_longitude), ratings, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location. IMPORTANT: Use this tool to get coordinates of landmarks, then use those coordinates with search_hotels or search_restaurants to find places nearby. Example workflow: search_pois(query="Empire State Building") returns coordinates, then search_restaurants(latitude=40.748, longitude=-73.985, query="Starbucks") finds nearby Starbucks.',
     inputSchema: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'Optional POI name to search for (fuzzy matching)',
+          description: 'POI/landmark name to search for (fuzzy matching). Use this to find landmarks like "Empire State Building", "Central Park", "Times Square" and get their coordinates for subsequent searches.',
         },
         city_name: {
           type: 'string',
@@ -405,11 +446,11 @@ const baseToolsConfig = [
   },
   {
     name: 'search_pois_ui',
-    description: 'Search for Points of Interest with interactive UI card. Same as search_pois but renders results in a clickable card interface. Example: search for attractions in New York, US to find places like the Statue of Liberty.',
+    description: 'Search for Points of Interest with interactive UI card. Same as search_pois but renders results in a clickable card interface. Use this to find landmarks and get their coordinates for subsequent hotel/restaurant searches nearby.',
     inputSchema: {
       type: 'object',
       properties: {
-        query: { type: 'string', description: 'Optional POI name to search for (fuzzy matching)' },
+        query: { type: 'string', description: 'Landmark/POI name to search (fuzzy). Use to get coordinates of places like "Empire State Building", "Central Park".' },
         city_name: { type: 'string', description: 'City name to search in. Use with country_code.' },
         country_code: { type: 'string', description: '2-letter country code (e.g., "TH", "US").' },
         state: { type: 'string', description: 'Optional state/province code or full name.' },
@@ -978,6 +1019,32 @@ export async function handleReadResource(uri, db, render) {
   if (uri === 'samples://queries') {
     const samples = {
       description: 'Example queries to help you get started with the travel MCP server',
+      workflow_tips: [
+        {
+          pattern: 'Find [chain/brand] near [landmark]',
+          description: 'To find a chain restaurant or hotel near a landmark, use a two-step approach',
+          steps: [
+            'Step 1: Use search_pois to find the landmark and get its coordinates',
+            'Step 2: Use search_restaurants or search_hotels with those coordinates + query for the brand name',
+          ],
+          example: {
+            query: 'Find Starbucks near Empire State Building',
+            step1: { tool: 'search_pois', args: { query: 'Empire State Building', city_name: 'New York', country_code: 'US' } },
+            step1_result: 'Returns POI with osm_latitude: 40.748, osm_longitude: -73.985',
+            step2: { tool: 'search_restaurants', args: { latitude: 40.748, longitude: -73.985, radius_km: 1, query: 'Starbucks' } },
+            step2_result: 'Returns all Starbucks locations within 1km of Empire State Building',
+          },
+        },
+        {
+          pattern: 'Find [type] near [landmark]',
+          description: 'Same two-step approach works for any type of place near any landmark',
+          examples: [
+            'Hotels near Central Park → search_pois("Central Park") → search_hotels(lat/long)',
+            'Italian restaurants near Times Square → search_pois("Times Square") → search_restaurants(lat/long, query="Italian")',
+            'Museums near Eiffel Tower → search_pois("Eiffel Tower") → search_pois(lat/long, poi_type="museum")',
+          ],
+        },
+      ],
       examples: [
         {
           category: 'Hotels',
@@ -988,6 +1055,14 @@ export async function handleReadResource(uri, db, render) {
           notable_result: 'The Conrad New York Downtown on Vesey Street is a luxury hotel in Lower Manhattan.',
         },
         {
+          category: 'Hotel Chains',
+          description: 'Search for a specific hotel brand',
+          tool: 'search_hotels',
+          example_query: 'Find Marriott hotels in Manhattan',
+          example_args: { city_name: 'New York', country_code: 'US', query: 'Marriott', limit: 10 },
+          note: 'The query parameter works with brand names like Marriott, Hilton, Holiday Inn, etc.',
+        },
+        {
           category: 'Restaurants',
           description: 'Search for restaurants near a location',
           tool: 'search_restaurants',
@@ -996,12 +1071,28 @@ export async function handleReadResource(uri, db, render) {
           notable_result: 'The Rainbow Room at 30 Rockefeller Plaza is an iconic fine dining restaurant in Midtown Manhattan.',
         },
         {
+          category: 'Chain Restaurants',
+          description: 'Search for a chain restaurant brand near coordinates',
+          tool: 'search_restaurants',
+          example_query: 'Find Starbucks near Empire State Building (after getting coordinates)',
+          example_args: { latitude: 40.748, longitude: -73.985, radius_km: 1, query: 'Starbucks', limit: 10 },
+          note: 'The query parameter works with chain brands like Starbucks, McDonald\'s, Chipotle, Subway, etc.',
+        },
+        {
           category: 'Attractions',
           description: 'Search for points of interest and tourist attractions',
           tool: 'search_pois',
           example_query: 'Find tourist attractions in New York, US',
           example_args: { city_name: 'New York', country_code: 'US', limit: 10 },
           notable_result: 'The Statue of Liberty on Liberty Island is one of the most famous attractions in New York.',
+        },
+        {
+          category: 'Landmarks (for coordinates)',
+          description: 'Get coordinates of a landmark to use in subsequent searches',
+          tool: 'search_pois',
+          example_query: 'Find Empire State Building to get its coordinates',
+          example_args: { query: 'Empire State Building', city_name: 'New York', country_code: 'US' },
+          note: 'Results include osm_latitude and osm_longitude - use these for nearby searches.',
         },
         {
           category: 'Cities',
