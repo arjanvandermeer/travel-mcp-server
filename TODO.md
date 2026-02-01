@@ -22,6 +22,28 @@ Tools now defined in `src/tools-config.js` as single source of truth. Both `inde
 
 **Result**: State filtering in search_cities now works on production.
 
+### Feature: MCP Sample Prompts / Quick Actions
+- [ ] Add sample prompts to help users discover capabilities
+- [ ] Decide implementation approach (MCP prompts capability vs resources vs tool examples)
+- [ ] Create meaningful examples for common use cases
+
+**Use Cases**:
+- Onboarding: Help new users discover what the server can do
+- Quick actions: Common workflows as one-click templates
+- Demo/Testing: Verify the server works correctly
+- Complex queries: Multi-step example workflows
+
+**Implementation Options**:
+1. **MCP Prompts capability** - Native MCP feature for prompt templates
+2. **Resource with examples** - A `samples://` resource listing example queries
+3. **Enhanced tool descriptions** - Add `examples` field to tool definitions
+
+**Example prompts to consider**:
+- "Find hotels near Times Square, New York"
+- "Search for Italian restaurants in San Francisco"
+- "Find attractions within 2km of the Eiffel Tower"
+- "Show me cafes in Amsterdam city center"
+
 ### BUG: radius_km Doesn't Accept Decimal Values
 - [ ] Fix integer parsing error when `radius_km` is a decimal (e.g., `0.5`)
 - [ ] Error: `"invalid input syntax for type integer: '0.5'"`
