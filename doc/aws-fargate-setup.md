@@ -224,16 +224,62 @@ aws ecs create-service \
   --load-balancers "targetGroupArn=<target-group-arn>,containerName=travel-mcp-server,containerPort=3000"
 ```
 
-## Step 9: Configure GitHub Secrets
+## Step 9: Configure GitHub Actions
 
-Add these secrets to your GitHub repository (Settings → Secrets → Actions):
+The deployment workflow (`.github/workflows/deploy.yml`) requires configuration via GitHub's repository settings.
 
-- `AWS_ACCESS_KEY_ID` - IAM user access key
-- `AWS_SECRET_ACCESS_KEY` - IAM user secret key
+### GitHub Variables (non-sensitive config)
+
+Go to: Settings → Secrets and variables → Actions → **Variables** tab
+
+| Variable | Description | Example Value |
+|----------|-------------|---------------|
+| `AWS_REGION` | AWS region for deployment | `us-east-1` |
+| `ECR_REPOSITORY` | ECR repository name | `travel-mcp-server` |
+| `ECS_CLUSTER` | ECS cluster name | `travel-mcp-cluster` |
+| `ECS_SERVICE` | ECS service name | `travel-mcp-service` |
+| `CONTAINER_NAME` | Container name in task definition | `travel-mcp-server` |
+| `SENTRY_ORG` | Sentry organization slug | `your-org` |
+| `SENTRY_PROJECT` | Sentry project slug | `travel-mcp-server` |
+
+### GitHub Secrets (sensitive values)
+
+Go to: Settings → Secrets and variables → Actions → **Secrets** tab
+
+| Secret | Description | How to get it |
+|--------|-------------|---------------|
+| `AWS_ACCESS_KEY_ID` | IAM user access key | AWS IAM Console |
+| `AWS_SECRET_ACCESS_KEY` | IAM user secret key | AWS IAM Console |
+| `SENTRY_DSN` | Sentry DSN for error tracking | Sentry → Project Settings → Client Keys |
+| `SENTRY_AUTH_TOKEN` | Sentry auth token for releases (optional) | Sentry → Settings → Auth Tokens (needs `project:releases`, `org:read` scopes) |
+
+### IAM Permissions
 
 The IAM user needs permissions for:
-- ECR (push images)
-- ECS (update services, describe tasks)
+- ECR: `ecr:GetAuthorizationToken`, `ecr:BatchCheckLayerAvailability`, `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:PutImage`, `ecr:InitiateLayerUpload`, `ecr:UploadLayerPart`, `ecr:CompleteLayerUpload`
+- ECS: `ecs:DescribeTaskDefinition`, `ecs:RegisterTaskDefinition`, `ecs:UpdateService`, `ecs:DescribeServices`
+
+### Deployment Flow
+
+1. Push to `main` triggers the workflow
+2. Workflow builds Docker image and pushes to ECR
+3. Downloads current task definition from ECS
+4. Injects `SENTRY_DSN` and telemetry env vars
+5. Updates task definition with new image
+6. Deploys to ECS with rolling update
+
+### Telemetry Environment Variables
+
+The workflow automatically injects these into the ECS task definition:
+
+| Variable | Value | Purpose |
+|----------|-------|---------|
+| `SENTRY_DSN` | From secrets | Sentry error tracking |
+| `TELEMETRY_ENABLED` | `true` | Enable telemetry |
+| `TELEMETRY_ENVIRONMENT` | `production` | Environment tag in Sentry |
+| `TELEMETRY_SAMPLE_RATE` | `1.0` | 100% trace sampling |
+
+Note: `DATABASE_URL` is set directly in the ECS task definition (not injected by workflow) and should be configured via AWS Console or Secrets Manager.
 
 ## Step 10: First Deployment
 
