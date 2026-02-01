@@ -15,11 +15,11 @@ import './sentry-init.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
-import { toolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, renderPOIPreview } from './tools-config.js';
+import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, renderPOIPreview, promptsConfig, getPromptMessages } from './tools-config.js';
 import { versionInfo, getVersionString } from './version.js';
 import http from 'http';
 import crypto from 'crypto';
@@ -44,13 +44,17 @@ function createMCPServer() {
       capabilities: {
         tools: {},
         resources: {},
+        prompts: {},
       },
     }
   );
 
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    return { tools: toolsConfig };
+    // Get widget domain from database config for UI tools' CSP
+    const serverBaseUrl = await db.getConfig('server_base_url');
+    const widgetDomain = serverBaseUrl || 'http://localhost';
+    return { tools: getToolsConfig(widgetDomain) };
   });
 
   // Handle tool calls
@@ -85,6 +89,17 @@ function createMCPServer() {
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
     return handleReadResource(uri, db, render);
+  });
+
+  // List available prompts
+  server.setRequestHandler(ListPromptsRequestSchema, async () => {
+    return { prompts: promptsConfig };
+  });
+
+  // Get prompt content
+  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+    const { name, arguments: args } = request.params;
+    return getPromptMessages(name, args);
   });
 
   return server;

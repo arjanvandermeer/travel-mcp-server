@@ -10,11 +10,180 @@ import { versionInfo } from './version.js';
 export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
 export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
 
-// Tool definitions
-export const toolsConfig = [
+// =============================================================================
+// MCP Prompts Configuration
+// =============================================================================
+
+/**
+ * Prompt templates for common use cases
+ * These help users discover and quickly use the server's capabilities
+ */
+export const promptsConfig = [
+  {
+    name: 'find_hotels_in_city',
+    description: 'Search for hotels in a specific city',
+    arguments: [
+      {
+        name: 'city',
+        description: 'City name (e.g., "New York")',
+        required: true,
+      },
+      {
+        name: 'country_code',
+        description: 'Two-letter country code (e.g., "US")',
+        required: true,
+      },
+    ],
+  },
+  {
+    name: 'find_restaurants_nearby',
+    description: 'Find restaurants near a specific location using coordinates',
+    arguments: [
+      {
+        name: 'latitude',
+        description: 'Latitude coordinate',
+        required: true,
+      },
+      {
+        name: 'longitude',
+        description: 'Longitude coordinate',
+        required: true,
+      },
+      {
+        name: 'radius_km',
+        description: 'Search radius in kilometers (default: 1)',
+        required: false,
+      },
+    ],
+  },
+  {
+    name: 'find_attractions',
+    description: 'Search for tourist attractions and points of interest',
+    arguments: [
+      {
+        name: 'city',
+        description: 'City name (e.g., "New York")',
+        required: true,
+      },
+      {
+        name: 'country_code',
+        description: 'Two-letter country code (e.g., "US")',
+        required: true,
+      },
+    ],
+  },
+  {
+    name: 'explore_area',
+    description: 'Explore all points of interest in an area - hotels, restaurants, and attractions',
+    arguments: [
+      {
+        name: 'city',
+        description: 'City name (e.g., "New York")',
+        required: true,
+      },
+      {
+        name: 'country_code',
+        description: 'Two-letter country code (e.g., "US")',
+        required: true,
+      },
+    ],
+  },
+];
+
+/**
+ * Generate prompt messages based on prompt name and arguments
+ * Returns the actual prompt content to send to the LLM
+ */
+export function getPromptMessages(name, args = {}) {
+  switch (name) {
+    case 'find_hotels_in_city':
+      return {
+        description: `Find hotels in ${args.city || 'the specified city'}`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Please search for hotels in ${args.city || 'New York'}, ${args.country_code || 'US'}. Show me the top results with their ratings and addresses.
+
+Example: The Conrad New York Downtown on Vesey Street is a luxury hotel in Lower Manhattan.`,
+            },
+          },
+        ],
+      };
+
+    case 'find_restaurants_nearby':
+      return {
+        description: `Find restaurants near coordinates (${args.latitude}, ${args.longitude})`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Please search for restaurants near latitude ${args.latitude || '40.7580'} and longitude ${args.longitude || '-73.9855'} within ${args.radius_km || '1'} km. Show me the top results with their cuisine type and ratings.
+
+Example: The Rainbow Room at 30 Rockefeller Plaza is an iconic fine dining restaurant in Midtown Manhattan.`,
+            },
+          },
+        ],
+      };
+
+    case 'find_attractions':
+      return {
+        description: `Find tourist attractions in ${args.city || 'the specified city'}`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Please search for tourist attractions and points of interest in ${args.city || 'New York'}, ${args.country_code || 'US'}. Include museums, monuments, and landmarks.
+
+Example: The Statue of Liberty on Liberty Island is one of the most famous attractions in New York.`,
+            },
+          },
+        ],
+      };
+
+    case 'explore_area':
+      return {
+        description: `Explore ${args.city || 'the specified city'} - hotels, restaurants, and attractions`,
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Please help me explore ${args.city || 'New York'}, ${args.country_code || 'US'}. I'd like to see:
+1. Top hotels (e.g., Conrad New York Downtown on Vesey Street)
+2. Best restaurants (e.g., The Rainbow Room at Rockefeller Center)
+3. Must-see attractions (e.g., Statue of Liberty on Liberty Island)
+
+Please search for each category and give me a summary of the best options.`,
+            },
+          },
+        ],
+      };
+
+    default:
+      return {
+        description: 'Unknown prompt',
+        messages: [
+          {
+            role: 'user',
+            content: {
+              type: 'text',
+              text: `Unknown prompt: ${name}. Available prompts: find_hotels_in_city, find_restaurants_nearby, find_attractions, explore_area`,
+            },
+          },
+        ],
+      };
+  }
+}
+
+// Base tool definitions
+const baseToolsConfig = [
   {
     name: 'search_cities',
-    description: 'Search for cities. REQUIRES either country_code OR coordinates (latitude + longitude). Valid combinations: (1) query + country_code, (2) query + country_code + state, (3) query + lat/long, (4) country_code only, (5) country_code + state, (6) lat/long only. Returns city info with coordinates, population, timezone, country and state/province.',
+    description: 'Search for cities. REQUIRES either country_code OR coordinates (latitude + longitude). Valid combinations: (1) query + country_code, (2) query + country_code + state, (3) query + lat/long, (4) country_code only, (5) country_code + state, (6) lat/long only. Returns city info with coordinates, population, timezone, country and state/province. Example: search for "New York" with country_code "US" to find New York City.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -53,7 +222,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_hotels',
-    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
+    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location. Example: search for "Conrad" with city_name "New York" and country_code "US" to find the Conrad New York Downtown on Vesey Street.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -96,7 +265,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_hotels_ui',
-    description: 'Search for accommodations with interactive UI card. Same as search_hotels but renders results in a clickable card interface.',
+    description: 'Search for accommodations with interactive UI card. Same as search_hotels but renders results in a clickable card interface. Example: search for hotels in New York, US to find places like the Conrad New York Downtown.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -118,7 +287,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_restaurants',
-    description: 'Search for food & drink (restaurants, cafes, bars, fast food, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
+    description: 'Search for food & drink (restaurants, cafes, bars, fast food, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location. Example: search for "Rainbow Room" with city_name "New York" and country_code "US" to find the iconic fine dining restaurant at 30 Rockefeller Plaza.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -166,7 +335,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_restaurants_ui',
-    description: 'Search for food & drink with interactive UI card. Same as search_restaurants but renders results in a clickable card interface.',
+    description: 'Search for food & drink with interactive UI card. Same as search_restaurants but renders results in a clickable card interface. Example: search for restaurants in New York, US to find places like The Rainbow Room at Rockefeller Center.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -189,7 +358,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_pois',
-    description: 'Search for Points of Interest (attractions, monuments, museums, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
+    description: 'Search for Points of Interest (attractions, monuments, museums, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location. Example: search for "Statue of Liberty" with city_name "New York" and country_code "US" to find the famous landmark on Liberty Island.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -236,7 +405,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_pois_ui',
-    description: 'Search for Points of Interest with interactive UI card. Same as search_pois but renders results in a clickable card interface.',
+    description: 'Search for Points of Interest with interactive UI card. Same as search_pois but renders results in a clickable card interface. Example: search for attractions in New York, US to find places like the Statue of Liberty.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -300,6 +469,37 @@ export const toolsConfig = [
   },
 ];
 
+/**
+ * Get tools configuration with dynamic widget domain for UI tools
+ * Adds CSP and domain to any tool that has openai/outputTemplate
+ * @param {string} widgetDomain - Full URL from server_base_url config
+ * @returns {Array} - Tools config with CSP/domain added to UI tools
+ */
+export function getToolsConfig(widgetDomain) {
+  return baseToolsConfig.map(tool => {
+    // If tool has outputTemplate, add CSP and domain
+    if (tool._meta?.['openai/outputTemplate']) {
+      const isPoiDetails = tool._meta['openai/outputTemplate'].includes('poi-details');
+      return {
+        ...tool,
+        _meta: {
+          ...tool._meta,
+          'openai/widgetDomain': widgetDomain,
+          'openai/widgetCSP': {
+            connect_domains: [],
+            resource_domains: [],
+            frame_domains: isPoiDetails ? ['maps.google.com'] : [],
+          },
+        },
+      };
+    }
+    return tool;
+  });
+}
+
+// For backwards compatibility, export static config (used by executeToolHandler)
+export const toolsConfig = baseToolsConfig;
+
 // Resource definitions
 /**
  * MCP Resources Configuration
@@ -337,6 +537,12 @@ export function getResourcesConfig(widgetDomain) {
         uri: 'info://random-poi',
         name: 'Random POI Preview',
         description: 'Returns a link to view a random POI in the browser',
+        mimeType: 'application/json',
+      },
+      {
+        uri: 'samples://queries',
+        name: 'Sample Queries',
+        description: 'Example queries to help you get started with the travel MCP server. Includes sample searches for hotels, restaurants, and attractions in New York City.',
         mimeType: 'application/json',
       },
     ],
@@ -765,6 +971,58 @@ export async function handleReadResource(uri, db, render) {
     const previewUrl = `${baseUrl}/preview/poi/random`;
     return {
       contents: [{ uri, mimeType: 'application/json', text: JSON.stringify({ url: previewUrl }, null, 2) }],
+    };
+  }
+
+  // Sample queries resource
+  if (uri === 'samples://queries') {
+    const samples = {
+      description: 'Example queries to help you get started with the travel MCP server',
+      examples: [
+        {
+          category: 'Hotels',
+          description: 'Search for hotels in a city',
+          tool: 'search_hotels',
+          example_query: 'Find hotels in New York, US',
+          example_args: { city_name: 'New York', country_code: 'US', limit: 10 },
+          notable_result: 'The Conrad New York Downtown on Vesey Street is a luxury hotel in Lower Manhattan.',
+        },
+        {
+          category: 'Restaurants',
+          description: 'Search for restaurants near a location',
+          tool: 'search_restaurants',
+          example_query: 'Find restaurants near Rockefeller Center in Manhattan',
+          example_args: { latitude: 40.7587, longitude: -73.9787, radius_km: 0.5, limit: 10 },
+          notable_result: 'The Rainbow Room at 30 Rockefeller Plaza is an iconic fine dining restaurant in Midtown Manhattan.',
+        },
+        {
+          category: 'Attractions',
+          description: 'Search for points of interest and tourist attractions',
+          tool: 'search_pois',
+          example_query: 'Find tourist attractions in New York, US',
+          example_args: { city_name: 'New York', country_code: 'US', limit: 10 },
+          notable_result: 'The Statue of Liberty on Liberty Island is one of the most famous attractions in New York.',
+        },
+        {
+          category: 'Cities',
+          description: 'Search for cities in a country or region',
+          tool: 'search_cities',
+          example_query: 'Find cities in New York state, US',
+          example_args: { country_code: 'US', state: 'New York', limit: 10 },
+          notable_result: 'New York City is the most populous city in the United States.',
+        },
+        {
+          category: 'POI Details',
+          description: 'Get detailed information about a specific point of interest',
+          tool: 'get_poi_details',
+          example_query: 'Get details for a specific hotel or restaurant',
+          example_args: { osm_id: 123456789 },
+          note: 'Use an osm_id from search results to get full details including address, phone, website, and hours.',
+        },
+      ],
+    };
+    return {
+      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(samples, null, 2) }],
     };
   }
 

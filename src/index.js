@@ -10,11 +10,11 @@ import './sentry-init.js';
 
 import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
-import { toolsConfig, getResourcesConfig, executeToolHandler, handleReadResource } from './tools-config.js';
+import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, promptsConfig, getPromptMessages } from './tools-config.js';
 import { versionInfo, getVersionString } from './version.js';
 import fs from 'fs';
 import path from 'path';
@@ -58,6 +58,7 @@ const server = new Server(
     capabilities: {
       tools: {},
       resources: {},
+      prompts: {},
     },
   }
 );
@@ -65,7 +66,10 @@ const server = new Server(
 // List available tools
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   log('INFO', 'ListTools request received');
-  return { tools: toolsConfig };
+  // Get widget domain from database config for UI tools' CSP
+  const serverBaseUrl = await db.getConfig('server_base_url');
+  const widgetDomain = serverBaseUrl || 'http://localhost';
+  return { tools: getToolsConfig(widgetDomain) };
 });
 
 // Handle tool calls
@@ -106,6 +110,19 @@ server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const { uri } = request.params;
   log('INFO', `ReadResource request received: ${uri}`);
   return handleReadResource(uri, db, render);
+});
+
+// List available prompts
+server.setRequestHandler(ListPromptsRequestSchema, async () => {
+  log('INFO', 'ListPrompts request received');
+  return { prompts: promptsConfig };
+});
+
+// Get prompt content
+server.setRequestHandler(GetPromptRequestSchema, async (request) => {
+  const { name, arguments: args } = request.params;
+  log('INFO', `GetPrompt request received: ${name}`, args);
+  return getPromptMessages(name, args);
 });
 
 // Start server
