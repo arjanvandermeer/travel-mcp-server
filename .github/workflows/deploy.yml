@@ -6,13 +6,14 @@ on:
   workflow_dispatch:  # Allow manual trigger
 
 env:
-  AWS_REGION: us-east-1
-  ECR_REPOSITORY: travel-mcp-server
-  ECS_CLUSTER: travel-mcp-cluster
-  ECS_SERVICE: travel-mcp-service
-  CONTAINER_NAME: travel-mcp-server
-  SENTRY_ORG: vdm-holding
-  SENTRY_PROJECT: travel-mcp-server
+  # All deployment config from GitHub Variables (Settings → Secrets and variables → Actions → Variables)
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+  CONTAINER_NAME: ${{ vars.CONTAINER_NAME }}
+  SENTRY_ORG: ${{ vars.SENTRY_ORG }}
+  SENTRY_PROJECT: ${{ vars.SENTRY_PROJECT }}
 
 jobs:
   deploy:
