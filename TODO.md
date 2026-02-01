@@ -22,27 +22,61 @@ Tools now defined in `src/tools-config.js` as single source of truth. Both `inde
 
 **Result**: State filtering in search_cities now works on production.
 
-### Feature: MCP Sample Prompts / Quick Actions
-- [ ] Add sample prompts to help users discover capabilities
-- [ ] Decide implementation approach (MCP prompts capability vs resources vs tool examples)
-- [ ] Create meaningful examples for common use cases
+### ~~Feature: MCP Sample Prompts / Quick Actions~~ COMPLETED 2026-02-01
+Implemented all three approaches:
+1. **MCP Prompts capability** - 4 prompts (find_hotels_in_city, find_restaurants_nearby, find_attractions, explore_area)
+2. **samples:// resource** - Returns JSON with example queries for all tools
+3. **Enhanced tool descriptions** - Added examples to search_cities, search_hotels, search_restaurants, search_pois
+
+All examples use NYC landmarks: Conrad New York Downtown (hotel), The Rainbow Room (restaurant), Statue of Liberty (attraction).
+
+### Feature: OAuth2 Authentication (Optional)
+Add optional authentication to enable per-user features (API limit bypass, favorites, preferences).
+
+**Phase 1: Simple Token Auth** ✅ COMPLETED 2026-02-01
+- [x] Database schema for users and tokens (deployed to local + RDS)
+- [x] Token validation middleware in index-http.js
+- [x] User context passed to MCP sessions
+- [x] Completely transparent - anonymous access still works
+- [x] User arjanvdm@gmail.com set up with unlimited Google Places access
+- [ ] Web UI for Google OAuth login (`/auth/login`)
+- [ ] Token display after successful login
+
+**Phase 2: Full OAuth2 Implementation (Future)**
+- [ ] Google OAuth2 integration (Authorization Code flow)
+- [ ] Standard OAuth endpoints for ChatGPT integration:
+  - `GET /auth/authorize` - Redirect to Google OAuth
+  - `POST /auth/token` - Exchange code for access token
+  - ChatGPT configures OAuth Client ID/Secret in its MCP Actions UI
+- [ ] Device Authorization Flow for CLI/headless clients (Claude Desktop, etc.)
+- [ ] Token refresh mechanism
+- [ ] Multiple provider support (GitHub, etc.)
+
+**Note**: ChatGPT has built-in OAuth support in its MCP/Actions configuration UI.
+When connecting an MCP server, users can configure OAuth Client ID/Secret directly.
+ChatGPT handles the redirect flow, and the server just needs standard OAuth endpoints.
+
+**Database Schema**:
+```sql
+users (id, google_id, email, name, picture_url, created_at, last_login_at)
+user_tokens (id, user_id, token, created_at, expires_at, last_used_at)
+user_config (user_id, key, value)  -- e.g., 'google_places_limit' = 'unlimited'
+user_favorites (user_id, poi_osm_id, created_at)  -- Future
+```
+
+**Authentication Flow**:
+```
+1. User visits /auth/login → Redirects to Google OAuth
+2. After Google callback → Creates user + generates token
+3. User configures MCP client with: Authorization: Bearer <token>
+4. Server validates token → Loads user config → Applies custom limits
+```
 
 **Use Cases**:
-- Onboarding: Help new users discover what the server can do
-- Quick actions: Common workflows as one-click templates
-- Demo/Testing: Verify the server works correctly
-- Complex queries: Multi-step example workflows
-
-**Implementation Options**:
-1. **MCP Prompts capability** - Native MCP feature for prompt templates
-2. **Resource with examples** - A `samples://` resource listing example queries
-3. **Enhanced tool descriptions** - Add `examples` field to tool definitions
-
-**Example prompts to consider**:
-- "Find hotels near Times Square, New York"
-- "Search for Italian restaurants in San Francisco"
-- "Find attractions within 2km of the Eiffel Tower"
-- "Show me cafes in Amsterdam city center"
+- Bypass Google Places API limits for whitelisted accounts
+- Store user favorites and preferences (future)
+- Track usage per user (future)
+- Personalized recommendations (future)
 
 ### BUG: radius_km Doesn't Accept Decimal Values
 - [ ] Fix integer parsing error when `radius_km` is a decimal (e.g., `0.5`)

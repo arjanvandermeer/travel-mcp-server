@@ -28,13 +28,37 @@ import { parse } from 'url';
 const db = new TravelDatabase();
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
 
-// Store active sessions: sessionId -> { server, transport }
+// Store active sessions: sessionId -> { server, transport, user }
 const sessions = new Map();
 
 /**
- * Create a new MCP Server instance with all handlers configured
+ * Extract user from Authorization header
+ * Returns null for anonymous requests (which is fine - auth is optional)
  */
-function createMCPServer() {
+async function getUserFromRequest(req) {
+  const auth = req.headers['authorization'];
+  if (!auth?.startsWith('Bearer ')) return null;
+
+  const token = auth.slice(7);
+  try {
+    const user = await db.getUserByToken(token);
+    if (user) {
+      console.error(`Authenticated user: ${user.email}`);
+      telemetry.setTag('user.email', user.email);
+      telemetry.setTag('user.id', user.id.toString());
+    }
+    return user;
+  } catch (err) {
+    console.error('Error validating token:', err.message);
+    return null;
+  }
+}
+
+/**
+ * Create a new MCP Server instance with all handlers configured
+ * @param {object|null} user - Authenticated user or null for anonymous
+ */
+function createMCPServer(user = null) {
   const server = new Server(
     {
       name: 'travel-mcp-server',
@@ -66,9 +90,10 @@ function createMCPServer() {
 
     return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
       try {
-        return await executeToolHandler(name, args, db);
+        // Pass user context to tool handler (null for anonymous)
+        return await executeToolHandler(name, args, db, { user });
       } catch (error) {
-        telemetry.captureException(error, { tool: name, args });
+        telemetry.captureException(error, { tool: name, args, user: user?.email });
         return {
           content: [{ type: 'text', text: `Error: ${error.message}` }],
           isError: true,
@@ -224,8 +249,11 @@ async function main() {
           await session.transport.handleRequest(req, res);
         } else {
           // No session ID or invalid/expired session - create new session
+          // Check for authentication (optional - null means anonymous)
+          const user = await getUserFromRequest(req);
+
           const newSessionId = crypto.randomUUID();
-          const server = createMCPServer();
+          const server = createMCPServer(user);
           const transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => newSessionId,
           });
@@ -233,13 +261,13 @@ async function main() {
           // Connect server to transport
           await server.connect(transport);
 
-          // Store session
-          sessions.set(newSessionId, { server, transport, createdAt: Date.now() });
+          // Store session with user context
+          sessions.set(newSessionId, { server, transport, createdAt: Date.now(), user });
 
           if (sessionId) {
-            console.error(`Session expired, created new: ${newSessionId} (total: ${sessions.size})`);
+            console.error(`Session expired, created new: ${newSessionId} (total: ${sessions.size})${user ? ` [${user.email}]` : ''}`);
           } else {
-            console.error(`New session created: ${newSessionId} (total: ${sessions.size})`);
+            console.error(`New session created: ${newSessionId} (total: ${sessions.size})${user ? ` [${user.email}]` : ''}`);
           }
 
           // Handle the request
