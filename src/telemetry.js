@@ -37,9 +37,24 @@ function getEnvConfig() {
 
 /**
  * Initialize Sentry SDK for error tracking and performance monitoring
+ *
+ * NOTE: Sentry may already be initialized by sentry-init.js (early init for auto-instrumentation).
+ * In that case, we skip re-initialization to preserve the auto-instrumentation setup.
  */
 function initSentry(config) {
-  if (!config.sentryDsn || sentryInitialized) {
+  if (!config.sentryDsn) {
+    return false;
+  }
+
+  // Check if Sentry was already initialized (e.g., by sentry-init.js)
+  // This is important - re-initializing would break auto-instrumentation
+  if (Sentry.getClient()) {
+    sentryInitialized = true;
+    console.error('[Telemetry] Sentry already initialized (early init), skipping re-init');
+    return true;
+  }
+
+  if (sentryInitialized) {
     return false;
   }
 

@@ -22,6 +22,16 @@ Tools now defined in `src/tools-config.js` as single source of truth. Both `inde
 
 **Result**: State filtering in search_cities now works on production.
 
+### BUG: radius_km Doesn't Accept Decimal Values
+- [ ] Fix integer parsing error when `radius_km` is a decimal (e.g., `0.5`)
+- [ ] Error: `"invalid input syntax for type integer: '0.5'"`
+- [ ] Likely in database.js where radius is passed to SQL query
+- [ ] Should accept any positive number, not just integers
+
+**Reproduction**: Call `search_pois` with `{"latitude": 40.6892, "longitude": -74.0445, "radius_km": 0.5}`
+
+**Impact**: Medium - blocks fine-grained location searches
+
 ### CRITICAL: Fix Unhandled Promise in Background Enrichment
 - [ ] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` at database.js:719
 - [ ] Change to `await Promise.allSettled(enrichmentPromises)` to track errors

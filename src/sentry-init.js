@@ -11,12 +11,15 @@
 
 import * as Sentry from '@sentry/node';
 import dotenv from 'dotenv';
+import { versionInfo, getVersionString } from './version.js';
 
 // Load environment variables
 dotenv.config();
 
 const dsn = process.env.SENTRY_DSN || null;
 const environment = process.env.TELEMETRY_ENVIRONMENT || process.env.NODE_ENV || 'development';
+// Release format: travel-mcp-server@1.0.0-abc1234 (includes git commit)
+const release = `travel-mcp-server@${getVersionString()}`;
 const sampleRate = parseFloat(process.env.TELEMETRY_SAMPLE_RATE || '1.0');
 const enabled = process.env.TELEMETRY_ENABLED !== 'false';
 const sendDev = process.env.SENTRY_SEND_DEV === 'true';
@@ -25,6 +28,7 @@ const sendDev = process.env.SENTRY_SEND_DEV === 'true';
 if (dsn && enabled) {
   Sentry.init({
     dsn,
+    release,
     environment,
     tracesSampleRate: sampleRate,
     profilesSampleRate: sampleRate * 0.1,
@@ -52,7 +56,7 @@ if (dsn && enabled) {
     },
   });
 
-  console.error(`[Sentry] Early init complete (env: ${environment}, sample: ${sampleRate})`);
+  console.error(`[Sentry] Early init complete (release: ${release}, env: ${environment}, sample: ${sampleRate}, sendDev: ${sendDev})`);
 } else {
   console.error('[Sentry] Skipping early init (no DSN or disabled)');
 }
