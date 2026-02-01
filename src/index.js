@@ -95,17 +95,9 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 // List available resources (MCP Apps)
 server.setRequestHandler(ListResourcesRequestSchema, async () => {
   log('INFO', 'ListResources request received');
-  // Get widget domain from database config
+  // Get widget domain from database config (full URL required per OpenAI docs)
   const serverBaseUrl = await db.getConfig('server_base_url');
-  let widgetDomain = 'localhost';
-  if (serverBaseUrl) {
-    try {
-      widgetDomain = new URL(serverBaseUrl).hostname;
-    } catch {
-      // If URL parsing fails, use the raw value
-      widgetDomain = serverBaseUrl.replace(/^https?:\/\//, '').replace(/\/$/, '');
-    }
-  }
+  const widgetDomain = serverBaseUrl || 'http://localhost';
   return getResourcesConfig(widgetDomain);
 });
 

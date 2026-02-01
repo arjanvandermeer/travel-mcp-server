@@ -320,7 +320,7 @@ export const toolsConfig = [
 
 /**
  * Get resources configuration with dynamic widget domain
- * @param {string} widgetDomain - Domain from server_base_url config (e.g., "mcp.arjanvandermeer.com")
+ * @param {string} widgetDomain - Full URL from server_base_url config (e.g., "https://mcp.arjanvandermeer.com")
  * @returns {object} - MCP resources configuration
  */
 export function getResourcesConfig(widgetDomain) {
