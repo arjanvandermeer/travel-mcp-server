@@ -589,6 +589,67 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================================
+-- User Authentication (Optional)
+-- Enables per-user features like API limit bypass, favorites, preferences
+-- ============================================================================
+DROP TABLE IF EXISTS user_favorites CASCADE;
+DROP TABLE IF EXISTS user_config CASCADE;
+DROP TABLE IF EXISTS user_tokens CASCADE;
+DROP TABLE IF EXISTS users CASCADE;
+
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    google_id VARCHAR(255) UNIQUE,           -- Google OAuth subject ID
+    email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255),
+    picture_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
+
+-- API tokens for authentication
+CREATE TABLE user_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    token VARCHAR(64) UNIQUE NOT NULL,       -- Secure random token
+    name VARCHAR(100),                       -- Optional token name (e.g., "Claude Desktop")
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,                    -- NULL = never expires
+    last_used_at TIMESTAMP,
+    revoked_at TIMESTAMP                     -- NULL = active, set to revoke
+);
+
+CREATE INDEX idx_user_tokens_token ON user_tokens(token) WHERE revoked_at IS NULL;
+CREATE INDEX idx_user_tokens_user ON user_tokens(user_id);
+
+-- Per-user configuration (API limits, preferences, etc.)
+CREATE TABLE user_config (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    key VARCHAR(100) NOT NULL,
+    value TEXT,
+    PRIMARY KEY (user_id, key)
+);
+
+-- Example config entries:
+-- INSERT INTO user_config (user_id, key, value) VALUES (1, 'google_places_limit', 'unlimited');
+-- INSERT INTO user_config (user_id, key, value) VALUES (1, 'role', 'admin');
+
+-- User favorites (future feature)
+CREATE TABLE user_favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    poi_osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT,
+    PRIMARY KEY (user_id, poi_osm_id)
+);
+
+CREATE INDEX idx_user_favorites_user ON user_favorites(user_id);
+CREATE INDEX idx_user_favorites_poi ON user_favorites(poi_osm_id);
+
+-- ============================================================================
 -- Verification Queries
 -- ============================================================================
 

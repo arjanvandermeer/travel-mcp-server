@@ -1403,6 +1403,147 @@ export class TravelDatabase {
 
     return removeNullFields(stats);
   }
+
+  // =============================================================================
+  // Authentication Methods
+  // =============================================================================
+
+  /**
+   * Get user by API token
+   * Returns user with their config if token is valid, null otherwise
+   */
+  async getUserByToken(token) {
+    if (!token) return null;
+
+    const result = await this.pool.query(`
+      SELECT
+        u.id, u.google_id, u.email, u.name, u.picture_url,
+        u.created_at, u.last_login_at,
+        t.id as token_id
+      FROM user_tokens t
+      JOIN users u ON t.user_id = u.id
+      WHERE t.token = $1
+        AND t.revoked_at IS NULL
+        AND (t.expires_at IS NULL OR t.expires_at > NOW())
+    `, [token]);
+
+    if (result.rows.length === 0) return null;
+
+    const user = result.rows[0];
+
+    // Update last_used_at for the token
+    await this.pool.query(`
+      UPDATE user_tokens SET last_used_at = NOW() WHERE id = $1
+    `, [user.token_id]);
+
+    // Load user config
+    const configResult = await this.pool.query(`
+      SELECT key, value FROM user_config WHERE user_id = $1
+    `, [user.id]);
+
+    user.config = {};
+    for (const row of configResult.rows) {
+      user.config[row.key] = row.value;
+    }
+
+    delete user.token_id; // Don't expose internal ID
+    return user;
+  }
+
+  /**
+   * Get or create user by Google OAuth info
+   */
+  async upsertGoogleUser(googleId, email, name, pictureUrl) {
+    const result = await this.pool.query(`
+      INSERT INTO users (google_id, email, name, picture_url, last_login_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      ON CONFLICT (google_id) DO UPDATE SET
+        email = EXCLUDED.email,
+        name = EXCLUDED.name,
+        picture_url = EXCLUDED.picture_url,
+        last_login_at = NOW()
+      RETURNING id, google_id, email, name, picture_url, created_at, last_login_at
+    `, [googleId, email, name, pictureUrl]);
+
+    return result.rows[0];
+  }
+
+  /**
+   * Create a new API token for a user
+   */
+  async createUserToken(userId, tokenName = null) {
+    // Generate secure random token
+    const crypto = await import('crypto');
+    const token = crypto.randomBytes(32).toString('hex');
+
+    const result = await this.pool.query(`
+      INSERT INTO user_tokens (user_id, token, name)
+      VALUES ($1, $2, $3)
+      RETURNING id, token, name, created_at
+    `, [userId, token, tokenName]);
+
+    return result.rows[0];
+  }
+
+  /**
+   * Get user config value
+   */
+  async getUserConfig(userId, key) {
+    const result = await this.pool.query(`
+      SELECT value FROM user_config WHERE user_id = $1 AND key = $2
+    `, [userId, key]);
+
+    return result.rows.length > 0 ? result.rows[0].value : null;
+  }
+
+  /**
+   * Set user config value
+   */
+  async setUserConfig(userId, key, value) {
+    await this.pool.query(`
+      INSERT INTO user_config (user_id, key, value)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
+    `, [userId, key, value]);
+  }
+
+  /**
+   * Check if user has a specific permission/config
+   */
+  async userHasConfig(userId, key, expectedValue = null) {
+    const value = await this.getUserConfig(userId, key);
+    if (expectedValue === null) {
+      return value !== null;
+    }
+    return value === expectedValue;
+  }
+
+  /**
+   * List all tokens for a user
+   */
+  async listUserTokens(userId) {
+    const result = await this.pool.query(`
+      SELECT id, name, created_at, expires_at, last_used_at,
+             CASE WHEN revoked_at IS NOT NULL THEN 'revoked'
+                  WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired'
+                  ELSE 'active' END as status
+      FROM user_tokens
+      WHERE user_id = $1
+      ORDER BY created_at DESC
+    `, [userId]);
+
+    return result.rows;
+  }
+
+  /**
+   * Revoke a token
+   */
+  async revokeToken(tokenId, userId) {
+    await this.pool.query(`
+      UPDATE user_tokens SET revoked_at = NOW()
+      WHERE id = $1 AND user_id = $2
+    `, [tokenId, userId]);
+  }
 }
 
 export default TravelDatabase;

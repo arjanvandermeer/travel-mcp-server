@@ -111,3 +111,43 @@ Create the database first as superuser:
 ```sql
 CREATE DATABASE travel OWNER traveluser;
 ```
+
+## User Authentication (Optional)
+
+The server supports optional token-based authentication to enable per-user features like bypassing API rate limits.
+
+### Tables
+
+The auth schema includes:
+- `users` - User accounts (email, name, optional Google ID)
+- `user_tokens` - API tokens for authentication
+- `user_config` - Per-user settings (e.g., `google_places_limit`)
+- `user_favorites` - Saved POIs (future feature)
+
+### Creating a User and Token
+
+```sql
+-- Create a user
+INSERT INTO users (email, name) VALUES ('user@example.com', 'User Name');
+
+-- Generate a secure token (use openssl or similar)
+-- openssl rand -hex 32
+
+-- Create a token for the user
+INSERT INTO user_tokens (user_id, token, name)
+VALUES (1, 'your-64-char-hex-token', 'Claude Desktop');
+
+-- Set unlimited Google Places access
+INSERT INTO user_config (user_id, key, value)
+VALUES (1, 'google_places_limit', 'unlimited');
+```
+
+### Using Authentication
+
+Include the token in the Authorization header when connecting to the MCP server:
+
+```
+Authorization: Bearer <your-token>
+```
+
+Authentication is completely optional - anonymous access continues to work with default rate limits.
