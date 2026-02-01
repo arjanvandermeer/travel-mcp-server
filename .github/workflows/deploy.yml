@@ -11,7 +11,7 @@ env:
   ECS_CLUSTER: travel-mcp-cluster
   ECS_SERVICE: travel-mcp-service
   CONTAINER_NAME: travel-mcp-server
-  SENTRY_ORG: arjan-van-der-meer
+  SENTRY_ORG: vdm-holding
   SENTRY_PROJECT: travel-mcp-server
 
 jobs:
