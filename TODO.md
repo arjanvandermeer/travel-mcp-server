@@ -39,44 +39,23 @@ Add optional authentication to enable per-user features (API limit bypass, favor
 - [x] User context passed to MCP sessions
 - [x] Completely transparent - anonymous access still works
 - [x] User arjanvdm@gmail.com set up with unlimited Google Places access
-- [ ] Web UI for Google OAuth login (`/auth/login`)
-- [ ] Token display after successful login
 
 **Phase 2: Full OAuth2 Implementation (Future)**
 - [ ] Google OAuth2 integration (Authorization Code flow)
-- [ ] Standard OAuth endpoints for ChatGPT integration:
+- [ ] Standard OAuth endpoints for ChatGPT/MCP Inspector:
   - `GET /auth/authorize` - Redirect to Google OAuth
+  - `GET /auth/callback` - Handle OAuth callback
   - `POST /auth/token` - Exchange code for access token
-  - ChatGPT configures OAuth Client ID/Secret in its MCP Actions UI
-- [ ] Device Authorization Flow for CLI/headless clients (Claude Desktop, etc.)
-- [ ] Token refresh mechanism
-- [ ] Multiple provider support (GitHub, etc.)
+- [ ] Device Authorization Flow for CLI/headless clients
+- [ ] Web UI for login (`/auth/login`)
 
-**Note**: ChatGPT has built-in OAuth support in its MCP/Actions configuration UI.
-When connecting an MCP server, users can configure OAuth Client ID/Secret directly.
-ChatGPT handles the redirect flow, and the server just needs standard OAuth endpoints.
+**Phase 3: User Features (Future)** - Requires Phase 2
+- [ ] Favorites system (save POIs, add notes)
+- [ ] User preferences (currency, language, home location)
+- [ ] Trip planning (itineraries, day-by-day plans)
+- [ ] Usage analytics per user
 
-**Database Schema**:
-```sql
-users (id, google_id, email, name, picture_url, created_at, last_login_at)
-user_tokens (id, user_id, token, created_at, expires_at, last_used_at)
-user_config (user_id, key, value)  -- e.g., 'google_places_limit' = 'unlimited'
-user_favorites (user_id, poi_osm_id, created_at)  -- Future
-```
-
-**Authentication Flow**:
-```
-1. User visits /auth/login → Redirects to Google OAuth
-2. After Google callback → Creates user + generates token
-3. User configures MCP client with: Authorization: Bearer <token>
-4. Server validates token → Loads user config → Applies custom limits
-```
-
-**Use Cases**:
-- Bypass Google Places API limits for whitelisted accounts
-- Store user favorites and preferences (future)
-- Track usage per user (future)
-- Personalized recommendations (future)
+**Full documentation**: See [doc/authentication.md](doc/authentication.md)
 
 ### BUG: radius_km Doesn't Accept Decimal Values
 - [ ] Fix integer parsing error when `radius_km` is a decimal (e.g., `0.5`)
@@ -98,93 +77,33 @@ user_favorites (user_id, poi_osm_id, created_at)  -- Future
 
 **Impact**: High - correctness issue that could hide bugs
 
-### Refactor: Separate Data Sources into Dedicated Tables
-- [ ] Create separate tables for each data source to maintain clean data model
-- [ ] New table structure:
-  - Keep `pois` table for core OSM data only (osm_id, name, location, poi_type, etc.)
-  - Create `google_places` table for Google Places enrichment data
-  - Create `pois_google_mapping` table (many-to-many) to link OSM IDs with Google Place IDs
-- [ ] Update database schema and migration script
-- [ ] Refactor `database.js` to JOIN tables when returning enriched data
-- [ ] Consider renaming tables to reflect source:
-  - `pois` → `osm_pois` or keep as is (since OSM is primary source)
-  - `geonames_cities` → already prefixed correctly
-  - `google_places` → new table for Google data
-- [ ] Update all queries to use JOINs for enriched data
-- [ ] Migration strategy: Extract Google columns from `pois` into new `google_places` table
+### ~~Refactor: Separate Data Sources into Dedicated Tables~~ COMPLETED
+Already implemented in schema.sql:
+- `osm_pois` table for OSM data
+- `google_places` table for Google Places data
+- `osm_google_mappings` table with confidence_score, match_method, mapping_status
+- `enriched_pois` VIEW that JOINs all tables
 
-**Rationale**: Currently Google Places data is stored directly in the `pois` table, mixing data sources. This makes it harder to:
-- Update Google data independently from OSM data
-- Handle cases where multiple OSM POIs map to the same Google Place
-- Support other enrichment sources in the future (Yelp, TripAdvisor, etc.)
-- Keep data models clean and maintainable
-
-**Benefits of separate tables**:
-- Clean separation of concerns (OSM vs Google vs GeoNames)
-- Better data integrity (each source has its own schema)
-- Easier to update/refresh data from specific sources
-- Supports many-to-many relationships (multiple OSM entries for one Google Place)
-- Future-proof for additional enrichment sources
-
-**Current schema (mixed)**:
-```
-pois: osm_id, name, latitude, longitude, google_place_id, google_rating, ...
-```
-
-**Proposed schema (separated)**:
-```
-osm_pois: osm_id, name, latitude, longitude, poi_type, ...
-google_places: google_place_id, name, rating, user_ratings_total, ...
-pois_google_mapping: osm_id, google_place_id, confidence_score, mapped_at
-```
-
-### Fix Empty Timestamp Fields (google_enriched_at, osm_imported_at)
-- [ ] Add `imported_at TIMESTAMP` column to `osm_pois` table (stores when each POI was imported)
-- [ ] Add `enriched_at TIMESTAMP` column to `google_places` table (stores when each place was enriched)
-- [ ] Update `import-osm-pbf.js` to set `imported_at = NOW()` when inserting POIs
-- [ ] Update `upsertGooglePlace()` to set `enriched_at = NOW()` when inserting/updating
-- [ ] Update `enriched_pois` view to expose these fields as `osm_imported_at` and `google_enriched_at`
-- [ ] Ensure these fields are NOT NULL (use DEFAULT NOW() in schema)
-
-**Rationale**: Currently `google_enriched_at` and `osm_imported_at` are showing empty in query results. These timestamps should be stored directly in the relevant tables (`osm_pois` and `google_places`) rather than in mapping/meta tables, for better data integrity and simpler queries.
-
-**Impact**: High - data quality and traceability
+### ~~Fix Empty Timestamp Fields (google_enriched_at, osm_imported_at)~~ COMPLETED
+Already implemented in schema.sql:
+- `imported_at` column in `osm_pois` with DEFAULT CURRENT_TIMESTAMP
+- `enriched_at` column in `google_places` with DEFAULT CURRENT_TIMESTAMP
+- Both exposed in `enriched_pois` view as `osm_imported_at` and `google_enriched_at`
 
 ### Fix Google Places Matching Algorithm
+Schema is ready (`osm_google_mappings` table has `match_confidence`, `match_method`, `mapping_status`).
+Algorithm improvements still needed:
+
 - [ ] Improve matching algorithm between OSM POIs and Google Places entries
 - [ ] Current issues:
-  - Thai/non-Latin character names often mismatch (e.g., 'โรงแรมสิริน')
+  - Thai/non-Latin character names often mismatch
   - Name variations not handled well (abbreviations, different word order)
-  - Distance-based matching is too broad (matches wrong nearby places)
-  - Simple string comparison at google-places.js:303 is inadequate
+  - Distance-based matching is too broad
 - [ ] Proposed improvements:
-  - Use normalized name matching (remove special characters, lowercase, transliteration)
-  - Implement fuzzy string matching library (e.g., `fuzzball` or `string-similarity`)
-  - Use Levenshtein distance with configurable threshold
-  - Check address/location first, then verify name similarity
-  - Use Google's `findplacefromtext` with better query construction
-  - Add confidence score to matching results
-  - Store matching metadata (confidence, method used) for debugging
-- [ ] Add validation before accepting match:
-  - Verify distance is within reasonable threshold (e.g., < 50-100 meters from OSM coordinates)
-  - Check if POI types are compatible (hotel vs restaurant)
-  - Compare business names with fuzzy matching
-  - Reject matches with confidence score below threshold (e.g., < 0.7)
-  - Log low-confidence matches for manual review
-- [ ] Add `pois_google_mapping` table with fields:
-  - `osm_id`, `google_place_id`
-  - `confidence_score` (0.0 to 1.0)
-  - `matching_method` ('name_exact', 'name_fuzzy', 'location_only')
-  - `verified` (boolean for manual verification)
-  - `created_at`, `updated_at`
-
-**Rationale**: Current matching algorithm has high false-positive rate, especially for non-Latin names. Poor matches reduce data quality and user trust. Need better matching logic with confidence scoring and manual verification capability.
-
-**Test cases to validate**:
-- Thai hotel names (โรงแรมสิริน, etc.)
-- Hotels with similar names in same area
-- Chain hotels (Marriott, Hilton) - should match correct branch
-- POIs with transliterated names vs native scripts
+  - Use normalized name matching (lowercase, transliteration)
+  - Implement fuzzy string matching library
+  - Add validation: distance < 100m, POI type compatibility
+  - Reject matches with confidence < 0.7
 
 **Impact**: High - data quality improvement
 
@@ -376,17 +295,15 @@ npm run init:osm california
 
 **Impact**: Medium - maintainability improvement
 
-### Improve Error Logging in Stdio Server
-- [ ] Replace console.error() with file-based logging in index.js
-- [ ] Create log stream to mcp-server.log
-- [ ] Add structured logging with timestamps and severity levels
-- [ ] Ensure no console output interferes with JSON-RPC protocol
-- [ ] Keep console.error() in HTTP server (it's safe there)
+### ~~Improve Error Logging in Stdio Server~~ COMPLETED
+Already implemented in index.js:
+- File-based logging to `mcp-debug.log`
+- Structured logging with timestamps and severity levels (`[INFO]`, `[ERROR]`)
+- Uses `fs.appendFileSync()` for file writes
+- console.error() also used for immediate visibility
+
+Remaining:
 - [ ] Add log rotation to prevent log files from growing too large
-
-**Rationale**: console.error() in stdio server could interfere with MCP JSON-RPC protocol. File-based logging is safer.
-
-**Impact**: Medium - reliability improvement
 
 ### Add Request Rate Limiting for Google Places API
 - [ ] Implement token bucket algorithm for API rate limiting
@@ -413,35 +330,14 @@ npm run init:osm california
 
 **Impact**: Low-Medium - performance optimization
 
-### Add generic POI/amenities system (restaurants, attractions, etc.)
-- [ ] Design generic `pois` or `amenities` table structure
-  - Fields: `osm_id`, `poi_type` (restaurant/attraction/transport), `name`, `latitude`, `longitude`, `address`, `city`, `country_code`, `tags` (JSON)
-  - Type-specific fields stored in JSON `tags` column (e.g., cuisine for restaurants, museum type for attractions)
-- [ ] Create unified import script for all OSM amenity types
-  - `import:osm-pois` - Import restaurants, attractions, transport, parks, etc.
-  - Configurable amenity types via command line args
-- [ ] Add POI search methods to database.js
-  - `searchPOIs(query, types, limit)` - Search by name, optionally filter by type
-  - `getPOIsNearCoordinates(lat, lon, types, radiusKm, limit)` - Spatial search with type filter
-  - `getPOIsInPolygon(polygon, types, limit)` - Polygon search with type filter
-  - `getPOIByOsmId(osmId)` - Get specific POI
-- [ ] Add MCP tools for POI queries
-  - `search_pois` - Search for any type of POI
-  - `find_pois_near_coordinates` - Find POIs near a location
-  - `find_pois_in_polygon` - Find POIs within area
-  - `get_poi_by_id` - Get specific POI details
-- [ ] Consider project rename
-  - Current: `hotel-mcp-server`
-  - Proposed: `travel-mcp-server`, `location-mcp-server`, or `places-mcp-server`
-  - Update package.json, README.md, repository name, etc.
-
-**Rationale**: Adding restaurants and other POIs enables powerful cross-category queries like "which hotel is closest to Joe's Pizzeria?" or "which restaurant is closest to the Ritz Carlton?". A generic POI system is more flexible than separate tables for each amenity type.
-
-**Use cases enabled**:
-- "Find hotels near good Italian restaurants"
-- "Which hotel is closest to the Louvre museum?"
-- "Show me restaurants within 500m of my hotel"
-- "Find a hotel near both a train station and a shopping center"
+### ~~Add generic POI/amenities system (restaurants, attractions, etc.)~~ COMPLETED
+Already implemented:
+- `osm_pois` table with `poi_type` field (hotel, restaurant, attraction, etc.)
+- `search_pois` tool with poi_type filtering
+- `search_hotels` and `search_restaurants` specialized tools
+- All have `_ui` variants for interactive cards
+- Project renamed to `travel-mcp-server`
+- Import scripts support multiple POI types
 
 ### Configurable OSM import regions
 
@@ -494,7 +390,7 @@ npm run init:osm california
 - [ ] Add MCP tool JSON schemas
 - [ ] Add example requests/responses for each tool
 - [ ] Add developer guide for adding new data sources
-- [ ] Add authentication guide for HTTP server
+- [x] ~~Add authentication guide for HTTP server~~ (DONE - see doc/authentication.md)
 - [ ] Add example queries and use cases
 - [ ] Add troubleshooting guide
 
@@ -507,7 +403,7 @@ These are small improvements that can be done quickly but provide immediate valu
 - [ ] Fix Promise.all() await issue in batchEnrichPOIs() (5 minutes)
 - [ ] Extract constants to config.js (15 minutes)
 - [ ] Add JSDoc to top 10 most-used functions (30 minutes)
-- [ ] Create tools-config.js and eliminate duplication (45 minutes)
+- [x] ~~Create tools-config.js and eliminate duplication~~ (DONE - see "Eliminate Tool Definition Duplication")
 - [ ] Add input validation for coordinates and limits (20 minutes)
 - [ ] Improve error messages in tool handlers (15 minutes)
 - [ ] Add .nvmrc or .node-version file for consistent Node version (2 minutes)
