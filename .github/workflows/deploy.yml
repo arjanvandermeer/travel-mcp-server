@@ -11,6 +11,8 @@ env:
   ECS_CLUSTER: travel-mcp-cluster
   ECS_SERVICE: travel-mcp-service
   CONTAINER_NAME: travel-mcp-server
+  SENTRY_ORG: arjan-van-der-meer
+  SENTRY_PROJECT: travel-mcp-server
 
 jobs:
   deploy:
@@ -41,6 +43,19 @@ jobs:
           echo "commit_short=${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
           echo "branch=${{ github.ref_name }}" >> $GITHUB_OUTPUT
           echo "tag=$(git describe --tags --abbrev=0 2>/dev/null || echo '')" >> $GITHUB_OUTPUT
+          # Get version from package.json for Sentry release
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "sentry_release=travel-mcp-server@${VERSION}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Create Sentry release
+        uses: getsentry/action-release@v3
+        continue-on-error: true  # Don't fail deployment if release creation fails
+        env:
+          SENTRY_AUTH_TOKEN: ${{ secrets.SENTRY_AUTH_TOKEN }}
+        with:
+          environment: production
+          release: ${{ steps.git-info.outputs.sentry_release }}
 
       - name: Build, tag, and push image to ECR
         uses: docker/build-push-action@v5
@@ -70,6 +85,26 @@ jobs:
           aws ecs describe-task-definition \
             --task-definition travel-mcp-task \
             --query taskDefinition > task-definition.json
+
+      - name: Inject environment variables into task definition
+        env:
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+        run: |
+          # Add/update environment variables in the container definition
+          jq --arg sentry_dsn "$SENTRY_DSN" '
+            .containerDefinitions[0].environment = (
+              # Remove existing entries for these keys (if any)
+              [.containerDefinitions[0].environment[]? | select(.name | IN("SENTRY_DSN", "TELEMETRY_ENABLED", "TELEMETRY_ENVIRONMENT", "TELEMETRY_SAMPLE_RATE") | not)]
+              # Add fresh entries
+              + [
+                {"name": "SENTRY_DSN", "value": $sentry_dsn},
+                {"name": "TELEMETRY_ENABLED", "value": "true"},
+                {"name": "TELEMETRY_ENVIRONMENT", "value": "production"},
+                {"name": "TELEMETRY_SAMPLE_RATE", "value": "1.0"}
+              ]
+            )
+          ' task-definition.json > task-definition-updated.json
+          mv task-definition-updated.json task-definition.json
 
       - name: Update task definition with new image
         id: task-def

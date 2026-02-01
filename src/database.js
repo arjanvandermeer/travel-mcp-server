@@ -120,6 +120,35 @@ export class TravelDatabase {
     }
   }
 
+  /**
+   * Add photo URLs to search results using Google Places API
+   * Generates thumbnail URLs for POIs that have google_photos data
+   * @param {Array} pois - Array of POI objects with google_photos
+   * @returns {Array} - POIs with photo_url added (google_photos removed)
+   */
+  async addPhotoUrls(pois) {
+    if (!pois || pois.length === 0) return pois;
+
+    await this.ensureGooglePlacesReady();
+    const canGenerateUrls = this.googlePlaces && this.googlePlaces.isEnabled();
+
+    return pois.map(poi => {
+      const { google_photos, ...rest } = poi;
+      let photo_url = null;
+
+      // Generate photo URL if we have photos and the API is available
+      if (canGenerateUrls && google_photos && Array.isArray(google_photos) && google_photos.length > 0) {
+        const firstPhoto = google_photos[0];
+        if (firstPhoto.name) {
+          // Generate a thumbnail URL (200x150 for search results)
+          photo_url = this.googlePlaces.getPhotoUrl(firstPhoto.name, 200, 150);
+        }
+      }
+
+      return { ...rest, photo_url };
+    });
+  }
+
   // =========================================================================
   // Configuration
   // =========================================================================
@@ -389,6 +418,7 @@ export class TravelDatabase {
           google_review_count,
           google_price_level,
           google_business_status,
+          google_photos,
           osm_stars,
           osm_brand,
           GREATEST(
@@ -469,6 +499,7 @@ export class TravelDatabase {
           google_review_count,
           google_price_level,
           google_business_status,
+          google_photos,
           osm_stars,
           osm_brand,
           GREATEST(
@@ -504,7 +535,8 @@ export class TravelDatabase {
 
     const result = await this.pool.query(query, queryParams);
     const baseUrl = await this.getServerBaseUrl();
-    return addResourceUris(removeNullFields(result.rows), baseUrl);
+    const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
+    return this.addPhotoUrls(withUris);
   }
 
   async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50) {
@@ -521,6 +553,7 @@ export class TravelDatabase {
         google_review_count,
         google_price_level,
         google_business_status,
+        google_photos,
         osm_stars,
         ST_Distance(
           osm_location::geography,
@@ -547,7 +580,8 @@ export class TravelDatabase {
 
     const result = await this.pool.query(query, params);
     const baseUrl = await this.getServerBaseUrl();
-    return addResourceUris(removeNullFields(result.rows), baseUrl);
+    const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
+    return this.addPhotoUrls(withUris);
   }
 
   async getCityByName(name, countryCode = null, state = null) {

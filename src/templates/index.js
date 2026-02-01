@@ -101,6 +101,17 @@ Handlebars.registerHelper('or', function (...args) {
 });
 
 /**
+ * Helper to format distance to 1 decimal place
+ * Usage: {{formatDistance distance_km}}
+ */
+Handlebars.registerHelper('formatDistance', function (distance) {
+  if (distance == null) return '';
+  const num = parseFloat(distance);
+  if (isNaN(num)) return distance;
+  return num.toFixed(1);
+});
+
+/**
  * Helper to get best POI name (handles Google Places display_name JSON structure)
  * Usage: {{poiName this}}
  */

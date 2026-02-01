@@ -53,7 +53,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_hotels',
-    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
+    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -93,7 +93,23 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Apps SDK: point to UI template for rendering results
+  },
+  {
+    name: 'search_hotels_ui',
+    description: 'Search for accommodations with interactive UI card. Same as search_hotels but renders results in a clickable card interface.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Optional hotel name to search for (fuzzy matching)' },
+        city_name: { type: 'string', description: 'City name to search in. Use with country_code.' },
+        country_code: { type: 'string', description: '2-letter country code (e.g., "TH", "US").' },
+        state: { type: 'string', description: 'Optional state/province code or full name.' },
+        latitude: { type: 'number', description: 'Latitude coordinate (must be used WITH longitude)' },
+        longitude: { type: 'number', description: 'Longitude coordinate (must be used WITH latitude)' },
+        radius_km: { type: 'number', description: 'Search radius in km (default: 15, max: 50)', default: 15 },
+        limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
+      },
+    },
     _meta: {
       'openai/outputTemplate': 'ui://widget/search-results.html',
       'openai/toolInvocation/invoking': 'Searching...',
@@ -102,7 +118,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_restaurants',
-    description: 'Search for food & drink (restaurants, cafes, bars, fast food, etc.). REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
+    description: 'Search for food & drink (restaurants, cafes, bars, fast food, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -147,7 +163,24 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Apps SDK: point to UI template for rendering results
+  },
+  {
+    name: 'search_restaurants_ui',
+    description: 'Search for food & drink with interactive UI card. Same as search_restaurants but renders results in a clickable card interface.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Optional name to search for (fuzzy matching)' },
+        city_name: { type: 'string', description: 'City name to search in. Use with country_code.' },
+        country_code: { type: 'string', description: '2-letter country code (e.g., "TH", "US").' },
+        state: { type: 'string', description: 'Optional state/province code or full name.' },
+        latitude: { type: 'number', description: 'Latitude coordinate (must be used WITH longitude)' },
+        longitude: { type: 'number', description: 'Longitude coordinate (must be used WITH latitude)' },
+        radius_km: { type: 'number', description: 'Search radius in km (default: 15, max: 50)', default: 15 },
+        type: { type: 'string', description: 'Type filter', enum: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
+        limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
+      },
+    },
     _meta: {
       'openai/outputTemplate': 'ui://widget/search-results.html',
       'openai/toolInvocation/invoking': 'Searching...',
@@ -156,7 +189,7 @@ export const toolsConfig = [
   },
   {
     name: 'search_pois',
-    description: 'Search for Points of Interest (attractions, monuments, museums, etc.). REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
+    description: 'Search for Points of Interest (attractions, monuments, museums, etc.). Returns JSON results. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long, (5) query + any location.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -200,7 +233,24 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Apps SDK: point to UI template for rendering results
+  },
+  {
+    name: 'search_pois_ui',
+    description: 'Search for Points of Interest with interactive UI card. Same as search_pois but renders results in a clickable card interface.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Optional POI name to search for (fuzzy matching)' },
+        city_name: { type: 'string', description: 'City name to search in. Use with country_code.' },
+        country_code: { type: 'string', description: '2-letter country code (e.g., "TH", "US").' },
+        state: { type: 'string', description: 'Optional state/province code or full name.' },
+        latitude: { type: 'number', description: 'Latitude coordinate (must be used WITH longitude)' },
+        longitude: { type: 'number', description: 'Longitude coordinate (must be used WITH latitude)' },
+        radius_km: { type: 'number', description: 'Search radius in km (default: 15, max: 50)', default: 15 },
+        poi_type: { type: 'string', description: 'POI type filter: attraction, monument, museum, viewpoint, etc.' },
+        limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
+      },
+    },
     _meta: {
       'openai/outputTemplate': 'ui://widget/search-results.html',
       'openai/toolInvocation/invoking': 'Searching...',
@@ -209,7 +259,7 @@ export const toolsConfig = [
   },
   {
     name: 'get_poi_details',
-    description: 'Get detailed information about a specific POI (hotel, restaurant, attraction, etc.) including Google Places enrichment data (ratings, reviews, photos, verified hours). Automatically triggers background enrichment from Google Places API if not already enriched. Provide either osm_id OR google_place_id.',
+    description: 'Get detailed information about a specific POI (hotel, restaurant, attraction, etc.) including Google Places enrichment data (ratings, reviews, photos, verified hours). Returns JSON. Automatically triggers background enrichment from Google Places API if not already enriched. Provide either osm_id OR google_place_id.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -223,7 +273,17 @@ export const toolsConfig = [
         },
       },
     },
-    // ChatGPT Apps SDK: point to UI template for rendering POI details
+  },
+  {
+    name: 'get_poi_details_ui',
+    description: 'Get POI details with interactive UI card. Same as get_poi_details but renders in a rich detail page.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_id: { type: 'number', description: 'The OSM ID of the POI' },
+        google_place_id: { type: 'string', description: 'The Google Places ID of the POI' },
+      },
+    },
     _meta: {
       'openai/outputTemplate': 'ui://widget/poi-details.html',
       'openai/toolInvocation/invoking': 'Loading details...',
@@ -411,7 +471,8 @@ export async function executeToolHandler(name, args, db, options = {}) {
       };
     }
 
-    case 'search_hotels': {
+    case 'search_hotels':
+    case 'search_hotels_ui': {
       const pois = await db.searchPOIs({
         name: args.query,
         cityName: args.city_name,
@@ -424,10 +485,15 @@ export async function executeToolHandler(name, args, db, options = {}) {
         limit: Math.min(args.limit || 50, 100),
       });
       triggerBackgroundEnrichment(pois, db);
-      return buildSearchResponse(pois);
+      // UI version returns structuredContent for card rendering
+      if (name === 'search_hotels_ui') {
+        return buildSearchResponse(pois);
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }] };
     }
 
-    case 'search_restaurants': {
+    case 'search_restaurants':
+    case 'search_restaurants_ui': {
       const types = args.type ? [args.type] : foodTypes;
       const pois = await db.searchPOIs({
         name: args.query,
@@ -441,10 +507,15 @@ export async function executeToolHandler(name, args, db, options = {}) {
         limit: Math.min(args.limit || 50, 100),
       });
       triggerBackgroundEnrichment(pois, db);
-      return buildSearchResponse(pois);
+      // UI version returns structuredContent for card rendering
+      if (name === 'search_restaurants_ui') {
+        return buildSearchResponse(pois);
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }] };
     }
 
-    case 'search_pois': {
+    case 'search_pois':
+    case 'search_pois_ui': {
       const pois = await db.searchPOIs({
         name: args.query,
         cityName: args.city_name,
@@ -457,10 +528,15 @@ export async function executeToolHandler(name, args, db, options = {}) {
         limit: Math.min(args.limit || 50, 100),
       });
       triggerBackgroundEnrichment(pois, db);
-      return buildSearchResponse(pois);
+      // UI version returns structuredContent for card rendering
+      if (name === 'search_pois_ui') {
+        return buildSearchResponse(pois);
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }] };
     }
 
-    case 'get_poi_details': {
+    case 'get_poi_details':
+    case 'get_poi_details_ui': {
       if (!args.osm_id && !args.google_place_id) {
         return {
           content: [
@@ -489,13 +565,14 @@ export async function executeToolHandler(name, args, db, options = {}) {
         };
       }
 
-      return {
-        // Text content for model narration
-        content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],
-        // Structured content for UI rendering (ChatGPT Skybridge)
-        // The POI detail template uses this to render the full detail page
-        structuredContent: poi,
-      };
+      // UI version returns structuredContent for detail page rendering
+      if (name === 'get_poi_details_ui') {
+        return {
+          content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],
+          structuredContent: poi,
+        };
+      }
+      return { content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }] };
     }
 
     case 'get_stats': {

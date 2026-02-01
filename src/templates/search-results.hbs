@@ -32,13 +32,14 @@
     .result-card {
       background: white;
       border-radius: 12px;
-      padding: 16px;
+      padding: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.1);
       cursor: pointer;
       transition: transform 0.15s, box-shadow 0.15s;
       text-decoration: none;
       color: inherit;
-      display: block;
+      display: flex;
+      gap: 12px;
     }
     .result-card:hover {
       transform: translateY(-2px);
@@ -47,11 +48,22 @@
     .result-card:active {
       transform: translateY(0);
     }
+    .card-thumb {
+      width: 80px;
+      height: 80px;
+      border-radius: 8px;
+      object-fit: cover;
+      flex-shrink: 0;
+    }
+    .card-content {
+      flex: 1;
+      min-width: 0;
+    }
     .card-header {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-bottom: 8px;
+      margin-bottom: 4px;
     }
     .card-title {
       font-size: 16px;
@@ -117,30 +129,35 @@
     <div class="results-list">
       {{#each results}}
       <a class="result-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
-        <div class="card-header">
-          <span class="card-title">{{or name osm_name "Unknown"}}</span>
-          <span class="card-type">{{poi_type}}</span>
+        {{#if photo_url}}
+        <img class="card-thumb" src="{{photo_url}}" alt="">
+        {{/if}}
+        <div class="card-content">
+          <div class="card-header">
+            <span class="card-title">{{or name osm_name "Unknown"}}</span>
+            <span class="card-type">{{poi_type}}</span>
+          </div>
+          {{#if (or google_rating osm_stars distance_km)}}
+          <div class="card-meta">
+            {{#if google_rating}}
+            <span class="rating">&#11088; {{google_rating}}{{#if google_review_count}} ({{google_review_count}}){{/if}}</span>
+            {{else}}
+            {{#if osm_stars}}
+            <span class="rating">{{osm_stars}} stars</span>
+            {{/if}}
+            {{/if}}
+            {{#if distance_km}}
+            <span class="distance">{{formatDistance distance_km}} km</span>
+            {{/if}}
+          </div>
+          {{/if}}
+          {{#if (or osm_city osm_country_code)}}
+          <div class="card-address">{{osm_city}}{{#if osm_country_code}}, {{osm_country_code}}{{/if}}</div>
+          {{/if}}
+          {{#if osm_cuisine}}
+          <div class="card-cuisine">{{osm_cuisine}}</div>
+          {{/if}}
         </div>
-        {{#if (or google_rating osm_stars)}}
-        <div class="card-meta">
-          {{#if google_rating}}
-          <span class="rating">&#11088; {{google_rating}}{{#if google_review_count}} ({{google_review_count}}){{/if}}</span>
-          {{else}}
-          {{#if osm_stars}}
-          <span class="rating">{{osm_stars}} stars</span>
-          {{/if}}
-          {{/if}}
-          {{#if distance_km}}
-          <span class="distance">{{distance_km}} km away</span>
-          {{/if}}
-        </div>
-        {{/if}}
-        {{#if (or osm_city osm_country_code)}}
-        <div class="card-address">{{osm_city}}{{#if osm_country_code}}, {{osm_country_code}}{{/if}}</div>
-        {{/if}}
-        {{#if osm_cuisine}}
-        <div class="card-cuisine">{{osm_cuisine}}</div>
-        {{/if}}
       </a>
       {{/each}}
     </div>
@@ -163,6 +180,14 @@
      * - window.openai.readResource(uri) requests a POI detail page
      */
 
+    // Format distance to 1 decimal place
+    function formatDistance(km) {
+      if (km == null) return '';
+      var num = parseFloat(km);
+      if (isNaN(num)) return km;
+      return num.toFixed(1);
+    }
+
     // Render a single result card
     function renderCard(poi) {
       var name = poi.name || poi.osm_name || 'Unknown';
@@ -179,7 +204,7 @@
 
       var distance = '';
       if (poi.distance_km) {
-        distance = '<span class="distance">' + poi.distance_km + ' km away</span>';
+        distance = '<span class="distance">' + formatDistance(poi.distance_km) + ' km</span>';
       }
 
       var address = '';
@@ -192,20 +217,32 @@
         cuisine = '<div class="card-cuisine">' + poi.osm_cuisine + '</div>';
       }
 
+      // Get photo URL from google_photos array if available
+      var photoUrl = poi.photo_url;
+      if (!photoUrl && poi.google_photos && poi.google_photos.length > 0) {
+        photoUrl = poi.google_photos[0].url;
+      }
+
       var card = document.createElement('a');
       card.className = 'result-card';
       card.href = poi.resource_uri || '#';
       card.setAttribute('data-osm-id', poi.osm_id);
       card.setAttribute('data-resource-uri', poi.resource_uri || '');
       card.setAttribute('data-preview-url', poi.preview_url || '');
+
+      var thumbHtml = photoUrl ? '<img class="card-thumb" src="' + escapeHtml(photoUrl) + '" alt="">' : '';
+
       card.innerHTML =
-        '<div class="card-header">' +
-          '<span class="card-title">' + escapeHtml(name) + '</span>' +
-          '<span class="card-type">' + (poi.poi_type || '') + '</span>' +
-        '</div>' +
-        (rating || distance ? '<div class="card-meta">' + rating + distance + '</div>' : '') +
-        address +
-        cuisine;
+        thumbHtml +
+        '<div class="card-content">' +
+          '<div class="card-header">' +
+            '<span class="card-title">' + escapeHtml(name) + '</span>' +
+            '<span class="card-type">' + (poi.poi_type || '') + '</span>' +
+          '</div>' +
+          (rating || distance ? '<div class="card-meta">' + rating + distance + '</div>' : '') +
+          address +
+          cuisine +
+        '</div>';
 
       return card;
     }
