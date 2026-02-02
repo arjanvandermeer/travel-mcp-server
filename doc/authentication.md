@@ -120,6 +120,29 @@ curl -X POST https://mcp.arjanvandermeer.com/mcp \
 
 The server never returns 401/403 errors for auth issues - it gracefully falls back to anonymous access.
 
+### Checking Authentication Status
+
+Use the `whoami` tool to verify your authentication status:
+
+**Anonymous response:**
+```json
+{ "authenticated": false }
+```
+
+**Authenticated response:**
+```json
+{
+  "authenticated": true,
+  "id": 1,
+  "email": "user@example.com",
+  "name": "User Name",
+  "picture_url": null,
+  "config": { "google_places_limit": "unlimited" },
+  "created_at": "2025-02-01T00:00:00.000Z",
+  "last_login_at": "2025-02-01T00:00:00.000Z"
+}
+```
+
 ### Server Logs
 
 When a user authenticates successfully, the server logs:
