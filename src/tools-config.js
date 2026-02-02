@@ -508,6 +508,14 @@ const baseToolsConfig = [
       properties: {},
     },
   },
+  {
+    name: 'whoami',
+    description: 'Check authentication status and get current user info. Returns user details if authenticated, or { authenticated: false } for anonymous sessions.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
 ];
 
 /**
@@ -826,6 +834,30 @@ export async function executeToolHandler(name, args, db, options = {}) {
       const stats = await db.getStats();
       return {
         content: [{ type: 'text', text: JSON.stringify(stats, null, 2) }],
+      };
+    }
+
+    case 'whoami': {
+      const user = options.user;
+      if (!user) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ authenticated: false }, null, 2) }],
+        };
+      }
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            authenticated: true,
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            picture_url: user.picture_url,
+            config: user.config,
+            created_at: user.created_at,
+            last_login_at: user.last_login_at,
+          }, null, 2),
+        }],
       };
     }
 
