@@ -79,23 +79,62 @@ function addResourceUris(pois, baseUrl) {
 }
 
 export class TravelDatabase {
+  // Config cache TTL in milliseconds (5 minutes)
+  static CONFIG_CACHE_TTL = 5 * 60 * 1000;
+
   constructor() {
     this.pool = new pg.Pool({ connectionString: CONNECTION_STRING });
     this.googlePlaces = null; // Initialize later with config
     this.googlePlacesReady = this.initGooglePlaces(); // Store promise
-    this._serverBaseUrl = null; // Cached server base URL
-    this._serverBaseUrlLoaded = false;
+
+    // Config cache: Map<key, { value, expiresAt }>
+    this._configCache = new Map();
   }
 
   /**
-   * Get cached server base URL (lazy loaded on first use)
+   * Get cached server base URL (convenience method for the most common config)
    */
   async getServerBaseUrl() {
-    if (!this._serverBaseUrlLoaded) {
-      this._serverBaseUrl = await this.getConfig('server_base_url');
-      this._serverBaseUrlLoaded = true;
+    return this.getConfigCached('server_base_url');
+  }
+
+  /**
+   * Get a config value with in-memory caching
+   * @param {string} key - Config key
+   * @param {*} defaultValue - Default value if not found
+   * @returns {Promise<*>} Config value
+   */
+  async getConfigCached(key, defaultValue = null) {
+    const now = Date.now();
+    const cached = this._configCache.get(key);
+
+    // Return cached value if not expired
+    if (cached && cached.expiresAt > now) {
+      return cached.value;
     }
-    return this._serverBaseUrl;
+
+    // Fetch from database
+    const value = await this.getConfig(key, defaultValue);
+
+    // Cache the result (even if null/default, to avoid repeated DB lookups)
+    this._configCache.set(key, {
+      value,
+      expiresAt: now + TravelDatabase.CONFIG_CACHE_TTL,
+    });
+
+    return value;
+  }
+
+  /**
+   * Invalidate a config cache entry (call after setConfig)
+   * @param {string} key - Config key to invalidate, or null to clear all
+   */
+  invalidateConfigCache(key = null) {
+    if (key) {
+      this._configCache.delete(key);
+    } else {
+      this._configCache.clear();
+    }
   }
 
   async close() {
@@ -179,6 +218,9 @@ export class TravelDatabase {
         description = COALESCE(EXCLUDED.description, app_config.description),
         updated_at = CURRENT_TIMESTAMP
     `, [key, value, description]);
+
+    // Invalidate cache for this key
+    this.invalidateConfigCache(key);
   }
 
   /**
@@ -759,7 +801,7 @@ export class TravelDatabase {
    */
   async checkGoogleApiLimit() {
     const dateKey = this.getTodayDateKey();
-    const limit = parseInt(await this.getConfig('google_api_daily_limit', String(TravelDatabase.DEFAULT_GOOGLE_API_DAILY_LIMIT)));
+    const limit = parseInt(await this.getConfigCached('google_api_daily_limit', String(TravelDatabase.DEFAULT_GOOGLE_API_DAILY_LIMIT)));
 
     try {
       const result = await this.pool.query(
@@ -827,7 +869,7 @@ export class TravelDatabase {
    */
   async getGoogleApiUsage() {
     const dateKey = this.getTodayDateKey();
-    const limit = parseInt(await this.getConfig('google_api_daily_limit', String(TravelDatabase.DEFAULT_GOOGLE_API_DAILY_LIMIT)));
+    const limit = parseInt(await this.getConfigCached('google_api_daily_limit', String(TravelDatabase.DEFAULT_GOOGLE_API_DAILY_LIMIT)));
 
     try {
       const result = await this.pool.query(
@@ -903,7 +945,7 @@ export class TravelDatabase {
         const mapping = existingMapping.rows[0];
         if (mapping.mapping_status === 'active') {
           // Check if cache expired
-          const cacheHours = parseInt(await this.getConfig('google_places_cache_hours', '168'));
+          const cacheHours = parseInt(await this.getConfigCached('google_places_cache_hours', '168'));
           const hoursSinceMapping = (Date.now() - new Date(mapping.mapped_at).getTime()) / (1000 * 60 * 60);
           if (hoursSinceMapping < cacheHours) {
             return; // Still cached
@@ -994,7 +1036,7 @@ export class TravelDatabase {
    * Insert or update Google Place data
    */
   async upsertGooglePlace(placeData) {
-    const cacheHours = parseInt(await this.getConfig('google_places_cache_hours', '168'));
+    const cacheHours = parseInt(await this.getConfigCached('google_places_cache_hours', '168'));
     const cacheExpiresAt = new Date(Date.now() + cacheHours * 60 * 60 * 1000);
 
     // Extract and format reviews (up to 5)

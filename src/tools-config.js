@@ -1197,7 +1197,7 @@ export async function handleReadResource(uri, db, render) {
 
   // Random POI link
   if (uri === 'info://random-poi') {
-    const serverBaseUrl = await db.getConfig('server_base_url');
+    const serverBaseUrl = await db.getServerBaseUrl(); // Use cached version
     const baseUrl = serverBaseUrl ? serverBaseUrl.replace(/\/$/, '') : '';
     const previewUrl = `${baseUrl}/preview/poi/random`;
     return {
