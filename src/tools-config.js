@@ -516,6 +516,85 @@ const baseToolsConfig = [
       properties: {},
     },
   },
+  // =========================================================================
+  // Favorites (requires authentication)
+  // =========================================================================
+  {
+    name: 'add_favorite',
+    description: 'Add a POI (hotel, restaurant, attraction) to your favorites. Requires authentication. Returns the saved favorite with full POI details.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_id: {
+          type: 'number',
+          description: 'The OSM ID of the POI to add to favorites',
+        },
+        notes: {
+          type: 'string',
+          description: 'Optional notes about this favorite (e.g., "Great rooftop bar", "Book corner room")',
+        },
+      },
+      required: ['osm_id'],
+    },
+  },
+  {
+    name: 'remove_favorite',
+    description: 'Remove a POI from your favorites. Requires authentication.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_id: {
+          type: 'number',
+          description: 'The OSM ID of the POI to remove from favorites',
+        },
+      },
+      required: ['osm_id'],
+    },
+  },
+  {
+    name: 'list_favorites',
+    description: 'List your saved favorites with optional filters. Requires authentication. Returns full POI details for each favorite. Can filter by location (city or coordinates) and/or POI type.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        city_name: {
+          type: 'string',
+          description: 'Filter favorites by city name',
+        },
+        country_code: {
+          type: 'string',
+          description: '2-letter country code (e.g., "US", "TH"). Required with city_name.',
+        },
+        state: {
+          type: 'string',
+          description: 'Optional state/province filter (e.g., "NY", "California")',
+        },
+        latitude: {
+          type: 'number',
+          description: 'Center latitude for radius search (use with longitude)',
+        },
+        longitude: {
+          type: 'number',
+          description: 'Center longitude for radius search (use with latitude)',
+        },
+        radius_km: {
+          type: 'number',
+          description: 'Search radius in km when using coordinates (default: 50)',
+          default: 50,
+        },
+        poi_types: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Filter by POI types (e.g., ["restaurant", "hotel", "cafe"])',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum results (default: 100, max: 100)',
+          default: 100,
+        },
+      },
+    },
+  },
 ];
 
 /**
@@ -844,20 +923,99 @@ export async function executeToolHandler(name, args, db, options = {}) {
           content: [{ type: 'text', text: JSON.stringify({ authenticated: false }, null, 2) }],
         };
       }
+      // Build response, filtering out null/undefined values
+      const response = {
+        authenticated: true,
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        picture_url: user.picture_url,
+        config: user.config,
+        created_at: user.created_at,
+        last_login_at: user.last_login_at,
+      };
+      Object.keys(response).forEach(key => {
+        if (response[key] === null || response[key] === undefined) {
+          delete response[key];
+        }
+      });
       return {
         content: [{
           type: 'text',
-          text: JSON.stringify({
-            authenticated: true,
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            picture_url: user.picture_url,
-            config: user.config,
-            created_at: user.created_at,
-            last_login_at: user.last_login_at,
-          }, null, 2),
+          text: JSON.stringify(response, null, 2),
         }],
+      };
+    }
+
+    // =========================================================================
+    // Favorites (requires authentication)
+    // =========================================================================
+
+    case 'add_favorite': {
+      const user = options.user;
+      if (!user) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Authentication required. Please provide a valid token.' }, null, 2) }],
+          isError: true,
+        };
+      }
+      try {
+        const favorite = await db.addFavorite(user.id, args.osm_id, args.notes);
+        if (!favorite) {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: 'POI not found' }, null, 2) }],
+            isError: true,
+          };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, favorite }, null, 2) }],
+        };
+      } catch (err) {
+        // Handle foreign key violation (POI doesn't exist)
+        if (err.code === '23503') {
+          return {
+            content: [{ type: 'text', text: JSON.stringify({ error: 'POI not found with the given osm_id' }, null, 2) }],
+            isError: true,
+          };
+        }
+        throw err;
+      }
+    }
+
+    case 'remove_favorite': {
+      const user = options.user;
+      if (!user) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Authentication required. Please provide a valid token.' }, null, 2) }],
+          isError: true,
+        };
+      }
+      const removed = await db.removeFavorite(user.id, args.osm_id);
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: removed, message: removed ? 'Favorite removed' : 'Favorite not found' }, null, 2) }],
+      };
+    }
+
+    case 'list_favorites': {
+      const user = options.user;
+      if (!user) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Authentication required. Please provide a valid token.' }, null, 2) }],
+          isError: true,
+        };
+      }
+      const favorites = await db.listFavorites(user.id, {
+        cityName: args.city_name,
+        countryCode: args.country_code,
+        state: args.state,
+        latitude: args.latitude,
+        longitude: args.longitude,
+        radiusKm: args.radius_km,
+        poiTypes: args.poi_types,
+        limit: args.limit,
+      });
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ count: favorites.length, favorites }, null, 2) }],
       };
     }
 

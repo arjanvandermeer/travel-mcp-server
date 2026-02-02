@@ -1544,6 +1544,172 @@ export class TravelDatabase {
       WHERE id = $1 AND user_id = $2
     `, [tokenId, userId]);
   }
+
+  // =========================================================================
+  // User Favorites
+  // =========================================================================
+
+  /**
+   * Add a POI to user's favorites
+   * @param {number} userId - User ID
+   * @param {number} osmId - OSM ID of the POI
+   * @param {string} notes - Optional notes about the favorite
+   * @returns {object} - The created favorite record with POI details
+   */
+  async addFavorite(userId, osmId, notes = null) {
+    // Insert the favorite (will fail if POI doesn't exist due to FK constraint)
+    await this.pool.query(`
+      INSERT INTO user_favorites (user_id, poi_osm_id, notes)
+      VALUES ($1, $2, $3)
+      ON CONFLICT (user_id, poi_osm_id) DO UPDATE SET notes = EXCLUDED.notes
+    `, [userId, osmId, notes]);
+
+    // Return the favorite with full POI details
+    const result = await this.pool.query(`
+      SELECT
+        f.created_at as favorited_at,
+        f.notes,
+        e.*
+      FROM user_favorites f
+      JOIN enriched_pois e ON f.poi_osm_id = e.osm_id
+      WHERE f.user_id = $1 AND f.poi_osm_id = $2
+    `, [userId, osmId]);
+
+    return result.rows[0];
+  }
+
+  /**
+   * Remove a POI from user's favorites
+   * @param {number} userId - User ID
+   * @param {number} osmId - OSM ID of the POI
+   * @returns {boolean} - True if a favorite was removed
+   */
+  async removeFavorite(userId, osmId) {
+    const result = await this.pool.query(`
+      DELETE FROM user_favorites
+      WHERE user_id = $1 AND poi_osm_id = $2
+    `, [userId, osmId]);
+
+    return result.rowCount > 0;
+  }
+
+  /**
+   * Check if a POI is in user's favorites
+   * @param {number} userId - User ID
+   * @param {number} osmId - OSM ID of the POI
+   * @returns {boolean}
+   */
+  async isFavorite(userId, osmId) {
+    const result = await this.pool.query(`
+      SELECT 1 FROM user_favorites WHERE user_id = $1 AND poi_osm_id = $2
+    `, [userId, osmId]);
+
+    return result.rows.length > 0;
+  }
+
+  /**
+   * List user's favorites with optional filters
+   * @param {number} userId - User ID
+   * @param {object} options - Filter options
+   * @param {string} options.cityName - Filter by city name
+   * @param {string} options.countryCode - Filter by country code
+   * @param {string} options.state - Filter by state/province
+   * @param {number} options.latitude - Center latitude for radius search
+   * @param {number} options.longitude - Center longitude for radius search
+   * @param {number} options.radiusKm - Radius in km (default 50)
+   * @param {string[]} options.poiTypes - Filter by POI types (e.g., ['restaurant', 'hotel'])
+   * @param {number} options.limit - Max results (default 100)
+   * @returns {Array} - Favorites with full POI details
+   */
+  async listFavorites(userId, options = {}) {
+    const {
+      cityName,
+      countryCode,
+      state,
+      latitude,
+      longitude,
+      radiusKm = 50,
+      poiTypes,
+      limit = 100,
+    } = options;
+
+    const conditions = ['f.user_id = $1'];
+    const params = [userId];
+    let paramIndex = 2;
+
+    // Location filters
+    if (latitude !== undefined && longitude !== undefined) {
+      // Radius search around coordinates
+      conditions.push(`ST_DWithin(
+        e.osm_location::geography,
+        ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)::geography,
+        $${paramIndex + 2}
+      )`);
+      params.push(longitude, latitude, radiusKm * 1000); // Convert km to meters
+      paramIndex += 3;
+    } else if (cityName && countryCode) {
+      // City-based filter - first find the city, then filter by proximity
+      conditions.push(`e.city ILIKE $${paramIndex} AND e.country_code = $${paramIndex + 1}`);
+      params.push(`%${cityName}%`, countryCode);
+      paramIndex += 2;
+
+      if (state) {
+        // Get admin1_code from the state name or code
+        conditions.push(`EXISTS (
+          SELECT 1 FROM geonames_cities gc
+          JOIN geonames_admin1_codes a1 ON gc.country_code = a1.country_code AND gc.admin1_code = a1.admin1_code
+          WHERE gc.geoname_id = e.city_geoname_id
+          AND (a1.admin1_code = $${paramIndex} OR a1.name ILIKE $${paramIndex})
+        )`);
+        params.push(state);
+        paramIndex += 1;
+      }
+    } else if (countryCode) {
+      conditions.push(`e.country_code = $${paramIndex}`);
+      params.push(countryCode);
+      paramIndex += 1;
+    }
+
+    // POI type filter
+    if (poiTypes && poiTypes.length > 0) {
+      conditions.push(`e.poi_type = ANY($${paramIndex})`);
+      params.push(poiTypes);
+      paramIndex += 1;
+    }
+
+    // Build query with distance calculation if using coordinates
+    let selectFields = `
+      f.created_at as favorited_at,
+      f.notes as favorite_notes,
+      e.*
+    `;
+
+    if (latitude !== undefined && longitude !== undefined) {
+      selectFields += `,
+        ROUND(ST_Distance(
+          e.osm_location::geography,
+          ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography
+        )::numeric, 0) as distance_meters
+      `;
+    }
+
+    const orderBy = latitude !== undefined && longitude !== undefined
+      ? 'ORDER BY distance_meters ASC'
+      : 'ORDER BY f.created_at DESC';
+
+    const query = `
+      SELECT ${selectFields}
+      FROM user_favorites f
+      JOIN enriched_pois e ON f.poi_osm_id = e.osm_id
+      WHERE ${conditions.join(' AND ')}
+      ${orderBy}
+      LIMIT $${paramIndex}
+    `;
+    params.push(Math.min(limit, 100));
+
+    const result = await this.pool.query(query, params);
+    return result.rows;
+  }
 }
 
 export default TravelDatabase;

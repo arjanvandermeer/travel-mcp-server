@@ -228,27 +228,142 @@ For headless clients like Claude Desktop that can't open browsers:
 5. Server returns access token
 ```
 
-## Phase 3: User Features (Future)
+## Phase 3: User Features
 
-Once authentication is widely available, we can build user-specific features:
+User-specific features that require authentication.
 
-### Favorites
+### Favorites ✅ IMPLEMENTED
 
-```sql
-CREATE TABLE user_favorites (
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    poi_osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    notes TEXT,
-    PRIMARY KEY (user_id, poi_osm_id)
-);
+Save and manage your favorite POIs (hotels, restaurants, attractions).
+
+#### `add_favorite`
+
+Add a POI to your favorites list.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `osm_id` | number | Yes | The OSM ID of the POI to save |
+| `notes` | string | No | Personal notes (e.g., "Great rooftop bar") |
+
+**Example:**
+```json
+{
+  "osm_id": 123456789,
+  "notes": "Book the corner room with city view"
+}
 ```
 
-New MCP tools:
-- `add_favorite` - Save a POI to favorites
-- `remove_favorite` - Remove from favorites
-- `list_favorites` - Get user's saved places
-- `get_favorites_near` - Find favorites near a location
+**Response:**
+```json
+{
+  "success": true,
+  "favorite": {
+    "favorited_at": "2025-02-02T...",
+    "notes": "Book the corner room with city view",
+    "osm_id": 123456789,
+    "osm_name": "Conrad New York Downtown",
+    "poi_type": "hotel",
+    "city": "New York",
+    "country_code": "US",
+    "google_rating": 4.5,
+    ...
+  }
+}
+```
+
+#### `remove_favorite`
+
+Remove a POI from your favorites.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `osm_id` | number | Yes | The OSM ID of the POI to remove |
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Favorite removed"
+}
+```
+
+#### `list_favorites`
+
+List your saved favorites with optional filters. Returns full POI details.
+
+**Parameters:**
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `city_name` | string | No | Filter by city name |
+| `country_code` | string | No | 2-letter country code (required with city_name) |
+| `state` | string | No | State/province filter |
+| `latitude` | number | No | Center latitude for radius search |
+| `longitude` | number | No | Center longitude for radius search |
+| `radius_km` | number | No | Search radius in km (default: 50) |
+| `poi_types` | string[] | No | Filter by types (e.g., `["restaurant", "cafe"]`) |
+| `limit` | number | No | Max results (default: 100) |
+
+**Example - All favorites:**
+```json
+{}
+```
+
+**Example - Restaurants in New York:**
+```json
+{
+  "city_name": "New York",
+  "country_code": "US",
+  "poi_types": ["restaurant", "cafe", "bar"]
+}
+```
+
+**Example - Hotels near coordinates:**
+```json
+{
+  "latitude": 40.7580,
+  "longitude": -73.9855,
+  "radius_km": 5,
+  "poi_types": ["hotel"]
+}
+```
+
+**Response:**
+```json
+{
+  "count": 2,
+  "favorites": [
+    {
+      "favorited_at": "2025-02-02T...",
+      "favorite_notes": "Great rooftop bar",
+      "osm_id": 123456789,
+      "osm_name": "The Standard High Line",
+      "poi_type": "hotel",
+      "city": "New York",
+      "google_rating": 4.3,
+      "distance_meters": 1250,
+      ...
+    },
+    ...
+  ]
+}
+```
+
+**Notes:**
+- When using coordinates, results include `distance_meters` and are sorted by distance
+- When not using coordinates, results are sorted by `favorited_at` (most recent first)
+- Location filters (city vs coordinates) are mutually exclusive
+
+#### Error Handling
+
+All favorites tools require authentication. If called without a valid token:
+
+```json
+{
+  "error": "Authentication required. Please provide a valid token."
+}
+```
 
 ### Preferences
 

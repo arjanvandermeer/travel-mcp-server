@@ -49,8 +49,8 @@ Add optional authentication to enable per-user features (API limit bypass, favor
 - [ ] Device Authorization Flow for CLI/headless clients
 - [ ] Web UI for login (`/auth/login`)
 
-**Phase 3: User Features (Future)** - Requires Phase 2
-- [ ] Favorites system (save POIs, add notes)
+**Phase 3: User Features**
+- [x] Favorites system (save POIs, add notes) ✅ COMPLETED 2026-02-02
 - [ ] User preferences (currency, language, home location)
 - [ ] Trip planning (itineraries, day-by-day plans)
 - [ ] Usage analytics per user
