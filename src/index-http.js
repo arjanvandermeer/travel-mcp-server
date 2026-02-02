@@ -75,9 +75,8 @@ function createMCPServer(user = null) {
 
   // List available tools
   server.setRequestHandler(ListToolsRequestSchema, async () => {
-    // Get widget domain from database config for UI tools' CSP
-    const serverBaseUrl = await db.getConfig('server_base_url');
-    const widgetDomain = serverBaseUrl || 'http://localhost';
+    // Get widget domain from database config for UI tools' CSP (cached)
+    const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
     return { tools: getToolsConfig(widgetDomain) };
   });
 
@@ -104,9 +103,8 @@ function createMCPServer(user = null) {
 
   // List available resources (MCP Apps)
   server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    // Get widget domain from database config (full URL required per OpenAI docs)
-    const serverBaseUrl = await db.getConfig('server_base_url');
-    const widgetDomain = serverBaseUrl || 'http://localhost';
+    // Get widget domain from database config (full URL required per OpenAI docs) (cached)
+    const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
     return getResourcesConfig(widgetDomain);
   });
 
