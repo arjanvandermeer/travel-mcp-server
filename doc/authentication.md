@@ -164,69 +164,123 @@ For authenticated users, Sentry receives these tags:
 
 **Note**: Tokens are never sent to Sentry.
 
-## Phase 2: Full OAuth2 (Future)
+## Phase 2: OAuth 2.1 via Cloudflare Worker
 
-Phase 2 will implement standard OAuth2 endpoints, enabling:
+Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authorization server. This enables:
 
-1. **Self-service authentication** - Users can log in via Google without admin intervention
-2. **ChatGPT integration** - ChatGPT's MCP Actions UI supports OAuth configuration
-3. **MCP Inspector OAuth** - Inspector's OAuth UI will work
+1. **Self-service authentication** - Users log in via Google without admin intervention
+2. **ChatGPT integration** - ChatGPT's MCP connector auto-discovers and uses OAuth
+3. **MCP Inspector OAuth** - Inspector's `--oauth` flag works automatically
+4. **Dynamic Client Registration** - Clients register themselves (RFC 7591)
 
-### Planned Endpoints
+### Architecture
+
+```
+┌─────────────────────┐     ┌─────────────────────────────────────┐
+│    MCP Client       │     │  Cloudflare Worker (OAuth Server)   │
+│  (ChatGPT/Claude)   │     │  travel-mcp-oauth.workers.dev       │
+└─────────┬───────────┘     └─────────────────┬───────────────────┘
+          │                                   │
+          │ 1. Discover auth server           │
+          ├──────────────────────────────────►│
+          │    /.well-known/oauth-protected-  │
+          │         resource                  │
+          │                                   │
+          │ 2. Get auth server metadata       │
+          ├──────────────────────────────────►│
+          │    /.well-known/oauth-            │
+          │         authorization-server      │
+          │                                   │
+          │ 3. Register client (DCR)          │
+          ├──────────────────────────────────►│
+          │    POST /register                 │
+          │                                   │
+          │ 4. Start OAuth flow               │
+          ├──────────────────────────────────►│
+          │    GET /authorize                 │
+          │         ↓                         │
+          │    Google OAuth login             │
+          │         ↓                         │
+          │    GET /callback                  │
+          │                                   │
+          │ 5. Exchange code for token        │
+          ├──────────────────────────────────►│
+          │    POST /token                    │
+          │                                   │
+          │◄──────────────────────────────────┤
+          │    access_token, refresh_token    │
+          │                                   │
+          │ 6. MCP requests with token        │
+          ├──────────────────────────────────►│
+          ▼                                   │
+┌─────────────────────┐                       │
+│   MCP Server        │   7. Validate token   │
+│ mcp.arjanvandermeer │◄──────────────────────┤
+│      .com           │   POST /introspect    │
+└─────────────────────┘                       │
+```
+
+### OAuth Server Endpoints
 
 | Endpoint | Method | Purpose |
 |----------|--------|---------|
-| `/auth/authorize` | GET | Redirect to Google OAuth consent screen |
-| `/auth/callback` | GET | Handle Google OAuth callback |
-| `/auth/token` | POST | Exchange authorization code for access token |
-| `/auth/login` | GET | Web UI for manual login |
+| `/.well-known/oauth-authorization-server` | GET | Server metadata (RFC 8414) |
+| `/authorize` | GET | Start OAuth, redirect to Google |
+| `/callback` | GET | Google OAuth callback |
+| `/token` | POST | Exchange code for tokens |
+| `/register` | POST | Dynamic Client Registration |
+| `/introspect` | POST | Token validation for MCP server |
+| `/revoke` | POST | Token revocation |
 
-### OAuth Flow (ChatGPT Example)
-
-```
-1. User configures MCP server in ChatGPT with:
-   - Client ID: chatgpt-mcp-client
-   - Client Secret: (configured in server)
-   - Scope: profile
-
-2. User clicks "Connect" in ChatGPT
-
-3. ChatGPT redirects to:
-   https://mcp.arjanvandermeer.com/auth/authorize?
-     client_id=chatgpt-mcp-client&
-     redirect_uri=https://chatgpt.com/callback&
-     scope=profile&
-     state=xyz
-
-4. Server redirects to Google OAuth consent
-
-5. User approves, Google redirects back to server
-
-6. Server creates user (if new) and generates auth code
-
-7. Server redirects to ChatGPT callback with code
-
-8. ChatGPT calls POST /auth/token to exchange code for token
-
-9. ChatGPT uses token for all subsequent MCP requests
-```
-
-### Device Authorization Flow (CLI Clients)
-
-For headless clients like Claude Desktop that can't open browsers:
+### OAuth Flow (ChatGPT/Claude)
 
 ```
-1. Client calls POST /auth/device to get device_code and user_code
+1. ChatGPT fetches MCP server's protected resource metadata:
+   GET https://mcp.arjanvandermeer.com/.well-known/oauth-protected-resource
+   → Returns: { authorization_servers: ["https://travel-mcp-oauth.workers.dev"] }
 
-2. User visits https://mcp.arjanvandermeer.com/auth/device
-   and enters the user_code
+2. ChatGPT fetches OAuth server metadata:
+   GET https://travel-mcp-oauth.workers.dev/.well-known/oauth-authorization-server
+   → Returns: endpoints, supported scopes, PKCE methods
 
-3. User completes Google OAuth in browser
+3. ChatGPT registers itself (DCR):
+   POST https://travel-mcp-oauth.workers.dev/register
+   → Returns: client_id, client_secret
 
-4. Client polls POST /auth/token with device_code until approved
+4. User clicks "Connect" → ChatGPT opens OAuth flow:
+   GET /authorize?client_id=...&code_challenge=...&code_challenge_method=S256
 
-5. Server returns access token
+5. User logs in with Google, approves access
+
+6. ChatGPT receives authorization code, exchanges for tokens:
+   POST /token (with code_verifier for PKCE)
+   → Returns: access_token, refresh_token
+
+7. ChatGPT uses token for all MCP requests:
+   Authorization: Bearer <access_token>
+
+8. MCP server validates token via /introspect endpoint
 ```
+
+### MCP Inspector with OAuth
+
+```bash
+npx @modelcontextprotocol/inspector \
+  --transport streamable-http \
+  --url https://mcp.arjanvandermeer.com/mcp \
+  --oauth
+```
+
+The Inspector auto-discovers endpoints and opens browser for login.
+
+### Setup Guide
+
+See **[doc/cloudflare-oauth-worker.md](cloudflare-oauth-worker.md)** for complete deployment instructions:
+
+1. Create Google OAuth credentials
+2. Deploy Cloudflare Worker
+3. Configure MCP server to validate tokens
+4. Add protected resource metadata endpoint
 
 ## Phase 3: User Features
 

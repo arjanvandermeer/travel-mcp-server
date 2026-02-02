@@ -1,0 +1,16 @@
+{
+  "name": "travel-mcp-oauth",
+  "version": "1.0.0",
+  "description": "OAuth 2.1 Authorization Server for Travel MCP Server",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241205.0",
+    "typescript": "^5.3.0",
+    "wrangler": "^4.61.1"
+  }
+}

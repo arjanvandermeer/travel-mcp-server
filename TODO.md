@@ -40,14 +40,18 @@ Add optional authentication to enable per-user features (API limit bypass, favor
 - [x] Completely transparent - anonymous access still works
 - [x] User arjanvdm@gmail.com set up with unlimited Google Places access
 
-**Phase 2: Full OAuth2 Implementation (Future)**
-- [ ] Google OAuth2 integration (Authorization Code flow)
-- [ ] Standard OAuth endpoints for ChatGPT/MCP Inspector:
-  - `GET /auth/authorize` - Redirect to Google OAuth
-  - `GET /auth/callback` - Handle OAuth callback
-  - `POST /auth/token` - Exchange code for access token
-- [ ] Device Authorization Flow for CLI/headless clients
-- [ ] Web UI for login (`/auth/login`)
+**Phase 2: OAuth 2.1 via Cloudflare Worker** 🚧 IN PROGRESS
+- [x] Cloudflare Worker OAuth server created (`cloudflare-oauth-worker/`)
+- [x] OAuth 2.1 with PKCE (S256) implementation
+- [x] Google OAuth integration for user identity
+- [x] Dynamic Client Registration (RFC 7591)
+- [x] Token introspection endpoint for MCP server
+- [x] Documentation: [doc/cloudflare-oauth-worker.md](doc/cloudflare-oauth-worker.md)
+- [ ] Deploy Worker to Cloudflare (requires Google OAuth credentials)
+- [ ] Add `/.well-known/oauth-protected-resource` to MCP server
+- [ ] Update MCP server to validate OAuth tokens via introspection
+- [ ] Test with MCP Inspector `--oauth` flag
+- [ ] Test with ChatGPT MCP connector
 
 **Phase 3: User Features**
 - [x] Favorites system (save POIs, add notes) ✅ COMPLETED 2026-02-02

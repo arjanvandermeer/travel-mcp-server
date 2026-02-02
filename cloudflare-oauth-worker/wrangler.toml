@@ -1,0 +1,30 @@
+# Cloudflare Worker configuration for MCP OAuth Provider
+# See: https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name = "travel-mcp-oauth"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+
+# KV namespace for OAuth token storage
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "YOUR_KV_NAMESPACE_ID"  # Replace after: wrangler kv:namespace create "OAUTH_KV"
+
+# Environment variables (set via wrangler secret or dashboard)
+# Required secrets (use: wrangler secret put SECRET_NAME):
+#   GOOGLE_CLIENT_ID     - Google OAuth client ID
+#   GOOGLE_CLIENT_SECRET - Google OAuth client secret
+#   COOKIE_ENCRYPTION_KEY - Random 32-byte hex string for cookie encryption
+#   MCP_SERVER_URL       - Your MCP server URL (e.g., https://mcp.arjanvandermeer.com)
+
+[vars]
+# Public configuration
+OAUTH_ISSUER = "https://travel-mcp-oauth.YOUR_SUBDOMAIN.workers.dev"
+
+# Development overrides
+[env.dev]
+name = "travel-mcp-oauth-dev"
+
+[env.dev.vars]
+OAUTH_ISSUER = "http://localhost:8787"
