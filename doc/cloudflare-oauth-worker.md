@@ -99,7 +99,7 @@ No local installation required - deploy entirely through the Cloudflare web UI.
 
 ### A.3 Paste the Code
 
-Replace the default code with the contents of [`cloudflare-oauth-worker/src/index.ts`](../cloudflare-oauth-worker/src/index.ts).
+Replace the default code with the contents of [`cloudflare-oauth-worker/src/index.js`](../cloudflare-oauth-worker/src/index.js) (JavaScript version for Dashboard).
 
 ### A.4 Configure Bindings & Variables
 

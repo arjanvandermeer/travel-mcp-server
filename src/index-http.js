@@ -34,6 +34,7 @@ const sessions = new Map();
 /**
  * Extract user from Authorization header
  * Returns null for anonymous requests (which is fine - auth is optional)
+ * Supports both Phase 1 (database tokens) and Phase 2 (OAuth tokens via introspection)
  */
 async function getUserFromRequest(req) {
   const auth = req.headers['authorization'];
@@ -41,13 +42,47 @@ async function getUserFromRequest(req) {
 
   const token = auth.slice(7);
   try {
-    const user = await db.getUserByToken(token);
-    if (user) {
-      console.error(`Authenticated user: ${user.email}`);
-      telemetry.setTag('user.email', user.email);
-      telemetry.setTag('user.id', user.id.toString());
+    // First try database lookup (Phase 1 tokens)
+    const dbUser = await db.getUserByToken(token);
+    if (dbUser) {
+      console.error(`Authenticated user (DB): ${dbUser.email}`);
+      telemetry.setTag('user.email', dbUser.email);
+      telemetry.setTag('user.id', dbUser.id.toString());
+      return dbUser;
     }
-    return user;
+
+    // Try OAuth introspection (Phase 2 tokens)
+    const introspectionUrl = process.env.OAUTH_INTROSPECTION_URL ||
+      (process.env.OAUTH_ISSUER ? `${process.env.OAUTH_ISSUER}/introspect` : null);
+
+    if (introspectionUrl) {
+      const response = await fetch(introspectionUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({ token }),
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        if (data.active) {
+          console.error(`Authenticated user (OAuth): ${data.email}`);
+          telemetry.setTag('user.email', data.email);
+          telemetry.setTag('user.oauth', 'true');
+
+          // Return OAuth user info (no DB id yet)
+          return {
+            id: null,
+            email: data.email,
+            name: data.name,
+            picture_url: data.picture,
+            google_id: data.sub,
+            config: {},  // Default config for OAuth users
+          };
+        }
+      }
+    }
+
+    return null;
   } catch (err) {
     console.error('Error validating token:', err.message);
     return null;
@@ -190,6 +225,19 @@ async function main() {
           health: '/health',
           preview: '/preview/poi/{osm_id}',
         },
+      }));
+      return;
+    }
+
+    // OAuth Protected Resource Metadata (RFC 9728)
+    // Tells MCP clients which OAuth server to use for authentication
+    if (pathname === '/.well-known/oauth-protected-resource') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        resource: process.env.SERVER_BASE_URL || 'https://mcp.arjanvandermeer.com',
+        authorization_servers: [process.env.OAUTH_ISSUER || 'https://travel-mcp-oauth.cloudflare-com-91b.workers.dev'],
+        scopes_supported: ['openid', 'profile', 'email'],
+        bearer_methods_supported: ['header'],
       }));
       return;
     }

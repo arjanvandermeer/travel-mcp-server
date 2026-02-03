@@ -9,7 +9,7 @@ compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 # KV namespace for OAuth token storage
 [[kv_namespaces]]
 binding = "OAUTH_KV"
-id = "YOUR_KV_NAMESPACE_ID"  # Replace after: wrangler kv:namespace create "OAUTH_KV"
+id = "1a159160fb3241f3811117521f673878"  # Replace after: wrangler kv:namespace create "OAUTH_KV"
 
 # Environment variables (set via wrangler secret or dashboard)
 # Required secrets (use: wrangler secret put SECRET_NAME):
@@ -20,7 +20,7 @@ id = "YOUR_KV_NAMESPACE_ID"  # Replace after: wrangler kv:namespace create "OAUT
 
 [vars]
 # Public configuration
-OAUTH_ISSUER = "https://travel-mcp-oauth.YOUR_SUBDOMAIN.workers.dev"
+OAUTH_ISSUER = "https://travel-mcp-oauth.cloudflare-com-91b.workers.dev"
 
 # Development overrides
 [env.dev]
