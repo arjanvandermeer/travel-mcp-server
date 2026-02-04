@@ -607,7 +607,7 @@ export class TravelDatabase {
     const result = await this.pool.query(query, queryParams);
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
-    const withPhotos = this.addPhotoUrls(withUris);
+    const withPhotos = await this.addPhotoUrls(withUris);
     return this.addFavoriteStatus(withPhotos, userId);
   }
 
@@ -695,7 +695,7 @@ export class TravelDatabase {
     const result = await this.pool.query(query, params);
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
-    const withPhotos = this.addPhotoUrls(withUris);
+    const withPhotos = await this.addPhotoUrls(withUris);
     return this.addFavoriteStatus(withPhotos, userId);
   }
 
@@ -721,7 +721,7 @@ export class TravelDatabase {
   // POI Details
   // =========================================================================
 
-  async getPOIDetails(osmId = null, googlePlaceId = null) {
+  async getPOIDetails(osmId = null, googlePlaceId = null, userId = null) {
     let result;
     if (googlePlaceId) {
       // Look up by Google Places ID
@@ -826,7 +826,11 @@ export class TravelDatabase {
 
     // Remove null/undefined fields and add resource URIs
     const baseUrl = await this.getServerBaseUrl();
-    return addResourceUris(removeNullFields(response), baseUrl);
+    const withUris = addResourceUris(removeNullFields(response), baseUrl);
+
+    // Add favorite status for authenticated users (returns array, we extract single item)
+    const withFavorites = await this.addFavoriteStatus([withUris], userId);
+    return withFavorites[0];
   }
 
   /**
@@ -1710,14 +1714,22 @@ export class TravelDatabase {
    * @returns {object} - The created favorite record with POI details
    */
   async addFavorite(userId, osmId, notes = null) {
-    // Insert the favorite (will fail if POI doesn't exist due to FK constraint)
+    // Verify POI exists first (don't rely solely on FK constraint)
+    const poiCheck = await this.pool.query(
+      'SELECT 1 FROM osm_pois WHERE osm_id = $1',
+      [osmId]
+    );
+    if (poiCheck.rows.length === 0) {
+      return false; // POI not found
+    }
+
+    // Insert the favorite
     await this.pool.query(`
       INSERT INTO user_favorites (user_id, poi_osm_id, notes)
       VALUES ($1, $2, $3)
       ON CONFLICT (user_id, poi_osm_id) DO UPDATE SET notes = EXCLUDED.notes
     `, [userId, osmId, notes]);
 
-    // Return success (POI details not needed - caller can re-fetch if needed)
     return true;
   }
 

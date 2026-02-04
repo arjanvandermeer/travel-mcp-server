@@ -885,7 +885,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         };
       }
 
-      const poi = await db.getPOIDetails(args.osm_id, args.google_place_id);
+      const poi = await db.getPOIDetails(args.osm_id, args.google_place_id, options.user?.id);
 
       if (!poi) {
         return {
@@ -962,21 +962,16 @@ export async function executeToolHandler(name, args, db, options = {}) {
           isError: true,
         };
       }
-      try {
-        await db.addFavorite(user.id, args.osm_id, args.notes);
+      const added = await db.addFavorite(user.id, args.osm_id, args.notes);
+      if (!added) {
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true }, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify({ success: false, error: 'POI not found' }, null, 2) }],
+          isError: true,
         };
-      } catch (err) {
-        // Handle foreign key violation (POI doesn't exist)
-        if (err.code === '23503') {
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ error: 'POI not found with the given osm_id' }, null, 2) }],
-            isError: true,
-          };
-        }
-        throw err;
       }
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ success: true }, null, 2) }],
+      };
     }
 
     case 'remove_favorite': {
