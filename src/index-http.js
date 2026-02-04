@@ -86,8 +86,10 @@ async function getUserFromRequest(req) {
     telemetry.addBreadcrumb('DB token lookup failed, trying OAuth', 'auth');
 
     // Try OAuth introspection (Phase 2 tokens)
+    // Get OAuth issuer from database config (preferred) or fall back to env var
+    const oauthIssuer = await db.getConfigCached('oauth_issuer') || process.env.OAUTH_ISSUER;
     const introspectionUrl = process.env.OAUTH_INTROSPECTION_URL ||
-      (process.env.OAUTH_ISSUER ? `${process.env.OAUTH_ISSUER}/introspect` : null);
+      (oauthIssuer ? `${oauthIssuer}/introspect` : null);
 
     if (introspectionUrl) {
       const introspectStartTime = Date.now();

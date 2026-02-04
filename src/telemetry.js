@@ -295,7 +295,12 @@ export function getConfig() {
 
 // =============================================================================
 // Metrics API (Sentry Metrics)
+// Note: Sentry metrics API was removed in v8+. These functions now use
+// custom span attributes as a fallback for metric-like data.
 // =============================================================================
+
+// Check if Sentry metrics API is available (it's not in v10+)
+const hasMetricsApi = typeof Sentry.metrics?.increment === 'function';
 
 /**
  * Increment a counter metric
@@ -306,11 +311,15 @@ export function getConfig() {
 export function incrementCounter(name, value = 1, tags = {}) {
   if (!telemetryEnabled) return;
 
-  try {
-    Sentry.metrics.increment(name, value, { tags });
-  } catch (error) {
-    console.error('[Telemetry] Failed to increment counter:', error.message);
+  if (hasMetricsApi) {
+    try {
+      Sentry.metrics.increment(name, value, { tags });
+    } catch (error) {
+      // Silently ignore - metrics API not critical
+    }
   }
+  // Fallback: add as breadcrumb for visibility
+  addBreadcrumb(`Counter: ${name} += ${value}`, 'metric', { ...tags, value });
 }
 
 /**
@@ -323,11 +332,15 @@ export function recordDistribution(name, value, options = {}) {
   if (!telemetryEnabled) return;
 
   const { tags = {}, unit = 'none' } = options;
-  try {
-    Sentry.metrics.distribution(name, value, { tags, unit });
-  } catch (error) {
-    console.error('[Telemetry] Failed to record distribution:', error.message);
+  if (hasMetricsApi) {
+    try {
+      Sentry.metrics.distribution(name, value, { tags, unit });
+    } catch (error) {
+      // Silently ignore - metrics API not critical
+    }
   }
+  // Fallback: add as breadcrumb
+  addBreadcrumb(`Distribution: ${name} = ${value}${unit !== 'none' ? unit : ''}`, 'metric', { ...tags, value, unit });
 }
 
 /**
@@ -339,11 +352,15 @@ export function recordDistribution(name, value, options = {}) {
 export function recordGauge(name, value, tags = {}) {
   if (!telemetryEnabled) return;
 
-  try {
-    Sentry.metrics.gauge(name, value, { tags });
-  } catch (error) {
-    console.error('[Telemetry] Failed to record gauge:', error.message);
+  if (hasMetricsApi) {
+    try {
+      Sentry.metrics.gauge(name, value, { tags });
+    } catch (error) {
+      // Silently ignore - metrics API not critical
+    }
   }
+  // Fallback: add as breadcrumb
+  addBreadcrumb(`Gauge: ${name} = ${value}`, 'metric', { ...tags, value });
 }
 
 /**
@@ -355,11 +372,15 @@ export function recordGauge(name, value, tags = {}) {
 export function recordSet(name, value, tags = {}) {
   if (!telemetryEnabled) return;
 
-  try {
-    Sentry.metrics.set(name, value, { tags });
-  } catch (error) {
-    console.error('[Telemetry] Failed to record set:', error.message);
+  if (hasMetricsApi) {
+    try {
+      Sentry.metrics.set(name, value, { tags });
+    } catch (error) {
+      // Silently ignore - metrics API not critical
+    }
   }
+  // Fallback: add as breadcrumb
+  addBreadcrumb(`Set: ${name} += ${value}`, 'metric', { ...tags, value });
 }
 
 /**

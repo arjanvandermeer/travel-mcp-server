@@ -225,19 +225,26 @@ Expected metadata response:
 
 ## Step 4: Configure MCP Server
 
-### 4.1 Update MCP Server Token Validation
+### 4.1 Add OAuth Issuer to Database
 
-The MCP server needs to validate tokens by calling the Worker's `/introspect` endpoint.
+The MCP server reads configuration from the `app_config` database table (not environment variables). Add the OAuth issuer URL:
 
-Add to your MCP server's environment:
-
-```bash
-OAUTH_INTROSPECTION_URL=https://travel-mcp-oauth.YOUR_SUBDOMAIN.workers.dev/introspect
+```sql
+-- For each environment (local dev and production RDS)
+INSERT INTO app_config (key, value)
+VALUES ('oauth_issuer', 'https://travel-mcp-oauth.YOUR_SUBDOMAIN.workers.dev')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 ```
 
-### 4.2 Token Validation Code
+The MCP server will automatically construct the introspection URL as `{oauth_issuer}/introspect`.
 
-In `src/index-http.js`, update the auth middleware to support OAuth tokens:
+### 4.2 Update MCP Server Token Validation
+
+The MCP server validates tokens by calling the Worker's `/introspect` endpoint.
+
+### 4.3 Token Validation Code
+
+The MCP server (`src/index-http.js`) automatically handles OAuth token validation:
 
 ```javascript
 async function validateToken(token) {
@@ -246,8 +253,12 @@ async function validateToken(token) {
   if (dbUser) return dbUser;
 
   // Try OAuth introspection (Phase 2 tokens)
-  if (process.env.OAUTH_INTROSPECTION_URL) {
-    const response = await fetch(process.env.OAUTH_INTROSPECTION_URL, {
+  // oauth_issuer is read from database app_config table
+  const oauthIssuer = await db.getConfigCached('oauth_issuer');
+  const introspectionUrl = oauthIssuer ? `${oauthIssuer}/introspect` : null;
+
+  if (introspectionUrl) {
+    const response = await fetch(introspectionUrl, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({ token }),
@@ -255,14 +266,12 @@ async function validateToken(token) {
 
     const data = await response.json();
     if (data.active) {
-      // Optionally sync user to database
+      // User is auto-provisioned/updated in database
       return {
-        id: null,  // OAuth user, no DB ID yet
         email: data.email,
         name: data.name,
         picture_url: data.picture,
         google_id: data.sub,
-        config: {},  // Default config for OAuth users
       };
     }
   }
@@ -271,15 +280,17 @@ async function validateToken(token) {
 }
 ```
 
-### 4.3 Protected Resource Metadata
+### 4.5 Protected Resource Metadata
 
-Add `/.well-known/oauth-protected-resource` to your MCP server:
+The MCP server exposes `/.well-known/oauth-protected-resource` endpoint which reads both `server_base_url` and `oauth_issuer` from the database:
 
 ```javascript
-app.get('/.well-known/oauth-protected-resource', (req, res) => {
+app.get('/.well-known/oauth-protected-resource', async (req, res) => {
+  const serverBaseUrl = await db.getServerBaseUrl();
+  const oauthIssuer = await db.getConfigCached('oauth_issuer');
   res.json({
-    resource: process.env.SERVER_BASE_URL || 'https://mcp.arjanvandermeer.com',
-    authorization_servers: [process.env.OAUTH_ISSUER],
+    resource: serverBaseUrl,
+    authorization_servers: [oauthIssuer],
     scopes_supported: ['openid', 'profile', 'email'],
     bearer_methods_supported: ['header'],
   });
