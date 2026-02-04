@@ -38,14 +38,19 @@ const sessions = new Map();
  */
 async function getUserFromRequest(req) {
   const auth = req.headers['authorization'];
-  if (!auth?.startsWith('Bearer ')) return null;
+  if (!auth?.startsWith('Bearer ')) {
+    console.error('[Auth] No Bearer token provided');
+    return null;
+  }
 
   const token = auth.slice(7);
   const tokenPrefix = token.slice(0, 8);
   const tokenLength = token.length;
+  console.error(`[Auth] Token received: ${tokenPrefix}... (${tokenLength} chars)`);
 
   // Basic token validation - catch obviously malformed tokens
   if (tokenLength < 10) {
+    console.error(`[Auth] Token too short: ${tokenLength} chars`);
     telemetry.incrementCounter('auth.failure', 1, { reason: 'token_too_short' });
     telemetry.captureMessage('Auth failed: token too short', 'warning', {
       reason: 'token_too_short',
@@ -62,9 +67,11 @@ async function getUserFromRequest(req) {
 
   try {
     // First try database lookup (Phase 1 tokens)
+    console.error('[Auth] Trying database token lookup...');
     const dbUser = await db.getUserByToken(token);
     if (dbUser) {
       const authDuration = Date.now() - authStartTime;
+      console.error(`[Auth] DB auth success: ${dbUser.email} (${authDuration}ms)`);
 
       // Telemetry: successful DB auth
       telemetry.incrementCounter('auth.success', 1, { method: 'database' });
@@ -83,6 +90,7 @@ async function getUserFromRequest(req) {
       return dbUser;
     }
 
+    console.error('[Auth] DB lookup failed, trying OAuth introspection...');
     telemetry.addBreadcrumb('DB token lookup failed, trying OAuth', 'auth');
 
     // Try OAuth introspection (Phase 2 tokens)
@@ -90,6 +98,8 @@ async function getUserFromRequest(req) {
     const oauthIssuer = await db.getConfigCached('oauth_issuer') || process.env.OAUTH_ISSUER;
     const introspectionUrl = process.env.OAUTH_INTROSPECTION_URL ||
       (oauthIssuer ? `${oauthIssuer}/introspect` : null);
+    console.error(`[Auth] OAuth issuer: ${oauthIssuer || 'not configured'}`);
+    console.error(`[Auth] Introspection URL: ${introspectionUrl || 'not configured'}`);
 
     if (introspectionUrl) {
       const introspectStartTime = Date.now();
@@ -101,13 +111,16 @@ async function getUserFromRequest(req) {
       const introspectDuration = Date.now() - introspectStartTime;
       telemetry.recordDistribution('auth.oauth_introspect.latency', introspectDuration, { unit: 'millisecond' });
 
+      console.error(`[Auth] Introspection response: ${response.status}`);
       if (response.ok) {
         const data = await response.json();
+        console.error(`[Auth] Introspection data: active=${data.active}, email=${data.email || 'none'}`);
 
         if (data.active) {
           // Auto-provision user in database (creates if new, updates if existing)
           const user = await db.upsertGoogleUser(data.sub, data.email, data.name, data.picture);
           const authDuration = Date.now() - authStartTime;
+          console.error(`[Auth] OAuth auth success: ${user.email} (${authDuration}ms)`);
 
           // Telemetry: successful OAuth auth
           telemetry.incrementCounter('auth.success', 1, { method: 'oauth' });
@@ -129,6 +142,7 @@ async function getUserFromRequest(req) {
           return user;
         } else {
           const authDuration = Date.now() - authStartTime;
+          console.error(`[Auth] Token not active (${authDuration}ms)`);
           // Determine specific reason from introspection response
           // - If no sub/email: token was never issued (forged/fake)
           // - If has sub but exp < now: token expired
@@ -164,6 +178,7 @@ async function getUserFromRequest(req) {
       } else {
         const authDuration = Date.now() - authStartTime;
         const errorText = await response.text();
+        console.error(`[Auth] Introspection error: ${response.status} - ${errorText.slice(0, 100)}`);
         telemetry.incrementCounter('auth.failure', 1, { reason: 'introspection_error', method: 'oauth' });
         telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'oauth', status: 'failure' }, unit: 'millisecond' });
         telemetry.captureMessage(`Auth failed: introspection error (${response.status})`, 'warning', {
@@ -175,6 +190,7 @@ async function getUserFromRequest(req) {
         });
       }
     } else {
+      console.error('[Auth] No introspection URL configured - cannot validate OAuth token');
       telemetry.incrementCounter('auth.failure', 1, { reason: 'no_introspection_url' });
       telemetry.captureMessage('Auth failed: no introspection URL configured', 'warning', {
         reason: 'no_introspection_url',
@@ -182,10 +198,12 @@ async function getUserFromRequest(req) {
       });
     }
 
+    console.error('[Auth] Auth failed: invalid token');
     telemetry.incrementCounter('auth.failure', 1, { reason: 'invalid_token' });
     return null;
   } catch (err) {
     const authDuration = Date.now() - authStartTime;
+    console.error(`[Auth] Auth exception: ${err.message}`);
 
     // Telemetry: exception during auth
     telemetry.incrementCounter('auth.failure', 1, { reason: 'exception' });
