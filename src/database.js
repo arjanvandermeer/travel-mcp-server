@@ -284,15 +284,13 @@ export class TravelDatabase {
 
   async initGooglePlaces() {
     try {
-      // Try to read from database first, fallback to environment variable
+      // Read configuration from database first, fallback to environment variables
       const apiKey = await this.getConfig('google_places_api_key', process.env.GOOGLE_PLACES_API_KEY);
+      const envEnabled = process.env.GOOGLE_PLACES_ENABLED !== 'false';
+      const enabledStr = await this.getConfig('google_places_enabled', envEnabled ? 'true' : 'false');
+      const enabled = enabledStr !== 'false';
 
-      // Update environment for GooglePlacesClient (if not already set)
-      if (apiKey && !process.env.GOOGLE_PLACES_API_KEY) {
-        process.env.GOOGLE_PLACES_API_KEY = apiKey;
-      }
-
-      this.googlePlaces = new GooglePlacesClient(apiKey);
+      this.googlePlaces = new GooglePlacesClient(apiKey, enabled);
 
       if (this.googlePlaces.isEnabled()) {
         console.error('✓ Google Places API initialized from database config');

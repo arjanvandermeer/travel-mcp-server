@@ -14,18 +14,21 @@ dotenv.config();
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
 export class GooglePlacesClient {
-  constructor(apiKey = GOOGLE_PLACES_API_KEY) {
+  /**
+   * @param {string} apiKey - Google Places API key
+   * @param {boolean} enabled - Whether Google Places is enabled (from database config)
+   */
+  constructor(apiKey = GOOGLE_PLACES_API_KEY, enabled = true) {
     this.apiKey = apiKey;
 
-    // Enabled if API key is present AND not explicitly disabled via GOOGLE_PLACES_ENABLED=false
-    const explicitlyDisabled = process.env.GOOGLE_PLACES_ENABLED === 'false';
-    this.enabled = !!apiKey && !explicitlyDisabled;
+    // Enabled if API key is present AND enabled flag is true
+    this.enabled = !!apiKey && enabled;
 
     if (!this.enabled) {
-      if (explicitlyDisabled) {
-        console.warn('⚠️  Google Places API is explicitly disabled via GOOGLE_PLACES_ENABLED=false');
+      if (!enabled) {
+        console.warn('⚠️  Google Places API is disabled via google_places_enabled config');
       } else {
-        console.warn('⚠️  Google Places API is disabled or API key not configured');
+        console.warn('⚠️  Google Places API key not configured');
       }
     }
   }

@@ -180,7 +180,7 @@ server {
 
 ## Security Considerations
 
-1. **Authentication**: The current implementation has no authentication. Add middleware for production use.
+1. **Authentication**: See [authentication.md](authentication.md) for token and OAuth authentication options.
 2. **Rate Limiting**: Consider adding rate limiting to prevent abuse.
 3. **HTTPS**: Always use HTTPS in production. The server works behind reverse proxies with TLS termination.
 4. **Input Validation**: All inputs are validated by the database layer, but additional validation can be added.
@@ -192,7 +192,7 @@ server {
 | Use case | Claude Desktop | Web clients, remote access |
 | Connections | Single process | Multiple simultaneous |
 | Discovery | Local only | Network accessible |
-| Authentication | Process isolation | Requires middleware |
+| Authentication | Process isolation | Token or OAuth |
 | Debugging | Harder (binary protocol) | Easier (HTTP tools) |
 | Performance | Slightly faster | Good for most use cases |
 

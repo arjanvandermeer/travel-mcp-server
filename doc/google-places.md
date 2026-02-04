@@ -22,9 +22,9 @@ This MCP server supports automatic enrichment of POI data (hotels, restaurants, 
 
 ### 2. Configure API Key
 
-**Option A: Database Configuration (Recommended for Claude Desktop)**
+**Option A: Database Configuration (Recommended)**
 
-Configuration stored in the database persists across restarts and works better with Claude Desktop:
+Configuration stored in the database persists across restarts:
 
 ```bash
 # Set your API key
@@ -51,7 +51,7 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-DATABASE_URL=postgresql://traveluser:travelpass@localhost:5432/travel
+DATABASE_URL=postgresql://[user]:[password]@[host]:5432/[database]
 GOOGLE_PLACES_API_KEY=your_api_key_here
 GOOGLE_PLACES_ENABLED=true
 GOOGLE_PLACES_CACHE_HOURS=168
@@ -175,7 +175,7 @@ node tests/test-enrichment.js
 1. Verify API key is correctly set
 2. Confirm Places API (New) is enabled in Google Cloud Console
 3. Check API key restrictions
-4. Restart Claude Desktop
+4. Restart the server
 
 ### Enrichment Not Completing
 
@@ -208,10 +208,10 @@ Google Places integration uses these tables:
 - `app_config` - Configuration settings (API key, limits, etc.)
 - `enriched_pois` (view) - Combined OSM + Google data with "best" fields
 
-See [DATABASE_SCHEMA.md](DATABASE_SCHEMA.md) for full schema details.
+See [database-schema.md](database-schema.md) for full schema details.
 
 ## Security
 
-- API keys are stored in `.env` (gitignored) or database `config` table
+- API keys are stored in `.env` (gitignored) or database `app_config` table
 - Never commit API keys to git
 - `.env.example` contains only placeholder values
