@@ -349,6 +349,9 @@ function jsonResponse(data, status = 200) {
     headers: {
       'Content-Type': 'application/json',
       'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, MCP-Protocol-Version',
     },
   });
 }
@@ -367,14 +370,14 @@ export default {
         headers: {
           'Access-Control-Allow-Origin': '*',
           'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-          'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+          'Access-Control-Allow-Headers': 'Content-Type, Authorization, MCP-Protocol-Version',
         },
       });
     }
 
     try {
       // Well-known endpoints
-      if (path === '/.well-known/oauth-authorization-server') {
+      if (path === '/.well-known/oauth-authorization-server' || path === '/.well-known/openid-configuration') {
         return jsonResponse(getAuthorizationServerMetadata(env));
       }
 
