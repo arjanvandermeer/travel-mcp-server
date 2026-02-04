@@ -1494,6 +1494,8 @@ export class TravelDatabase {
 
   /**
    * Get or create user by Google OAuth info
+   * Auto-provisions new users and updates existing ones on each login
+   * Returns user with their config loaded
    */
   async upsertGoogleUser(googleId, email, name, pictureUrl) {
     const result = await this.pool.query(`
@@ -1507,7 +1509,19 @@ export class TravelDatabase {
       RETURNING id, google_id, email, name, picture_url, created_at, last_login_at
     `, [googleId, email, name, pictureUrl]);
 
-    return result.rows[0];
+    const user = result.rows[0];
+
+    // Load user config
+    const configResult = await this.pool.query(
+      'SELECT key, value FROM user_config WHERE user_id = $1',
+      [user.id]
+    );
+    user.config = {};
+    for (const row of configResult.rows) {
+      user.config[row.key] = row.value;
+    }
+
+    return user;
   }
 
   /**
