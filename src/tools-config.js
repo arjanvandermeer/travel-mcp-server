@@ -817,6 +817,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         radius: args.radius_km,
         poiTypes: accommodationTypes,
         limit: Math.min(args.limit || 50, 100),
+        userId: options.user?.id,
       });
       triggerBackgroundEnrichment(pois, db);
       // UI version returns structuredContent for card rendering
@@ -839,6 +840,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         radius: args.radius_km,
         poiTypes: types,
         limit: Math.min(args.limit || 50, 100),
+        userId: options.user?.id,
       });
       triggerBackgroundEnrichment(pois, db);
       // UI version returns structuredContent for card rendering
@@ -860,6 +862,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         radius: args.radius_km,
         poiType: args.poi_type,
         limit: Math.min(args.limit || 50, 100),
+        userId: options.user?.id,
       });
       triggerBackgroundEnrichment(pois, db);
       // UI version returns structuredContent for card rendering
@@ -960,15 +963,9 @@ export async function executeToolHandler(name, args, db, options = {}) {
         };
       }
       try {
-        const favorite = await db.addFavorite(user.id, args.osm_id, args.notes);
-        if (!favorite) {
-          return {
-            content: [{ type: 'text', text: JSON.stringify({ error: 'POI not found' }, null, 2) }],
-            isError: true,
-          };
-        }
+        await db.addFavorite(user.id, args.osm_id, args.notes);
         return {
-          content: [{ type: 'text', text: JSON.stringify({ success: true, favorite }, null, 2) }],
+          content: [{ type: 'text', text: JSON.stringify({ success: true }, null, 2) }],
         };
       } catch (err) {
         // Handle foreign key violation (POI doesn't exist)
