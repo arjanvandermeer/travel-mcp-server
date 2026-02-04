@@ -47,9 +47,11 @@ Add optional authentication to enable per-user features (API limit bypass, favor
 - [x] Dynamic Client Registration (RFC 7591)
 - [x] Token introspection endpoint for MCP server
 - [x] Documentation: [doc/cloudflare-oauth-worker.md](doc/cloudflare-oauth-worker.md)
-- [ ] Deploy Worker to Cloudflare (requires Google OAuth credentials)
-- [ ] Add `/.well-known/oauth-protected-resource` to MCP server
-- [ ] Update MCP server to validate OAuth tokens via introspection
+- [x] Deploy Worker to Cloudflare
+- [x] Add `/.well-known/oauth-protected-resource` to MCP server
+- [x] Update MCP server to validate OAuth tokens via introspection
+- [x] oauth_issuer config stored in database (not env var)
+- [ ] Cache OAuth introspection results (5 min TTL) to reduce Worker calls
 - [ ] Test with MCP Inspector `--oauth` flag
 - [ ] Test with ChatGPT MCP connector
 

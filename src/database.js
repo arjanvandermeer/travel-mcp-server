@@ -419,6 +419,25 @@ export class TravelDatabase {
   // =========================================================================
   // POI Search (uses enriched_pois view)
   // =========================================================================
+  //
+  // SUPPORTED PARAMETER COMBINATIONS:
+  // Must provide either `query` OR `city` (or both). Country/state alone is not enough.
+  //
+  // | Parameters                    | Behavior                              |
+  // |-------------------------------|---------------------------------------|
+  // | query                         | Global name search                    |
+  // | query + country_code          | Name search filtered by country       |
+  // | city + country_code           | All POIs near that city               |
+  // | city + state + country_code   | All POIs near city (state disambig)   |
+  // | lat + long                    | All POIs near coordinates             |
+  // | query + city + country_code   | Name search near city                 |
+  // | query + lat + long            | Name search near coordinates          |
+  //
+  // NOT SUPPORTED (will error or return empty):
+  // | country_code only             | Error - too broad                     |
+  // | state + country_code (no city)| Error - need city or query            |
+  //
+  // =========================================================================
 
   async searchPOIs(params) {
     const {
@@ -431,7 +450,8 @@ export class TravelDatabase {
       poiType = null,
       poiTypes = null,  // New: array of types
       name = null,
-      limit = 50
+      limit = 50,
+      userId = null,    // For including favorite status in results
     } = params;
 
     let query;
@@ -445,7 +465,8 @@ export class TravelDatabase {
     const hasCity = !!cityName;
     const hasCoords = !!(latitude && longitude);
 
-    // Case 1: Name only (fuzzy match across all POIs)
+    // Case 1: Name search (optionally filtered by country)
+    // Supports: query only, query + country
     if (hasName && !hasCity && !hasCoords) {
       query = `
         SELECT
@@ -473,6 +494,12 @@ export class TravelDatabase {
       `;
       queryParams = [name, `%${name}%`];
 
+      // Filter by country if provided
+      if (countryCode) {
+        query += ` AND country_code = $${queryParams.length + 1}`;
+        queryParams.push(countryCode.toUpperCase());
+      }
+
       if (typeFilter) {
         query += ` AND poi_type = ANY($${queryParams.length + 1})`;
         queryParams.push(typeFilter);
@@ -495,7 +522,8 @@ export class TravelDatabase {
           city.longitude,
           searchRadius,
           typeFilter,
-          limit
+          limit,
+          userId
         );
       } else {
         const searchRadius = radius || 10; // Default 10km
@@ -504,7 +532,8 @@ export class TravelDatabase {
           longitude,
           searchRadius,
           typeFilter,
-          limit
+          limit,
+          userId
         );
       }
     }
@@ -578,10 +607,53 @@ export class TravelDatabase {
     const result = await this.pool.query(query, queryParams);
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
-    return this.addPhotoUrls(withUris);
+    const withPhotos = this.addPhotoUrls(withUris);
+    return this.addFavoriteStatus(withPhotos, userId);
   }
 
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50) {
+  /**
+   * Add favorite status to POI results for authenticated users
+   * Adds is_favorite, favorite_since, favorite_notes fields
+   */
+  async addFavoriteStatus(pois, userId) {
+    if (!userId || !pois || pois.length === 0) {
+      return pois;
+    }
+
+    const osmIds = pois.map(p => p.osm_id).filter(Boolean);
+    if (osmIds.length === 0) {
+      return pois;
+    }
+
+    // Get favorites for these POIs
+    const favResult = await this.pool.query(`
+      SELECT poi_osm_id, created_at, notes
+      FROM user_favorites
+      WHERE user_id = $1 AND poi_osm_id = ANY($2)
+    `, [userId, osmIds]);
+
+    // Create a map for quick lookup
+    const favMap = new Map();
+    for (const fav of favResult.rows) {
+      favMap.set(fav.poi_osm_id, {
+        favorite_since: fav.created_at,
+        favorite_notes: fav.notes,
+      });
+    }
+
+    // Add favorite status to each POI
+    return pois.map(poi => {
+      const fav = favMap.get(poi.osm_id);
+      return {
+        ...poi,
+        is_favorite: !!fav,
+        ...(fav && { favorite_since: fav.favorite_since }),
+        ...(fav?.favorite_notes && { favorite_notes: fav.favorite_notes }),
+      };
+    });
+  }
+
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50, userId = null) {
     let query = `
       SELECT
         osm_id,
@@ -623,7 +695,8 @@ export class TravelDatabase {
     const result = await this.pool.query(query, params);
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
-    return this.addPhotoUrls(withUris);
+    const withPhotos = this.addPhotoUrls(withUris);
+    return this.addFavoriteStatus(withPhotos, userId);
   }
 
   async getCityByName(name, countryCode = null, state = null) {
@@ -1496,18 +1569,42 @@ export class TravelDatabase {
    * Get or create user by Google OAuth info
    * Auto-provisions new users and updates existing ones on each login
    * Returns user with their config loaded
+   *
+   * Handles two conflict scenarios:
+   * 1. User exists with same google_id (ON CONFLICT) - updates their info
+   * 2. User exists with same email but no google_id (exception) - links google_id
    */
   async upsertGoogleUser(googleId, email, name, pictureUrl) {
-    const result = await this.pool.query(`
-      INSERT INTO users (google_id, email, name, picture_url, last_login_at)
-      VALUES ($1, $2, $3, $4, NOW())
-      ON CONFLICT (google_id) DO UPDATE SET
-        email = EXCLUDED.email,
-        name = EXCLUDED.name,
-        picture_url = EXCLUDED.picture_url,
-        last_login_at = NOW()
-      RETURNING id, google_id, email, name, picture_url, created_at, last_login_at
-    `, [googleId, email, name, pictureUrl]);
+    let result;
+    try {
+      // Try insert with ON CONFLICT for google_id (common case)
+      result = await this.pool.query(`
+        INSERT INTO users (google_id, email, name, picture_url, last_login_at)
+        VALUES ($1, $2, $3, $4, NOW())
+        ON CONFLICT (google_id) DO UPDATE SET
+          email = EXCLUDED.email,
+          name = EXCLUDED.name,
+          picture_url = EXCLUDED.picture_url,
+          last_login_at = NOW()
+        RETURNING id, google_id, email, name, picture_url, created_at, last_login_at
+      `, [googleId, email, name, pictureUrl]);
+    } catch (err) {
+      // Handle email conflict: user exists with same email but different/no google_id
+      // This happens when a user was created via API token before using OAuth
+      if (err.code === '23505' && err.constraint === 'users_email_key') {
+        result = await this.pool.query(`
+          UPDATE users SET
+            google_id = $1,
+            name = $3,
+            picture_url = $4,
+            last_login_at = NOW()
+          WHERE email = $2
+          RETURNING id, google_id, email, name, picture_url, created_at, last_login_at
+        `, [googleId, email, name, pictureUrl]);
+      } else {
+        throw err;
+      }
+    }
 
     const user = result.rows[0];
 
@@ -1620,18 +1717,8 @@ export class TravelDatabase {
       ON CONFLICT (user_id, poi_osm_id) DO UPDATE SET notes = EXCLUDED.notes
     `, [userId, osmId, notes]);
 
-    // Return the favorite with full POI details
-    const result = await this.pool.query(`
-      SELECT
-        f.created_at as favorited_at,
-        f.notes,
-        e.*
-      FROM user_favorites f
-      JOIN enriched_pois e ON f.poi_osm_id = e.osm_id
-      WHERE f.user_id = $1 AND f.poi_osm_id = $2
-    `, [userId, osmId]);
-
-    return result.rows[0];
+    // Return success (POI details not needed - caller can re-fetch if needed)
+    return true;
   }
 
   /**
@@ -1734,8 +1821,10 @@ export class TravelDatabase {
     }
 
     // Build query with distance calculation if using coordinates
+    // Use same field names as search results: is_favorite, favorite_since, favorite_notes
     let selectFields = `
-      f.created_at as favorited_at,
+      TRUE as is_favorite,
+      f.created_at as favorite_since,
       f.notes as favorite_notes,
       e.*
     `;
