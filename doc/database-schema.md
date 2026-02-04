@@ -6,7 +6,7 @@ Complete reference for the Travel MCP Server database schema using PostgreSQL 17
 
 **Connection:**
 ```
-postgresql://traveluser:travelpass@localhost:5432/travel
+postgresql://[user]:[password]@[host]:5432/[database]
 ```
 
 ## Tables Overview
@@ -22,6 +22,10 @@ postgresql://traveluser:travelpass@localhost:5432/travel
 | `app_config` | Application configuration settings |
 | `regions` | Named geographic regions (future use) |
 | `imports` | Import tracking and history |
+| `users` | User accounts |
+| `user_tokens` | API tokens for authentication |
+| `user_config` | Per-user configuration |
+| `user_favorites` | User's saved POIs |
 
 ## Core Tables
 
@@ -253,9 +257,8 @@ CREATE TABLE app_config (
 - `google_places_enabled` - Enable/disable enrichment (default: true)
 - `google_places_cache_hours` - Cache duration (default: 168 = 7 days)
 - `google_api_daily_limit` - Daily API call limit (default: 100)
-- `server_base_url` - Base URL for preview URLs (e.g., https://example.com)
-- `sentry_dsn` - Sentry DSN for error tracking
-- `telemetry_enabled` - Enable/disable telemetry (default: true)
+- `server_base_url` - Base URL for preview URLs
+- `oauth_issuer` - OAuth provider URL for token introspection
 
 ### google_api_usage
 
@@ -274,6 +277,68 @@ CREATE TABLE google_api_usage (
 - Override via `app_config` key `google_api_daily_limit`
 - Each POI enrichment uses 2 API calls (search + details)
 - Limit resets at midnight UTC
+
+## User Tables
+
+### users
+
+User accounts for authentication.
+
+```sql
+CREATE TABLE users (
+    id SERIAL PRIMARY KEY,
+    google_id VARCHAR(255) UNIQUE,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    name VARCHAR(255),
+    picture_url TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### user_tokens
+
+API tokens for Phase 1 authentication.
+
+```sql
+CREATE TABLE user_tokens (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    token VARCHAR(64) UNIQUE NOT NULL,
+    name VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    expires_at TIMESTAMP,
+    last_used_at TIMESTAMP,
+    revoked_at TIMESTAMP
+);
+```
+
+### user_config
+
+Per-user configuration settings.
+
+```sql
+CREATE TABLE user_config (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    key VARCHAR(100) NOT NULL,
+    value TEXT,
+    PRIMARY KEY (user_id, key)
+);
+```
+
+### user_favorites
+
+User's saved POIs.
+
+```sql
+CREATE TABLE user_favorites (
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    poi_osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id),
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, poi_osm_id)
+);
+```
 
 ## Views
 

@@ -82,6 +82,63 @@ wget https://download.geofabrik.de/north-america/us-latest.osm.pbf -O data/us.os
 node src/import-osm.js data/us.osm.pbf
 ```
 
+## Application Configuration (app_config table)
+
+The server stores most configuration in the database `app_config` table instead of environment variables. This allows runtime configuration changes without redeploying.
+
+### Configuration Values
+
+| Key | Default | Description |
+|-----|---------|-------------|
+| `server_base_url` | (none) | Base URL for the server (e.g., `https://mcp.example.com`) |
+| `google_places_api_key` | (none) | Google Places API key (encrypted) |
+| `google_places_enabled` | `true` | Enable/disable Google Places enrichment |
+| `google_places_cache_hours` | `168` | Hours to cache Google Places data (168 = 7 days) |
+| `google_api_daily_limit` | `100` | Daily limit for Google Places API calls |
+| `oauth_issuer` | (none) | OAuth provider URL for token introspection |
+| `sentry_dsn` | (none) | Sentry DSN for error tracking (encrypted) |
+| `telemetry_enabled` | `true` | Enable/disable telemetry |
+| `telemetry_sample_rate` | `1.0` | Trace sample rate 0.0-1.0 |
+| `telemetry_environment` | `development` | Environment name for telemetry |
+| `sentry_send_dev` | `true` | Send telemetry events in development mode |
+
+### Viewing Current Configuration
+
+```sql
+SELECT key, value, description FROM app_config ORDER BY key;
+```
+
+### Updating Configuration
+
+```sql
+-- Enable Google Places enrichment
+UPDATE app_config SET value = 'true' WHERE key = 'google_places_enabled';
+
+-- Set server base URL
+INSERT INTO app_config (key, value, description)
+VALUES ('server_base_url', 'https://mcp.example.com', 'Base URL for the server')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+
+-- Increase daily API limit
+UPDATE app_config SET value = '500' WHERE key = 'google_api_daily_limit';
+```
+
+### Environment Variables vs Database Config
+
+**Database value takes precedence**, with env var as fallback:
+
+| Setting | Database key | Env var fallback |
+|---------|-------------|------------------|
+| API Key | `google_places_api_key` | `GOOGLE_PLACES_API_KEY` |
+| Enabled | `google_places_enabled` | `GOOGLE_PLACES_ENABLED` |
+| Sentry DSN | `sentry_dsn` | `SENTRY_DSN` |
+
+**Environment-only (no database fallback):**
+- `DATABASE_URL` - Required to connect to the database
+
+**Database-only (no env var fallback):**
+- All other settings in the table above - use database for runtime configurability
+
 ## Troubleshooting
 
 ### "permission denied for schema public"

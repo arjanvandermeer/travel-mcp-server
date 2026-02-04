@@ -785,7 +785,7 @@ Now that your server is running:
 3. **Review documentation:**
    - [README.md](README.md) - Full feature documentation
    - [TODO.md](TODO.md) - Planned improvements and known issues
-   - [GOOGLE_PLACES_INTEGRATION.md](docs/GOOGLE_PLACES_INTEGRATION.md) - API details
+   - [google-places.md](doc/google-places.md) - Google Places API integration
 
 4. **Customize configuration:**
    - Adjust cache duration in `.env`

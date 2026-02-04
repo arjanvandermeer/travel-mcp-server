@@ -10,13 +10,24 @@ However, authentication enables:
 
 1. **API Limit Bypass** - Authenticated users can be granted unlimited Google Places API access (instead of the default daily limit)
 2. **User Identification** - Track which user made requests (useful for debugging and analytics in Sentry)
-3. **Future Features** - Store favorites, preferences, and personalized recommendations
+3. **User Features** - Store favorites, preferences, and personalized recommendations
 
 **Key Design Principle**: Authentication is transparent. If you don't provide a token, or provide an invalid token, the server simply treats you as anonymous. No errors, no access denied - just default rate limits.
 
-## Phase 1: Simple Token Auth (Current)
+## Authentication Options
 
-Phase 1 is implemented and deployed. It uses Bearer token authentication.
+The server supports two authentication methods:
+
+| Method | Use Case | Setup Complexity |
+|--------|----------|------------------|
+| **Phase 1: Token Auth** | Admin-provisioned tokens for specific users | Simple (SQL only) |
+| **Phase 2: OAuth 2.1** | Self-service login via Google for ChatGPT, Claude, etc. | Moderate (requires Cloudflare Worker) |
+
+---
+
+## Phase 1: Simple Token Auth
+
+Phase 1 uses Bearer token authentication with manually provisioned tokens.
 
 ### How It Works
 
@@ -31,7 +42,7 @@ Phase 1 is implemented and deployed. It uses Bearer token authentication.
 -- User accounts
 CREATE TABLE users (
     id SERIAL PRIMARY KEY,
-    google_id VARCHAR(255) UNIQUE,      -- For future OAuth
+    google_id VARCHAR(255) UNIQUE,      -- For OAuth
     email VARCHAR(255) UNIQUE NOT NULL,
     name VARCHAR(255),
     picture_url TEXT,
@@ -92,13 +103,13 @@ VALUES (1, 'google_places_limit', 'unlimited');
 ```bash
 npx @modelcontextprotocol/inspector \
   --transport streamable-http \
-  --url https://mcp.arjanvandermeer.com/mcp \
+  --url https://[YOUR_MCP_SERVER_URL]/mcp \
   --header "Authorization: Bearer YOUR_TOKEN_HERE"
 ```
 
 **curl**:
 ```bash
-curl -X POST https://mcp.arjanvandermeer.com/mcp \
+curl -X POST https://[YOUR_MCP_SERVER_URL]/mcp \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer YOUR_TOKEN_HERE" \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{...},"id":1}'
@@ -164,6 +175,8 @@ For authenticated users, Sentry receives these tags:
 
 **Note**: Tokens are never sent to Sentry.
 
+---
+
 ## Phase 2: OAuth 2.1 via Cloudflare Worker
 
 Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authorization server. This enables:
@@ -178,7 +191,7 @@ Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authoriz
 ```
 ┌─────────────────────┐     ┌─────────────────────────────────────┐
 │    MCP Client       │     │  Cloudflare Worker (OAuth Server)   │
-│  (ChatGPT/Claude)   │     │  travel-mcp-oauth.workers.dev       │
+│  (ChatGPT/Claude)   │     │  [YOUR_OAUTH_WORKER_URL]            │
 └─────────┬───────────┘     └─────────────────┬───────────────────┘
           │                                   │
           │ 1. Discover auth server           │
@@ -215,78 +228,372 @@ Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authoriz
           ▼                                   │
 ┌─────────────────────┐                       │
 │   MCP Server        │   7. Validate token   │
-│ mcp.arjanvandermeer │◄──────────────────────┤
-│      .com           │   POST /introspect    │
+│ [YOUR_MCP_SERVER]   │◄──────────────────────┤
+│                     │   POST /introspect    │
 └─────────────────────┘                       │
 ```
 
-### OAuth Server Endpoints
+### Prerequisites
 
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/.well-known/oauth-authorization-server` | GET | Server metadata (RFC 8414) |
-| `/authorize` | GET | Start OAuth, redirect to Google |
-| `/callback` | GET | Google OAuth callback |
-| `/token` | POST | Exchange code for tokens |
-| `/register` | POST | Dynamic Client Registration |
-| `/introspect` | POST | Token validation for MCP server |
-| `/revoke` | POST | Token revocation |
+1. **Cloudflare Account** with Workers enabled (free tier works)
+2. **Google Cloud Console** project with OAuth 2.0 credentials
 
-### OAuth Flow (ChatGPT/Claude)
+### Step 1: Set Up Google OAuth
 
+#### 1.1 Create Google Cloud Project
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/)
+2. Create a new project or select existing
+3. Enable the **Google+ API** (for user info)
+
+#### 1.2 Create OAuth Credentials
+
+1. Go to **APIs & Services → Credentials**
+2. Click **Create Credentials → OAuth client ID**
+3. Application type: **Web application**
+4. Name: `Travel MCP OAuth`
+5. Authorized redirect URIs:
+   - Development: `http://localhost:8787/callback`
+   - Production: `https://[YOUR_OAUTH_WORKER_URL]/callback`
+6. Save the **Client ID** and **Client Secret**
+
+#### 1.3 Configure OAuth Consent Screen
+
+1. Go to **APIs & Services → OAuth consent screen**
+2. User Type: **External** (or Internal for Google Workspace)
+3. App name: `Travel MCP Server`
+4. Support email: Your email
+5. Scopes: Add `email`, `profile`, `openid`
+6. Test users: Add your email (for testing before verification)
+
+### Step 2: Deploy Cloudflare Worker
+
+Choose one deployment method:
+
+#### Option A: Deploy via Cloudflare Dashboard
+
+No local installation required - deploy entirely through the Cloudflare web UI.
+
+**A.1 Create KV Namespace**
+
+1. Go to [Cloudflare Dashboard](https://dash.cloudflare.com/)
+2. Navigate to **Workers & Pages → KV**
+3. Click **Create a namespace**
+4. Name: `OAUTH_KV`
+5. Click **Add**
+
+**A.2 Create the Worker**
+
+1. Go to **Workers & Pages → Create**
+2. Click **Create Worker**
+3. Name: `travel-mcp-oauth`
+4. Click **Deploy** (creates placeholder)
+5. Click **Edit Code**
+
+**A.3 Paste the Code**
+
+Replace the default code with the contents of [`cloudflare-oauth-worker/src/index.js`](../cloudflare-oauth-worker/src/index.js).
+
+**A.4 Configure Bindings & Variables**
+
+Go to your Worker → **Settings → Variables**:
+
+**KV Namespace Bindings:**
+
+| Variable name | KV Namespace |
+|---------------|--------------|
+| `OAUTH_KV` | Select your `OAUTH_KV` namespace |
+
+**Environment Variables** (click "Encrypt" for secrets):
+
+| Name | Value | Encrypt? |
+|------|-------|----------|
+| `GOOGLE_CLIENT_ID` | Your Google OAuth client ID | Yes |
+| `GOOGLE_CLIENT_SECRET` | Your Google OAuth client secret | Yes |
+| `COOKIE_ENCRYPTION_KEY` | Run `openssl rand -hex 32` to generate | Yes |
+| `MCP_SERVER_URL` | `https://[YOUR_MCP_SERVER_URL]` | No |
+| `OAUTH_ISSUER` | `https://[YOUR_OAUTH_WORKER_URL]` | No |
+
+**A.5 Set Compatibility Settings**
+
+Go to **Settings → Compatibility**:
+- Compatibility date: `2024-12-01`
+- Compatibility flags: Add `nodejs_compat`
+
+**A.6 Deploy**
+
+Click **Save and Deploy**
+
+#### Option B: Deploy via Wrangler CLI
+
+Use this option for CI/CD automation or local development.
+
+**B.1 Install and Authenticate**
+
+```bash
+cd cloudflare-oauth-worker
+npm install
+wrangler login
 ```
-1. ChatGPT fetches MCP server's protected resource metadata:
-   GET https://mcp.arjanvandermeer.com/.well-known/oauth-protected-resource
-   → Returns: { authorization_servers: ["https://travel-mcp-oauth.workers.dev"] }
 
-2. ChatGPT fetches OAuth server metadata:
-   GET https://travel-mcp-oauth.workers.dev/.well-known/oauth-authorization-server
-   → Returns: endpoints, supported scopes, PKCE methods
+**B.2 Create KV Namespace**
 
-3. ChatGPT registers itself (DCR):
-   POST https://travel-mcp-oauth.workers.dev/register
-   → Returns: client_id, client_secret
-
-4. User clicks "Connect" → ChatGPT opens OAuth flow:
-   GET /authorize?client_id=...&code_challenge=...&code_challenge_method=S256
-
-5. User logs in with Google, approves access
-
-6. ChatGPT receives authorization code, exchanges for tokens:
-   POST /token (with code_verifier for PKCE)
-   → Returns: access_token, refresh_token
-
-7. ChatGPT uses token for all MCP requests:
-   Authorization: Bearer <access_token>
-
-8. MCP server validates token via /introspect endpoint
+```bash
+wrangler kv:namespace create "OAUTH_KV"
 ```
 
-### MCP Inspector with OAuth
+Copy the output ID and update `wrangler.toml`:
 
+```toml
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "abc123..."  # Your actual ID
+```
+
+**B.3 Set Secrets**
+
+```bash
+# Google OAuth credentials
+wrangler secret put GOOGLE_CLIENT_ID
+# Paste your Google Client ID
+
+wrangler secret put GOOGLE_CLIENT_SECRET
+# Paste your Google Client Secret
+
+# Cookie encryption key (generate with: openssl rand -hex 32)
+wrangler secret put COOKIE_ENCRYPTION_KEY
+# Paste a 64-character hex string
+
+# Your MCP server URL
+wrangler secret put MCP_SERVER_URL
+# e.g., https://[YOUR_MCP_SERVER_URL]
+```
+
+**B.4 Update Configuration**
+
+Edit `wrangler.toml`:
+
+```toml
+[vars]
+OAUTH_ISSUER = "https://[YOUR_OAUTH_WORKER_URL]"
+```
+
+**B.5 Deploy**
+
+```bash
+wrangler deploy
+```
+
+### Step 3: Verify Deployment
+
+```bash
+# Authorization server metadata
+curl https://[YOUR_OAUTH_WORKER_URL]/.well-known/oauth-authorization-server
+
+# Health check
+curl https://[YOUR_OAUTH_WORKER_URL]/health
+```
+
+Expected metadata response:
+```json
+{
+  "issuer": "https://[YOUR_OAUTH_WORKER_URL]",
+  "authorization_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/authorize",
+  "token_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/token",
+  "registration_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/register",
+  "introspection_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/introspect",
+  "code_challenge_methods_supported": ["S256"],
+  "grant_types_supported": ["authorization_code", "refresh_token"],
+  ...
+}
+```
+
+### Step 4: Configure MCP Server
+
+#### 4.1 Add OAuth Issuer to Database
+
+The MCP server reads configuration from the `app_config` database table. Add the OAuth issuer URL:
+
+```sql
+-- For each environment (local dev and production)
+INSERT INTO app_config (key, value)
+VALUES ('oauth_issuer', 'https://[YOUR_OAUTH_WORKER_URL]')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
+```
+
+The MCP server automatically constructs the introspection URL as `{oauth_issuer}/introspect`.
+
+#### 4.2 Token Validation
+
+The MCP server (`src/index-http.js`) automatically handles OAuth token validation:
+
+```javascript
+async function validateToken(token) {
+  // First try database lookup (Phase 1 tokens)
+  const dbUser = await db.validateToken(token);
+  if (dbUser) return dbUser;
+
+  // Try OAuth introspection (Phase 2 tokens)
+  const oauthIssuer = await db.getConfigCached('oauth_issuer');
+  const introspectionUrl = oauthIssuer ? `${oauthIssuer}/introspect` : null;
+
+  if (introspectionUrl) {
+    const response = await fetch(introspectionUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token }),
+    });
+
+    const data = await response.json();
+    if (data.active) {
+      // User is auto-provisioned/updated in database
+      return {
+        email: data.email,
+        name: data.name,
+        picture_url: data.picture,
+        google_id: data.sub,
+      };
+    }
+  }
+
+  return null;
+}
+```
+
+#### 4.3 Protected Resource Metadata
+
+The MCP server exposes `/.well-known/oauth-protected-resource`:
+
+```javascript
+app.get('/.well-known/oauth-protected-resource', async (req, res) => {
+  const serverBaseUrl = await db.getServerBaseUrl();
+  const oauthIssuer = await db.getConfigCached('oauth_issuer');
+  res.json({
+    resource: serverBaseUrl,
+    authorization_servers: [oauthIssuer],
+    scopes_supported: ['openid', 'profile', 'email'],
+    bearer_methods_supported: ['header'],
+  });
+});
+```
+
+### Step 5: Test OAuth Flow
+
+**MCP Inspector with OAuth:**
 ```bash
 npx @modelcontextprotocol/inspector \
   --transport streamable-http \
-  --url https://mcp.arjanvandermeer.com/mcp \
+  --url https://[YOUR_MCP_SERVER_URL]/mcp \
   --oauth
 ```
 
-The Inspector auto-discovers endpoints and opens browser for login.
+The Inspector will:
+1. Fetch `/.well-known/oauth-protected-resource` from your MCP server
+2. Discover the authorization server
+3. Initiate OAuth flow
+4. Open browser for Google login
+5. Exchange tokens and connect
 
-### Setup Guide
+**ChatGPT Configuration:**
 
-See **[doc/cloudflare-oauth-worker.md](cloudflare-oauth-worker.md)** for complete deployment instructions:
+In ChatGPT's MCP connector settings:
+1. **MCP Server URL**: `https://[YOUR_MCP_SERVER_URL]/mcp`
+2. **Authentication**: OAuth
+3. ChatGPT will automatically discover endpoints via well-known metadata
 
-1. Create Google OAuth credentials
-2. Deploy Cloudflare Worker
-3. Configure MCP server to validate tokens
-4. Add protected resource metadata endpoint
+### OAuth Endpoints Reference
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/.well-known/oauth-authorization-server` | GET | OAuth server metadata (RFC 8414) |
+| `/authorize` | GET | Start OAuth flow, redirects to Google |
+| `/callback` | GET | Google OAuth callback handler |
+| `/token` | POST | Exchange code for tokens |
+| `/register` | POST | Dynamic Client Registration (RFC 7591) |
+| `/introspect` | POST | Token introspection (RFC 7662) |
+| `/revoke` | POST | Token revocation |
+| `/health` | GET | Health check |
+
+### Token Lifetimes
+
+| Token Type | Lifetime | Notes |
+|------------|----------|-------|
+| Access Token | 7 days | Can be validated via /introspect |
+| Refresh Token | 30 days | Rotated on each use |
+| Authorization Code | 5 minutes | Single use |
+| Auth Session | 10 minutes | Google OAuth state |
+
+### OAuth Security Considerations
+
+1. **PKCE Required**: All authorization requests must include `code_challenge` with S256 method
+2. **State Parameter**: Prevents CSRF attacks
+3. **Token Rotation**: Refresh tokens are rotated on each use
+4. **Short-lived Codes**: Authorization codes expire in 5 minutes
+5. **Cookie Encryption**: Session cookies are encrypted
+
+### Troubleshooting
+
+**"Invalid redirect_uri"**
+Ensure the callback URL in Google Console matches exactly:
+- `https://[YOUR_OAUTH_WORKER_URL]/callback`
+
+**"Session expired"**
+The auth session lasts 10 minutes. Restart the OAuth flow.
+
+**"PKCE verification failed"**
+Ensure your client sends the correct `code_verifier` that matches the original `code_challenge`.
+
+**View Worker logs:**
+```bash
+wrangler tail
+```
+
+### Custom Domain (Optional)
+
+To use a custom domain like `auth.[your-domain].com`:
+
+1. Go to Cloudflare Dashboard → Workers → Your Worker → Triggers
+2. Add Custom Domain
+3. Update `OAUTH_ISSUER` in wrangler.toml
+4. Update Google OAuth redirect URI
+5. Redeploy
+
+### Local Development (Optional)
+
+Only needed if you want to test changes locally before deploying.
+
+**Setup:**
+```bash
+cd cloudflare-oauth-worker
+npm install
+```
+
+**Configure Local Secrets** - Create `.dev.vars` file:
+```
+GOOGLE_CLIENT_ID=your-client-id
+GOOGLE_CLIENT_SECRET=your-client-secret
+COOKIE_ENCRYPTION_KEY=your-32-byte-hex-key
+MCP_SERVER_URL=http://localhost:3000
+OAUTH_ISSUER=http://localhost:8787
+```
+
+**Add Local Callback to Google:**
+In Google Cloud Console, add to authorized redirect URIs:
+- `http://localhost:8787/callback`
+
+**Run Locally:**
+```bash
+npm run dev
+```
+This starts the worker at `http://localhost:8787`.
+
+---
 
 ## Phase 3: User Features
 
 User-specific features that require authentication.
 
-### Favorites ✅ IMPLEMENTED
+### Favorites
 
 Save and manage your favorite POIs (hotels, restaurants, attractions).
 
@@ -310,20 +617,7 @@ Add a POI to your favorites list.
 
 **Response:**
 ```json
-{
-  "success": true,
-  "favorite": {
-    "favorited_at": "2025-02-02T...",
-    "notes": "Book the corner room with city view",
-    "osm_id": 123456789,
-    "osm_name": "Conrad New York Downtown",
-    "poi_type": "hotel",
-    "city": "New York",
-    "country_code": "US",
-    "google_rating": 4.5,
-    ...
-  }
-}
+{ "success": true }
 ```
 
 #### `remove_favorite`
@@ -389,7 +683,8 @@ List your saved favorites with optional filters. Returns full POI details.
   "count": 2,
   "favorites": [
     {
-      "favorited_at": "2025-02-02T...",
+      "is_favorite": true,
+      "favorite_since": "2025-02-02T...",
       "favorite_notes": "Great rooftop bar",
       "osm_id": 123456789,
       "osm_name": "The Standard High Line",
@@ -406,8 +701,23 @@ List your saved favorites with optional filters. Returns full POI details.
 
 **Notes:**
 - When using coordinates, results include `distance_meters` and are sorted by distance
-- When not using coordinates, results are sorted by `favorited_at` (most recent first)
+- When not using coordinates, results are sorted by `favorite_since` (most recent first)
 - Location filters (city vs coordinates) are mutually exclusive
+
+#### Favorites in Search Results
+
+When authenticated, search results include favorite status:
+
+```json
+{
+  "osm_id": 123456789,
+  "osm_name": "Hotel Example",
+  "is_favorite": true,
+  "favorite_since": "2025-02-02T...",
+  "favorite_notes": "Great location",
+  ...
+}
+```
 
 #### Error Handling
 
@@ -419,16 +729,15 @@ All favorites tools require authentication. If called without a valid token:
 }
 ```
 
-### Preferences
+### Future User Features
 
-Store user preferences in `user_config`:
+**Preferences** - Store user preferences in `user_config`:
 - `preferred_currency` - Display prices in user's currency
 - `preferred_language` - Translate results
 - `home_location` - Default search location
 - `dietary_restrictions` - Filter restaurants
 
-### Trip Planning
-
+**Trip Planning**:
 ```sql
 CREATE TABLE user_trips (
     id SERIAL PRIMARY KEY,
@@ -455,13 +764,13 @@ New MCP tools:
 - `get_trip_itinerary` - View trip plan
 - `share_trip` - Generate shareable link
 
-### Usage Analytics
-
-Track per-user statistics:
+**Usage Analytics** - Track per-user statistics:
 - API calls made
 - Most searched cities
 - Favorite cuisines
 - Travel patterns
+
+---
 
 ## Configuration Reference
 
@@ -476,8 +785,10 @@ Track per-user statistics:
 
 | Variable | Description |
 |----------|-------------|
-| `GOOGLE_CLIENT_ID` | Google OAuth client ID (Phase 2) |
-| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret (Phase 2) |
+| `GOOGLE_CLIENT_ID` | Google OAuth client ID (OAuth Worker) |
+| `GOOGLE_CLIENT_SECRET` | Google OAuth client secret (OAuth Worker) |
+
+---
 
 ## Security Considerations
 
