@@ -11,21 +11,38 @@ postgresql://[user]:[password]@[host]:5432/[database]
 
 ## Tables Overview
 
-| Table | Description |
-|-------|-------------|
-| `geonames_countries` | Country reference data from GeoNames |
-| `geonames_cities` | City data from GeoNames (150k+ cities) |
-| `osm_pois` | Points of Interest from OpenStreetMap |
-| `google_places` | Cached Google Places data |
-| `osm_google_mappings` | Links OSM POIs to Google Places |
-| `google_api_usage` | Daily API call tracking for rate limiting |
-| `app_config` | Application configuration settings |
-| `regions` | Named geographic regions (future use) |
-| `imports` | Import tracking and history |
-| `users` | User accounts |
-| `user_tokens` | API tokens for authentication |
-| `user_config` | Per-user configuration |
-| `user_favorites` | User's saved POIs |
+| Table | Description | Access Pattern |
+|-------|-------------|----------------|
+| `geonames_countries` | Country reference data from GeoNames | Read-heavy |
+| `geonames_cities` | City data from GeoNames (150k+ cities) | Read-heavy |
+| `geonames_admin1_codes` | State/province codes from GeoNames | Read-heavy |
+| `osm_pois` | Points of Interest from OpenStreetMap | Read-heavy |
+| `google_places` | Cached Google Places data | Read-heavy (lazy writes) |
+| `osm_google_mappings` | Links OSM POIs to Google Places | Read-heavy (lazy writes) |
+| `google_api_usage` | Daily API call tracking for rate limiting | Read-write |
+| `app_config` | Application configuration settings | Read-heavy |
+| `regions` | Named geographic regions (future use) | Read-heavy |
+| `imports` | Import tracking and history | Read-heavy |
+| `users` | User accounts | Read-write |
+| `user_tokens` | API tokens for authentication | Read-heavy |
+| `user_config` | Per-user configuration | Read-write |
+| `user_favorites` | User's saved POIs | Read-write |
+
+### Read-Heavy Tables (Import Data)
+
+The geographic data tables (`geonames_*`, `osm_pois`, `regions`) are **read-heavy** - they are populated via batch imports and rarely updated during normal operation. This allows for aggressive indexing strategies:
+
+- Multiple indexes per table are acceptable (no write penalty)
+- Partial indexes for common query patterns (e.g., accommodations, restaurants)
+- Trigram indexes for fuzzy text search
+- Spatial indexes (GIST) for geographic queries
+
+**Current index counts:**
+- `osm_pois`: 13 indexes (104 MB)
+- `geonames_cities`: 9 indexes (74 MB)
+- `geonames_admin1_codes`: 4 indexes
+
+Data is refreshed via periodic imports (see `src/import-*.js` scripts), not real-time updates.
 
 ## Core Tables
 
