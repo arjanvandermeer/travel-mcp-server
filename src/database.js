@@ -316,6 +316,9 @@ export class TravelDatabase {
       limit = 10,
     } = options;
 
+    // Debug logging
+    console.error(`[searchCities] query=${query}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, limit=${limit}`);
+
     const hasCoords = latitude !== null && longitude !== null;
     const hasQuery = query && query.trim().length > 0;
     const params = [];
@@ -451,6 +454,10 @@ export class TravelDatabase {
       limit = 50,
       userId = null,    // For including favorite status in results
     } = params;
+
+    // Debug logging
+    const typeDesc = poiTypes ? poiTypes.join(',') : poiType || 'all';
+    console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radius}km, types=${typeDesc}, limit=${limit}`);
 
     let query;
     let queryParams = [];
@@ -666,6 +673,10 @@ export class TravelDatabase {
   }
 
   async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50, userId = null) {
+    // Debug logging
+    const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
+    console.error(`[searchPOIsNearCoordinates] lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, types=${typeDesc}, limit=${limit}`);
+
     let query = `
       SELECT
         osm_id,
@@ -741,6 +752,9 @@ export class TravelDatabase {
   // =========================================================================
 
   async getPOIDetails(osmId = null, googlePlaceId = null, userId = null) {
+    // Debug logging
+    console.error(`[getPOIDetails] osmId=${osmId}, googlePlaceId=${googlePlaceId}, userId=${userId}`);
+
     let result;
     if (googlePlaceId) {
       // Look up by Google Places ID
@@ -1806,6 +1820,10 @@ export class TravelDatabase {
       poiTypes,
       limit = 100,
     } = options;
+
+    // Debug logging
+    const typeDesc = poiTypes ? poiTypes.join(',') : 'all';
+    console.error(`[listFavorites] userId=${userId}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, types=${typeDesc}, limit=${limit}`);
 
     const conditions = ['f.user_id = $1'];
     const params = [userId];
