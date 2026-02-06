@@ -5,11 +5,23 @@
  * Note: API request methods are tested via integration tests with mocks.
  */
 
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { GooglePlacesClient } from '../../src/google-places.js';
 
 describe('GooglePlacesClient', () => {
+  // Suppress console.warn during tests that intentionally test disabled clients
+  let originalWarn;
+
+  beforeEach(() => {
+    originalWarn = console.warn;
+    console.warn = () => {};
+  });
+
+  afterEach(() => {
+    console.warn = originalWarn;
+  });
+
   describe('constructor', () => {
     it('should be disabled when no API key provided', () => {
       const client = new GooglePlacesClient(null, true);

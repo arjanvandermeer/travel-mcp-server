@@ -18,6 +18,9 @@ describe('TravelDatabase with Mock Pool', () => {
   beforeEach(() => {
     // Create fresh mock for each test
     mockPool = createMockDatabase({}, { throwOnUnmatched: false });
+    // Mock Google Places config with fake key to suppress warnings
+    mockPool.setResponse('google_places_api_key', dbResult([{ value: 'test-fake-api-key' }]));
+    mockPool.setResponse('google_places_enabled', dbResult([{ value: 'true' }]));
   });
 
   describe('constructor', () => {
