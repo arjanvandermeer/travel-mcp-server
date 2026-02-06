@@ -27,54 +27,12 @@ import pg from 'pg';
 import parseOSM from 'osm-pbf-parser';
 import through2 from 'through2';
 import * as telemetry from './telemetry.js';
+import { matchPOIType, extractPOIData, shouldFilterPOI } from './lib/osm-mappings.js';
+import { parseImportArgs } from './lib/arg-parsers.js';
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
 
-// POI type mappings: OSM tag -> our poi_type
-const POI_MAPPINGS = {
-  // Accommodation
-  'tourism=hotel': 'hotel',
-  'tourism=hostel': 'hostel',
-  'tourism=guest_house': 'guest_house',
-  'tourism=motel': 'motel',
-
-  // Tourism
-  'tourism=attraction': 'attraction',
-  'tourism=museum': 'museum',
-  'tourism=viewpoint': 'viewpoint',
-  'tourism=artwork': 'artwork',
-  'tourism=gallery': 'gallery',
-  'tourism=theme_park': 'theme_park',
-  'tourism=zoo': 'zoo',
-
-  // Food & Drink
-  'amenity=restaurant': 'restaurant',
-  'amenity=cafe': 'cafe',
-  'amenity=bar': 'bar',
-  'amenity=pub': 'pub',
-  'amenity=fast_food': 'fast_food',
-  'amenity=food_court': 'food_court',
-
-  // Historic
-  'historic=monument': 'monument',
-  'historic=memorial': 'memorial',
-  'historic=castle': 'castle',
-  'historic=ruins': 'ruins',
-  'historic=archaeological_site': 'archaeological_site',
-
-  // Places of worship
-  'amenity=place_of_worship': 'place_of_worship',
-
-  // Entertainment
-  'amenity=cinema': 'cinema',
-  'amenity=theatre': 'theatre',
-  'amenity=nightclub': 'nightclub',
-
-  // Shopping
-  'shop=mall': 'shopping_mall',
-  'shop=department_store': 'department_store',
-  'shop=supermarket': 'supermarket',
-};
+// POI_MAPPINGS is now imported from './lib/osm-mappings.js'
 
 /**
  * Look up import source from database by keyword
@@ -683,8 +641,8 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName, importId) {
       };
 
       const poi = extractPOIData(wayItem, way.matchedType, regionName);
-      // Skip POIs without a valid name
-      if (!poi.name || poi.name.trim() === '' || poi.name.toLowerCase() === 'unknown') {
+      // Skip POIs without a valid name (uses extracted pure function)
+      if (shouldFilterPOI(poi)) {
         continue;
       }
       pois.push(poi);
@@ -718,8 +676,8 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName, importId) {
               const matchedType = matchPOIType(item.tags, poiType);
               if (matchedType) {
                 const poi = extractPOIData(item, matchedType, regionName);
-                // Skip POIs without a valid name
-                if (!poi.name || poi.name.trim() === '' || poi.name.toLowerCase() === 'unknown') {
+                // Skip POIs without a valid name (uses extracted pure function)
+                if (shouldFilterPOI(poi)) {
                   continue;
                 }
                 pois.push(poi);
@@ -761,89 +719,7 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName, importId) {
   return processed;
 }
 
-function matchPOIType(tags, requestedType) {
-  // Match against all POI types if 'all' is requested
-  if (requestedType === 'all') {
-    for (const [osmTag, poiType] of Object.entries(POI_MAPPINGS)) {
-      if (evaluatePOICondition(tags, osmTag)) {
-        return poiType;
-      }
-    }
-    return null;
-  }
-
-  // Match specific type - find the mapping for this POI type
-  for (const [osmTag, poiType] of Object.entries(POI_MAPPINGS)) {
-    if (poiType === requestedType && evaluatePOICondition(tags, osmTag)) {
-      return poiType;
-    }
-  }
-
-  return null;
-}
-
-function evaluatePOICondition(tags, osmTag) {
-  // Parse osmTag like "tourism=hotel" or "amenity=cafe"
-  const [key, value] = osmTag.split('=');
-  return tags[key] === value;
-}
-
-function extractPOIData(item, poiType, regionName) {
-  const tags = item.tags || {};
-
-  // Helper to truncate long strings
-  const truncate = (str, maxLen) => str && str.length > maxLen ? str.substring(0, maxLen) : str;
-
-  // Build address from components
-  const addressParts = [];
-  if (tags['addr:housenumber']) addressParts.push(tags['addr:housenumber']);
-  if (tags['addr:street']) addressParts.push(tags['addr:street']);
-  if (tags['addr:city']) addressParts.push(tags['addr:city']);
-  if (tags['addr:postcode']) addressParts.push(tags['addr:postcode']);
-  if (tags['addr:country']) addressParts.push(tags['addr:country']);
-  const address = addressParts.length > 0 ? truncate(addressParts.join(', '), 500) : null;
-
-  // Extract star rating (various formats in OSM)
-  let stars = tags.stars || tags['stars:DEHOGA'] || null;
-  if (stars) {
-    // Normalize to just the number
-    stars = stars.replace(/[^0-9]/g, '');
-    if (stars && parseInt(stars) > 0 && parseInt(stars) <= 5) {
-      stars = stars;
-    } else {
-      stars = null;
-    }
-  }
-
-  // Extract room/bed counts (validate they're actual numbers within reasonable range)
-  // Max 100000 to avoid INTEGER overflow and filter bad OSM data
-  let rooms = tags.rooms ? parseInt(tags.rooms) : null;
-  if (rooms !== null && (isNaN(rooms) || rooms < 0 || rooms > 100000)) rooms = null;
-
-  let beds = tags.beds ? parseInt(tags.beds) : null;
-  if (beds !== null && (isNaN(beds) || beds < 0 || beds > 100000)) beds = null;
-
-  return {
-    osm_id: item.id,
-    osm_type: item.type || 'node',
-    poi_type: poiType,
-    name: truncate(tags.name, 500),
-    latitude: item.lat,
-    longitude: item.lon,
-    address,
-    phone: truncate(tags.phone || tags['contact:phone'], 100),
-    email: truncate(tags.email || tags['contact:email'], 200),
-    website: truncate(tags.website || tags['contact:website'] || tags.url, 500),
-    opening_hours: truncate(tags.opening_hours, 500),
-    cuisine: truncate(tags.cuisine, 200),
-    wheelchair: truncate(tags.wheelchair, 20),
-    stars: stars ? parseInt(stars) : null,
-    rooms,
-    beds,
-    source_region: regionName,
-    osm_tags: tags, // Store all tags as JSONB
-  };
-}
+// matchPOIType, extractPOIData, and shouldFilterPOI are now imported from './lib/osm-mappings.js'
 
 async function insertBatch(pool, pois) {
   if (pois.length === 0) return;
@@ -933,10 +809,9 @@ async function insertBatch(pool, pois) {
   }
 }
 
-// Run if called directly
+// Run if called directly (uses extracted pure function for arg parsing)
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const input = process.argv[2];
-  const poiType = process.argv[3] || 'all';
+  const { input, poiType } = parseImportArgs(process.argv.slice(2));
 
   if (!input) {
     console.log('Usage: node src/import-osm-pbf.js <keyword-or-file> [poi-type]');

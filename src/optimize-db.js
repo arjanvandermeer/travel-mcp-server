@@ -29,6 +29,7 @@
 
 import pg from 'pg';
 import * as telemetry from './telemetry.js';
+import { parseOptimizeArgs } from './lib/arg-parsers.js';
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
 
@@ -44,27 +45,13 @@ const TABLES_TO_OPTIMIZE = [
   'import_sources',
 ];
 
-// Parse command line arguments
+// Parse command line arguments (uses extracted pure function)
 function parseArgs() {
-  const args = process.argv.slice(2);
-  const options = {
-    full: false,
-    reindex: false,
-    table: null,
-    dryRun: false,
-  };
+  const options = parseOptimizeArgs(process.argv.slice(2));
 
-  for (const arg of args) {
-    if (arg === '--full') {
-      options.full = true;
-    } else if (arg === '--reindex') {
-      options.reindex = true;
-    } else if (arg === '--dry-run') {
-      options.dryRun = true;
-    } else if (arg.startsWith('--table=')) {
-      options.table = arg.split('=')[1];
-    } else if (arg === '--help' || arg === '-h') {
-      console.log(`
+  // Handle help flag - show usage and exit
+  if (options.help) {
+    console.log(`
 Database Optimization Script
 
 Runs maintenance tasks to optimize database performance after imports.
@@ -85,8 +72,7 @@ Examples:
   node src/optimize-db.js --table=osm_pois   # Only optimize osm_pois
   node src/optimize-db.js --reindex          # Also rebuild indexes
 `);
-      process.exit(0);
-    }
+    process.exit(0);
   }
 
   return options;

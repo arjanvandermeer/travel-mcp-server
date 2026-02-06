@@ -31,39 +31,20 @@ import { spawn, spawnSync } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as telemetry from './telemetry.js';
+import { parseRefreshArgs } from './lib/arg-parsers.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
 
-// Parse command line arguments
+// Parse command line arguments (uses extracted pure function)
 function parseArgs() {
-  const args = process.argv.slice(2);
-  const options = {
-    dryRun: false,
-    max: null,
-    region: null,
-    force: false,
-    list: false,
-    optimize: false,
-  };
+  const options = parseRefreshArgs(process.argv.slice(2));
 
-  for (const arg of args) {
-    if (arg === '--dry-run') {
-      options.dryRun = true;
-    } else if (arg === '--force') {
-      options.force = true;
-    } else if (arg === '--list') {
-      options.list = true;
-    } else if (arg === '--optimize') {
-      options.optimize = true;
-    } else if (arg.startsWith('--max=')) {
-      options.max = parseInt(arg.split('=')[1], 10);
-    } else if (arg.startsWith('--region=')) {
-      options.region = arg.split('=')[1];
-    } else if (arg === '--help' || arg === '-h') {
-      console.log(`
+  // Handle help flag - show usage and exit
+  if (options.help) {
+    console.log(`
 Refresh stale imports based on refresh_interval_days
 
 Usage:
@@ -85,8 +66,7 @@ Examples:
   node src/refresh-imports.js --list
   node src/refresh-imports.js --optimize   # Refresh and optimize
 `);
-      process.exit(0);
-    }
+    process.exit(0);
   }
 
   return options;

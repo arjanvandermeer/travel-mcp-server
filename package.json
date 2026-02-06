@@ -17,7 +17,12 @@
     "db:import": "node src/import-osm-pbf.js",
     "db:refresh": "node src/refresh-imports.js",
     "db:optimize": "node src/optimize-db.js",
-    "test": "node tests/test-bangkok-postgres.js",
+    "test": "node --test 'tests/unit/**/*.test.js' 'tests/integration/**/*.test.js'",
+    "test:unit": "node --test 'tests/unit/**/*.test.js'",
+    "test:integration": "node --test 'tests/integration/**/*.test.js'",
+    "test:watch": "node --test --watch 'tests/**/*.test.js'",
+    "test:coverage": "node --test --experimental-test-coverage 'tests/unit/**/*.test.js' 'tests/integration/**/*.test.js'",
+    "test:legacy": "node tests/test-bangkok-postgres.js",
     "config": "node scripts/manage-config.js"
   },
   "keywords": [
