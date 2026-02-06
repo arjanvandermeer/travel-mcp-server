@@ -14,6 +14,9 @@
     "inspect:watch": "nodemon --exec 'npx @modelcontextprotocol/inspector' node src/index.js",
    "db:init": "node src/init.js",
     "db:import-geonames": "node src/import-geonames-postgres.js",
+    "db:import": "node src/import-osm-pbf.js",
+    "db:refresh": "node src/refresh-imports.js",
+    "db:optimize": "node src/optimize-db.js",
     "test": "node tests/test-bangkok-postgres.js",
     "config": "node scripts/manage-config.js"
   },
