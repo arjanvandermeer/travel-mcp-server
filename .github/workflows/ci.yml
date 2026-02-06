@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run unit tests
+        run: npm run test:unit
+
+      - name: Run integration tests
+        run: npm run test:integration
+
+      - name: Run tests with coverage
+        run: npm run test:coverage
+
+      # Future: Add coverage threshold enforcement
+      # - name: Check coverage threshold
+      #   run: |
+      #     # Parse coverage output and fail if below 80%
+      #     # npm run test:coverage | grep "all files" | awk '{if ($NF < 80) exit 1}'
