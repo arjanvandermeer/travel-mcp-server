@@ -46,8 +46,9 @@ describe('TravelDatabase POI Search Functions', () => {
     mockPool = createMockDatabase({}, { throwOnUnmatched: false });
     // Mock getServerBaseUrl
     mockPool.setResponse('server_base_url', dbResult([{ value: 'https://example.com' }]));
-    // Mock Google Places init (returns null key)
-    mockPool.setResponse('google_places_api_key', emptyResult());
+    // Mock Google Places config with fake key to suppress warnings
+    mockPool.setResponse('google_places_api_key', dbResult([{ value: 'test-fake-api-key' }]));
+    mockPool.setResponse('google_places_enabled', dbResult([{ value: 'true' }]));
   });
 
   describe('searchPOIs', () => {
