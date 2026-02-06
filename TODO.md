@@ -364,29 +364,37 @@ Already implemented:
 - [ ] Add route planning capabilities
 - [ ] Wikidata enrichment (images, descriptions, etc.)
 
-### Testing Infrastructure
-- [ ] Choose and set up testing framework (Vitest or Jest recommended)
-- [ ] Add npm script for running tests (`npm test`)
-- [ ] Set up test database (PostgreSQL with PostGIS for integration tests)
-- [ ] Add unit tests for database.js methods:
-  - [ ] `searchCities()`, `getCitiesNearCoordinates()`, `getCitiesInPolygon()`
-  - [ ] `searchPOIs()`, `searchPOIsNearCoordinates()`
-  - [ ] `enrichOSMPOI()`, `upsertGooglePlace()`
-  - [ ] Validation functions
-- [ ] Add unit tests for google-places.js:
-  - [ ] Mock Google Places API responses
-  - [ ] Test `findMatchingPlace()` logic
-  - [ ] Test `enrichPOI()` transformation
-- [ ] Add integration tests:
-  - [ ] Test MCP tool handlers
-  - [ ] Test end-to-end search flows
-  - [ ] Test OSM import parsing
-  - [ ] Test GeoNames import parsing
-- [ ] Add test coverage reporting (c8 or nyc)
-- [ ] Add performance benchmarks for spatial queries
-- [ ] Set up CI/CD to run tests automatically
+### ~~Testing Infrastructure~~ COMPLETED 2026-02-06
 
-**Current State**: Only 3 test files exist, no test framework configured
+**Current State**: 127 tests passing (104 unit + 23 integration)
+
+Completed:
+- [x] Node.js built-in test runner (`node --test`) - no external framework needed
+- [x] Test scripts: `npm test`, `npm run test:unit`, `npm run test:integration`
+- [x] Mock database with dependency injection for testing without PostgreSQL
+- [x] Pure function extraction (`src/lib/arg-parsers.js`, `src/lib/osm-mappings.js`)
+- [x] Integration tests for TravelDatabase with mock pool injection
+- [x] Test coverage reporting (`npm run test:coverage`)
+- [x] CI/CD integration - tests run before deployment in GitHub Actions
+
+Remaining (Phase 8 - Coverage Improvement):
+- [ ] **Target: 80% line coverage** (aspiration)
+- [ ] Add tests for `src/database.js` search functions (searchPOIs, searchPOIsNearCoordinates)
+- [ ] Add tests for `src/database.js` POI detail functions (getPOIDetails, getRandomPOI)
+- [ ] Add tests for `src/database.js` Google enrichment (enrichOSMPOI, upsertGooglePlace)
+- [ ] Add tests for `src/google-places.js` API functions
+- [ ] Add tests for `src/tools-config.js` MCP tool handlers
+- [ ] Add coverage threshold enforcement to CI (fail if < 80%)
+
+**Current Coverage**: ~50% overall
+| File | Coverage |
+|------|----------|
+| src/lib/arg-parsers.js | 100% |
+| src/lib/osm-mappings.js | 100% |
+| src/database.js | ~35% |
+| src/google-places.js | ~15% |
+
+**Documentation**: See [doc/unit-testing.md](doc/unit-testing.md)
 
 **Impact**: Low - quality assurance (important but not blocking)
 

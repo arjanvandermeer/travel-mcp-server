@@ -108,6 +108,17 @@ We're implementing unit testing with dependency injection across the codebase. T
 - [x] Add test step to `.github/workflows/deploy.yml`
 - [x] Configure test to block deploy on failure
 
+### Phase 8: Coverage Improvement (Future)
+
+**Goal: 80% line coverage**
+
+- [ ] Add tests for `src/database.js` search functions (searchPOIs, searchPOIsNearCoordinates)
+- [ ] Add tests for `src/database.js` POI detail functions (getPOIDetails, getRandomPOI)
+- [ ] Add tests for `src/database.js` Google enrichment (enrichOSMPOI, upsertGooglePlace)
+- [ ] Add tests for `src/google-places.js` API functions
+- [ ] Add tests for `src/tools-config.js` MCP tool handlers
+- [ ] Add coverage threshold enforcement to CI (fail if < 80%)
+
 ---
 
 ## Files to Refactor
@@ -230,6 +241,19 @@ This outputs a coverage summary showing:
 - **Line coverage**: % of code lines executed
 - **Branch coverage**: % of conditional branches taken
 - **Function coverage**: % of functions called
+
+### Coverage Goals
+
+**Target: 80% line coverage** (aspiration)
+
+| File | Current | Target | Notes |
+|------|---------|--------|-------|
+| src/lib/arg-parsers.js | 100% | 100% | Complete |
+| src/lib/osm-mappings.js | 100% | 100% | Complete |
+| src/database.js | 35% | 80% | Core search/POI functions need tests |
+| src/google-places.js | 15% | 80% | API integration functions |
+| tests/mocks/db-mock.js | 96% | 100% | Near complete |
+| **Overall** | **50%** | **80%** | Need ~150 more tests |
 
 Coverage reports are generated to stdout. For CI integration, the coverage data can be parsed from the output.
 
