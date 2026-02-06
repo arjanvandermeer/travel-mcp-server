@@ -3,28 +3,30 @@
 /**
  * Import OSM POI data from PBF files into PostgreSQL
  *
- * This script:
- * 1. Parses OSM PBF files (binary format)
- * 2. Filters for POIs: tourism=hotel, tourism=restaurant, etc.
- * 3. Extracts metadata (name, address, stars, phone, website)
- * 4. Inserts into PostgreSQL with PostGIS geometries
+ * This script supports two modes:
+ * 1. Keyword mode: Looks up source URL from database, downloads, imports, and cleans up
+ * 2. File mode: Imports from an existing local PBF file
  *
  * Usage:
- *   node src/import-osm-pbf.js <pbf-file> [poi-type]
+ *   node src/import-osm-pbf.js <keyword-or-file> [poi-type]
  *
  * Examples:
- *   node src/import-osm-pbf.js thailand-latest.osm.pbf hotel
- *   node src/import-osm-pbf.js thailand-latest.osm.pbf  (imports all hotels)
+ *   node src/import-osm-pbf.js france all          # Downloads and imports France
+ *   node src/import-osm-pbf.js thailand            # Downloads and imports Thailand (all POIs)
+ *   node src/import-osm-pbf.js local-file.osm.pbf  # Imports from local file
  *
- * Download PBF files from:
- *   https://download.geofabrik.de/
+ * The import_sources table contains keyword-to-URL mappings.
+ * Run: psql $DATABASE_URL < data/migrations/001_import_sources.sql
  */
 
 import fs from 'fs';
 import path from 'path';
+import https from 'https';
+import http from 'http';
 import pg from 'pg';
 import parseOSM from 'osm-pbf-parser';
 import through2 from 'through2';
+import * as telemetry from './telemetry.js';
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
 
@@ -74,118 +76,101 @@ const POI_MAPPINGS = {
   'shop=supermarket': 'supermarket',
 };
 
-// Geofabrik region mappings for deriving source URLs
-const GEOFABRIK_REGIONS = {
-  // Continents / Major Regions
-  'europe': 'europe',
-  'asia': 'asia',
-  'africa': 'africa',
-  'north-america': 'north-america',
-  'south-america': 'south-america',
-  'central-america': 'central-america',
-  'australia-oceania': 'australia-oceania',
-  'russia': 'russia',
-
-  // Asia
-  'thailand': 'asia/thailand',
-  'vietnam': 'asia/vietnam',
-  'cambodia': 'asia/cambodia',
-  'laos': 'asia/laos',
-  'myanmar': 'asia/myanmar',
-  'malaysia-singapore-brunei': 'asia/malaysia-singapore-brunei',
-  'indonesia': 'asia/indonesia',
-  'philippines': 'asia/philippines',
-  'japan': 'asia/japan',
-  'south-korea': 'asia/south-korea',
-  'china': 'asia/china',
-  'india': 'asia/india',
-  'nepal': 'asia/nepal',
-  'taiwan': 'asia/taiwan',
-  'hong-kong': 'asia/china', // Part of China extract
-  'singapore': 'asia/malaysia-singapore-brunei',
-  'sri-lanka': 'asia/sri-lanka',
-  'bangladesh': 'asia/bangladesh',
-  'pakistan': 'asia/pakistan',
-
-  // Europe
-  'germany': 'europe/germany',
-  'france': 'europe/france',
-  'italy': 'europe/italy',
-  'spain': 'europe/spain',
-  'great-britain': 'europe/great-britain',
-  'united-kingdom': 'europe/great-britain',
-  'netherlands': 'europe/netherlands',
-  'belgium': 'europe/belgium',
-  'switzerland': 'europe/switzerland',
-  'austria': 'europe/austria',
-  'poland': 'europe/poland',
-  'czech-republic': 'europe/czech-republic',
-  'greece': 'europe/greece',
-  'portugal': 'europe/portugal',
-  'ireland-and-northern-ireland': 'europe/ireland-and-northern-ireland',
-  'ireland': 'europe/ireland-and-northern-ireland',
-  'sweden': 'europe/sweden',
-  'norway': 'europe/norway',
-  'finland': 'europe/finland',
-  'denmark': 'europe/denmark',
-  'hungary': 'europe/hungary',
-  'romania': 'europe/romania',
-  'croatia': 'europe/croatia',
-  'turkey': 'europe/turkey',
-
-  // Americas
-  'us': 'north-america/us',
-  'usa': 'north-america/us',
-  'united-states': 'north-america/us',
-  'canada': 'north-america/canada',
-  'mexico': 'north-america/mexico',
-  'brazil': 'south-america/brazil',
-  'argentina': 'south-america/argentina',
-  'chile': 'south-america/chile',
-  'colombia': 'south-america/colombia',
-  'peru': 'south-america/peru',
-
-  // Oceania
-  'australia': 'australia-oceania/australia',
-  'new-zealand': 'australia-oceania/new-zealand',
-
-  // Africa
-  'south-africa': 'africa/south-africa',
-  'egypt': 'africa/egypt',
-  'morocco': 'africa/morocco',
-  'kenya': 'africa/kenya',
-  'tanzania': 'africa/tanzania',
-  'ethiopia': 'africa/ethiopia',
-  'nigeria': 'africa/nigeria',
-};
-
 /**
- * Derive Geofabrik download URL from region name
- * @param {string} regionName - e.g., 'thailand-latest' or 'thailand'
- * @returns {string|null} - Full URL or null if unknown region
+ * Look up import source from database by keyword
+ * @param {pg.Pool} pool - PostgreSQL pool
+ * @param {string} keyword - e.g., 'france', 'thailand'
+ * @returns {Object|null} - Import source record or null
  */
-function deriveGeofabrikUrl(regionName) {
-  // Remove '-latest' suffix if present
-  const baseName = regionName.replace(/-latest$/, '');
-
-  // Check if we have a mapping for this region
-  const regionPath = GEOFABRIK_REGIONS[baseName];
-  if (regionPath) {
-    return `https://download.geofabrik.de/${regionPath}-latest.osm.pbf`;
-  }
-
-  // Try to guess based on common patterns
-  // If it looks like a country name, try to find it
-  return null;
+async function lookupImportSource(pool, keyword) {
+  const result = await pool.query(
+    'SELECT * FROM import_sources WHERE keyword = $1 AND enabled = true',
+    [keyword.toLowerCase()]
+  );
+  return result.rows[0] || null;
 }
 
 /**
- * Clean up stale imports that have been 'running' for more than 24 hours
+ * Download a file from URL with progress display
+ * @param {string} url - URL to download from
+ * @param {string} destPath - Local path to save file
+ * @returns {Promise<void>}
+ */
+async function downloadFile(url, destPath) {
+  return new Promise((resolve, reject) => {
+    console.log(`📥 Downloading from: ${url}`);
+    console.log(`   Saving to: ${destPath}`);
+
+    const protocol = url.startsWith('https') ? https : http;
+    const file = fs.createWriteStream(destPath);
+
+    const request = protocol.get(url, (response) => {
+      // Handle redirects
+      if (response.statusCode === 301 || response.statusCode === 302) {
+        file.close();
+        fs.unlinkSync(destPath);
+        console.log(`   Following redirect to: ${response.headers.location}`);
+        downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
+        return;
+      }
+
+      if (response.statusCode !== 200) {
+        file.close();
+        fs.unlinkSync(destPath);
+        reject(new Error(`Download failed with status ${response.statusCode}`));
+        return;
+      }
+
+      const totalBytes = parseInt(response.headers['content-length'], 10);
+      let downloadedBytes = 0;
+      let lastPercent = 0;
+
+      response.on('data', (chunk) => {
+        downloadedBytes += chunk.length;
+        if (totalBytes) {
+          const percent = Math.floor((downloadedBytes / totalBytes) * 100);
+          if (percent >= lastPercent + 5) {
+            const mb = (downloadedBytes / 1024 / 1024).toFixed(1);
+            const totalMb = (totalBytes / 1024 / 1024).toFixed(1);
+            process.stdout.write(`\r   Progress: ${percent}% (${mb}/${totalMb} MB)`);
+            lastPercent = percent;
+          }
+        }
+      });
+
+      response.pipe(file);
+
+      file.on('finish', () => {
+        file.close();
+        console.log('\n   ✓ Download complete\n');
+        resolve();
+      });
+    });
+
+    request.on('error', (err) => {
+      file.close();
+      fs.unlinkSync(destPath);
+      reject(err);
+    });
+
+    file.on('error', (err) => {
+      file.close();
+      fs.unlinkSync(destPath);
+      reject(err);
+    });
+  });
+}
+
+/**
+ * Clean up stale imports:
+ * - 'running' for more than 24 hours (crashed/interrupted)
+ * - 'aborted' for more than 1 hour (never picked up the abort signal)
  * @param {pg.Pool} pool - PostgreSQL pool
  */
 async function cleanupStaleImports(pool) {
-  const result = await pool.query(`
-    UPDATE imports
+  // Clean up stale 'running' jobs (> 24 hours)
+  const runningResult = await pool.query(`
+    UPDATE import_log
     SET status = 'failed',
         completed_at = CURRENT_TIMESTAMP,
         error_message = 'Job running longer than 24 hours - likely interrupted or crashed'
@@ -194,44 +179,106 @@ async function cleanupStaleImports(pool) {
     RETURNING id, import_type, started_at
   `);
 
-  if (result.rowCount > 0) {
-    console.log(`⚠️  Cleaned up ${result.rowCount} stale import(s):`);
-    for (const row of result.rows) {
+  if (runningResult.rowCount > 0) {
+    console.log(`⚠️  Cleaned up ${runningResult.rowCount} stale running import(s):`);
+    for (const row of runningResult.rows) {
+      console.log(`   - Import #${row.id} (${row.import_type}) started at ${row.started_at}`);
+    }
+    console.log('');
+  }
+
+  // Clean up stale 'aborted' jobs (> 1 hour - never responded to abort)
+  const abortedResult = await pool.query(`
+    UPDATE import_log
+    SET status = 'failed',
+        completed_at = CURRENT_TIMESTAMP,
+        error_message = 'Aborted import, cancelled after inactivity'
+    WHERE status = 'aborted'
+      AND started_at < CURRENT_TIMESTAMP - INTERVAL '1 hour'
+    RETURNING id, import_type, started_at
+  `);
+
+  if (abortedResult.rowCount > 0) {
+    console.log(`⚠️  Cleaned up ${abortedResult.rowCount} stale aborted import(s):`);
+    for (const row of abortedResult.rows) {
       console.log(`   - Import #${row.id} (${row.import_type}) started at ${row.started_at}`);
     }
     console.log('');
   }
 }
 
-async function importPBF(pbfPath, poiType = 'hotel') {
-  if (!fs.existsSync(pbfPath)) {
-    console.error('❌ PBF file not found:', pbfPath);
-    console.log('\nDownload PBF files from: https://download.geofabrik.de/');
-    console.log('Example for Thailand: https://download.geofabrik.de/asia/thailand-latest.osm.pbf');
-    process.exit(1);
+/**
+ * Abort any existing running imports for the same region
+ * @param {pg.Pool} pool - PostgreSQL pool
+ * @param {string} regionName - Region being imported
+ * @returns {number} - Number of imports aborted
+ */
+async function abortExistingImports(pool, regionName) {
+  const result = await pool.query(`
+    UPDATE import_log
+    SET status = 'aborted',
+        completed_at = CURRENT_TIMESTAMP,
+        error_message = 'Aborted by new import for same region'
+    WHERE status = 'running'
+      AND region_name = $1
+    RETURNING id, started_at
+  `, [regionName]);
+
+  if (result.rowCount > 0) {
+    console.log(`⚠️  Aborted ${result.rowCount} existing import(s) for ${regionName}:`);
+    for (const row of result.rows) {
+      console.log(`   - Import #${row.id} started at ${row.started_at}`);
+    }
+    console.log('');
   }
 
-  const regionName = path.basename(pbfPath, '.osm.pbf');
-  const sourceFile = path.basename(pbfPath);
+  return result.rowCount;
+}
 
-  // Get file stats for source_date
-  const fileStats = fs.statSync(pbfPath);
-  const sourceDate = fileStats.mtime; // Use modification time as source date
+/**
+ * Check if import is still running (hasn't been aborted by another job)
+ * @param {pg.Pool} pool - PostgreSQL pool
+ * @param {number} importId - Our import ID
+ * @returns {boolean} - true if still running, false if aborted
+ */
+async function checkImportStillRunning(pool, importId) {
+  const result = await pool.query(
+    'SELECT status FROM import_log WHERE id = $1',
+    [importId]
+  );
+  return result.rows[0]?.status === 'running';
+}
 
-  // Derive source URL from Geofabrik pattern (common download source)
-  // e.g., thailand-latest.osm.pbf -> https://download.geofabrik.de/asia/thailand-latest.osm.pbf
-  const sourceUrl = deriveGeofabrikUrl(regionName);
+/**
+ * Custom error for when import is aborted by another job
+ */
+class ImportAbortedError extends Error {
+  constructor(importId) {
+    super(`Import #${importId} was aborted by another job`);
+    this.name = 'ImportAbortedError';
+    this.importId = importId;
+  }
+}
 
-  console.log(`Starting import from: ${pbfPath}`);
-  console.log(`Region: ${regionName}`);
-  console.log(`POI Type: ${poiType}`);
-  console.log(`Source URL: ${sourceUrl || 'unknown'}`);
-  console.log(`Source Date: ${sourceDate.toISOString().split('T')[0]}`);
-  console.log('');
-
-  // Connect to PostgreSQL
+/**
+ * Main import function - handles both keyword and file-based imports
+ * @param {string} input - Either a keyword (e.g., 'france') or file path
+ * @param {string} poiType - Type of POIs to import ('all', 'hotel', etc.)
+ */
+async function importOSM(input, poiType = 'all') {
   const pool = new pg.Pool({ connectionString: PG_CONNECTION });
-  let importId = null;
+  let pbfPath = null;
+  let shouldDeleteFile = false;
+  let importSourceId = null;
+  let sourceUrl = null;
+  let regionName = null;
+  const importStartTime = Date.now();
+
+  // Initialize telemetry
+  await telemetry.initTelemetry();
+  const transaction = telemetry.startTransaction('osm.import', 'import');
+  transaction.setTag('poi_type', poiType);
+  transaction.setTag('input', input);
 
   try {
     // Test connection
@@ -239,137 +286,297 @@ async function importPBF(pbfPath, poiType = 'hotel') {
     console.log('✓ Connected to PostgreSQL');
     client.release();
 
+    // Determine if input is a file or keyword
+    const isFile = input.endsWith('.osm.pbf') || input.endsWith('.pbf') || fs.existsSync(input);
+
+    if (isFile) {
+      // File mode - use local file
+      if (!fs.existsSync(input)) {
+        console.error(`❌ File not found: ${input}`);
+        process.exit(1);
+      }
+      pbfPath = input;
+      regionName = path.basename(pbfPath, '.osm.pbf').replace(/-latest$/, '');
+
+      // Try to find matching import source for metadata
+      const source = await lookupImportSource(pool, regionName);
+      if (source) {
+        importSourceId = source.id;
+        sourceUrl = source.source_url;
+      }
+    } else {
+      // Keyword mode - look up and download
+      const source = await lookupImportSource(pool, input);
+
+      if (!source) {
+        console.error(`❌ Unknown keyword: "${input}"`);
+        console.error('\nAvailable keywords:');
+        const available = await pool.query(
+          'SELECT keyword, display_name FROM import_sources WHERE enabled = true ORDER BY keyword'
+        );
+        for (const row of available.rows) {
+          console.error(`  - ${row.keyword} (${row.display_name})`);
+        }
+        process.exit(1);
+      }
+
+      importSourceId = source.id;
+      sourceUrl = source.source_url;
+      regionName = source.keyword;
+      transaction.setTag('region', regionName);
+
+      // Download the file with telemetry tracking
+      const filename = `${source.keyword}-latest.osm.pbf`;
+      pbfPath = path.join(process.cwd(), filename);
+
+      const downloadSpan = transaction.startChild('http', `Download ${regionName}`);
+      await downloadFile(source.source_url, pbfPath);
+      downloadSpan.finish();
+
+      // Record file size
+      const fileSize = fs.statSync(pbfPath).size;
+      telemetry.recordDistribution('osm.download.size', fileSize, { tags: { region: regionName }, unit: 'byte' });
+
+      shouldDeleteFile = true;
+    }
+
+    // Get file stats for source_date
+    const fileStats = fs.statSync(pbfPath);
+    const sourceDate = fileStats.mtime;
+    const sourceFile = path.basename(pbfPath);
+
+    console.log(`Starting import from: ${pbfPath}`);
+    console.log(`Region: ${regionName}`);
+    console.log(`POI Type: ${poiType}`);
+    console.log(`Source URL: ${sourceUrl || 'local file'}`);
+    console.log(`Source Date: ${sourceDate.toISOString().split('T')[0]}`);
+    console.log('');
+
     // Clean up stale imports (running > 24 hours)
     await cleanupStaleImports(pool);
 
-    // Record import start
+    // Abort any existing running imports for the same region
+    await abortExistingImports(pool, regionName);
+
+    // Record import start in import_log
     const importResult = await pool.query(`
-      INSERT INTO imports (import_type, source_file, source_url, source_date, region_name, status, started_at)
+      INSERT INTO import_log (import_type, source_file, source_url, source_date, region_name, status, started_at)
       VALUES ($1, $2, $3, $4, $5, 'running', CURRENT_TIMESTAMP)
       RETURNING id
     `, [`osm_${poiType}`, sourceFile, sourceUrl, sourceDate, regionName]);
-    importId = importResult.rows[0].id;
+    const importId = importResult.rows[0].id;
 
-    // Parse PBF and import
-    const recordsImported = await parsePBFFile(pbfPath, pool, poiType, regionName);
+    try {
+      // Parse PBF and import
+      const recordsImported = await parsePBFFile(pbfPath, pool, poiType, regionName, importId);
 
-    // Check if any records were imported
-    if (recordsImported === 0) {
-      await pool.query(`
-        UPDATE imports
-        SET status = 'failed',
-            completed_at = CURRENT_TIMESTAMP,
-            records_imported = 0,
-            error_message = $1
-        WHERE id = $2
-      `, [`No ${poiType} POIs found in ${sourceFile}. The file may not contain data for the requested POI type, or all POIs were filtered out (e.g., missing names).`, importId]);
+      // Check if any records were imported
+      if (recordsImported === 0) {
+        await pool.query(`
+          UPDATE import_log
+          SET status = 'failed',
+              completed_at = CURRENT_TIMESTAMP,
+              records_imported = 0,
+              error_message = $1
+          WHERE id = $2
+        `, [`No ${poiType} POIs found in ${sourceFile}. The file may not contain data for the requested POI type, or all POIs were filtered out (e.g., missing names).`, importId]);
 
-      console.log(`\n⚠️  Import completed but found 0 ${poiType} POIs`);
-      console.log('   This may indicate:');
-      console.log('   - The PBF file doesn\'t contain data for this POI type');
-      console.log('   - All POIs were filtered out (missing required name field)');
-      console.log('   - Wrong POI type specified');
-    } else {
-      // Record import completion
-      await pool.query(`
-        UPDATE imports
-        SET status = 'completed',
-            completed_at = CURRENT_TIMESTAMP,
-            records_imported = $1
-        WHERE id = $2
-      `, [recordsImported, importId]);
+        console.log(`\n⚠️  Import completed but found 0 ${poiType} POIs`);
+        console.log('   This may indicate:');
+        console.log('   - The PBF file doesn\'t contain data for this POI type');
+        console.log('   - All POIs were filtered out (missing required name field)');
+        console.log('   - Wrong POI type specified');
+      } else {
+        // Record import completion
+        await pool.query(`
+          UPDATE import_log
+          SET status = 'completed',
+              completed_at = CURRENT_TIMESTAMP,
+              records_imported = $1
+          WHERE id = $2
+        `, [recordsImported, importId]);
 
-      console.log('\n✅ Import complete!');
+        // Update import_sources with last import info
+        if (importSourceId) {
+          await pool.query(`
+            UPDATE import_sources
+            SET last_imported_at = CURRENT_TIMESTAMP,
+                last_import_id = $1
+            WHERE id = $2
+          `, [importId, importSourceId]);
+        }
+
+        // Record telemetry metrics
+        const duration = Date.now() - importStartTime;
+        transaction.setTag('region', regionName);
+        transaction.setData('records_imported', recordsImported);
+        transaction.setData('duration_ms', duration);
+        transaction.setStatus('ok');
+
+        telemetry.incrementCounter('osm.import.completed', 1, { region: regionName, poi_type: poiType });
+        telemetry.recordDistribution('osm.import.records', recordsImported, { tags: { region: regionName }, unit: 'none' });
+        telemetry.recordDistribution('osm.import.duration', duration, { tags: { region: regionName }, unit: 'millisecond' });
+
+        console.log('\n✅ Import complete!');
+      }
+
+      // Show statistics
+      await showStatistics(pool, poiType);
+
+    } catch (error) {
+      // Handle abort vs failure differently
+      if (error instanceof ImportAbortedError) {
+        await pool.query(`
+          UPDATE import_log
+          SET status = 'aborted',
+              completed_at = CURRENT_TIMESTAMP,
+              error_message = 'Aborted by another import job'
+          WHERE id = $1
+        `, [importId]).catch(() => {});
+        console.log('\n⚠️  Import was aborted by another job starting for the same region');
+
+        // Track abort in telemetry
+        transaction.setTag('region', regionName);
+        transaction.setStatus('aborted');
+        telemetry.incrementCounter('osm.import.aborted', 1, { region: regionName });
+      } else {
+        // Record import failure
+        await pool.query(`
+          UPDATE import_log
+          SET status = 'failed',
+              completed_at = CURRENT_TIMESTAMP,
+              error_message = $1
+          WHERE id = $2
+        `, [error.message, importId]).catch(() => {});
+
+        // Track failure in telemetry
+        transaction.setTag('region', regionName);
+        transaction.setStatus('error');
+        telemetry.incrementCounter('osm.import.failed', 1, { region: regionName });
+        telemetry.captureException(error, { region: regionName, poi_type: poiType });
+      }
+
+      throw error;
     }
-
-    // Show statistics
-    if (poiType === 'all') {
-      const stats = await pool.query(`
-        SELECT poi_type, COUNT(*) as count
-        FROM osm_pois
-        GROUP BY poi_type
-        ORDER BY count DESC
-      `);
-
-      console.log('\nPOIs by type:');
-      let total = 0;
-      stats.rows.forEach(row => {
-        console.log(`  ${row.poi_type}: ${row.count}`);
-        total += parseInt(row.count);
-      });
-      console.log(`  TOTAL: ${total}`);
-
-      // Show sample POIs
-      console.log(`\nSample POIs from this import:`);
-      const samples = await pool.query(`
-        SELECT poi_type, name, address
-        FROM osm_pois
-        WHERE name IS NOT NULL
-        ORDER BY imported_at DESC
-        LIMIT 10
-      `);
-
-      samples.rows.forEach(poi => {
-        const address = poi.address ? `, ${poi.address}` : '';
-        console.log(`  [${poi.poi_type}] ${poi.name}${address}`);
-      });
-    } else {
-      const stats = await pool.query(`
-        SELECT COUNT(*) as total,
-               COUNT(*) FILTER (WHERE stars IS NOT NULL) as with_stars
-        FROM osm_pois
-        WHERE poi_type = $1
-      `, [poiType]);
-
-      console.log('\nDatabase statistics:');
-      console.log(`  Total ${poiType}s: ${stats.rows[0].total}`);
-      console.log(`  With star ratings: ${stats.rows[0].with_stars}`);
-
-      // Show sample POIs
-      console.log(`\nSample ${poiType}s from this import:`);
-      const samples = await pool.query(`
-        SELECT name, stars, address, latitude, longitude
-        FROM osm_pois
-        WHERE poi_type = $1 AND name IS NOT NULL
-        ORDER BY imported_at DESC
-        LIMIT 5
-      `, [poiType]);
-
-      samples.rows.forEach(poi => {
-        const stars = poi.stars ? ` (${poi.stars}⭐)` : '';
-        const address = poi.address ? `, ${poi.address}` : '';
-        console.log(`  - ${poi.name}${stars}${address}`);
-      });
-    }
-
 
   } catch (error) {
-    // Record import failure
-    if (importId) {
-      await pool.query(`
-        UPDATE imports
-        SET status = 'failed',
-            completed_at = CURRENT_TIMESTAMP,
-            error_message = $1
-        WHERE id = $2
-      `, [error.message, importId]).catch(() => {}); // Ignore errors in error handler
+    if (error instanceof ImportAbortedError) {
+      console.log('Exiting gracefully after abort.');
+      transaction.finish();
+      await telemetry.flush();
+      process.exit(0);
     }
-
     console.error('❌ Import failed:', error.message);
     console.error(error);
+    transaction.finish();
+    await telemetry.flush();
     process.exit(1);
   } finally {
+    // Clean up downloaded file
+    if (shouldDeleteFile && pbfPath && fs.existsSync(pbfPath)) {
+      console.log(`\n🗑️  Removing downloaded file: ${pbfPath}`);
+      fs.unlinkSync(pbfPath);
+    }
+
+    // Finish telemetry transaction and flush
+    transaction.finish();
+    await telemetry.flush();
+
     await pool.end();
   }
 }
 
-async function parsePBFFile(pbfPath, pool, poiType, regionName) {
+async function showStatistics(pool, poiType) {
+  if (poiType === 'all') {
+    const stats = await pool.query(`
+      SELECT poi_type, COUNT(*) as count
+      FROM osm_pois
+      GROUP BY poi_type
+      ORDER BY count DESC
+    `);
+
+    console.log('\nPOIs by type:');
+    let total = 0;
+    stats.rows.forEach(row => {
+      console.log(`  ${row.poi_type}: ${row.count}`);
+      total += parseInt(row.count);
+    });
+    console.log(`  TOTAL: ${total}`);
+
+    // Show sample POIs
+    console.log(`\nSample POIs from this import:`);
+    const samples = await pool.query(`
+      SELECT poi_type, name, address
+      FROM osm_pois
+      WHERE name IS NOT NULL
+      ORDER BY imported_at DESC
+      LIMIT 10
+    `);
+
+    samples.rows.forEach(poi => {
+      const address = poi.address ? `, ${poi.address}` : '';
+      console.log(`  [${poi.poi_type}] ${poi.name}${address}`);
+    });
+  } else {
+    const stats = await pool.query(`
+      SELECT COUNT(*) as total,
+             COUNT(*) FILTER (WHERE stars IS NOT NULL) as with_stars
+      FROM osm_pois
+      WHERE poi_type = $1
+    `, [poiType]);
+
+    console.log('\nDatabase statistics:');
+    console.log(`  Total ${poiType}s: ${stats.rows[0].total}`);
+    console.log(`  With star ratings: ${stats.rows[0].with_stars}`);
+
+    // Show sample POIs
+    console.log(`\nSample ${poiType}s from this import:`);
+    const samples = await pool.query(`
+      SELECT name, stars, address, latitude, longitude
+      FROM osm_pois
+      WHERE poi_type = $1 AND name IS NOT NULL
+      ORDER BY imported_at DESC
+      LIMIT 5
+    `, [poiType]);
+
+    samples.rows.forEach(poi => {
+      const stars = poi.stars ? ` (${poi.stars}⭐)` : '';
+      const address = poi.address ? `, ${poi.address}` : '';
+      console.log(`  - ${poi.name}${stars}${address}`);
+    });
+  }
+}
+
+async function parsePBFFile(pbfPath, pool, poiType, regionName, importId) {
   // Three-pass approach (memory efficient):
   // Pass 1: Find ways with POI tags and collect their node IDs
   // Pass 2: Collect coordinates only for needed nodes
   // Pass 3: Process nodes AND ways with POI tags
 
   console.log('Parsing PBF file (three-pass for nodes + ways)...\n');
+
+  // Helper to check if we've been aborted by another job
+  let lastStatusCheck = Date.now();
+  const STATUS_CHECK_INTERVAL = 30000; // Check every 30 seconds
+
+  async function checkNotAborted() {
+    const now = Date.now();
+    if (now - lastStatusCheck >= STATUS_CHECK_INTERVAL) {
+      lastStatusCheck = now;
+      const stillRunning = await checkImportStillRunning(pool, importId);
+      if (!stillRunning) {
+        throw new ImportAbortedError(importId);
+      }
+    }
+  }
+
+  // Helper to update records_imported count in import_log
+  async function updateRecordsImported(count) {
+    await pool.query(
+      'UPDATE import_log SET records_imported = $1 WHERE id = $2',
+      [count, importId]
+    ).catch(() => {}); // Don't fail if update fails
+  }
 
   // Pass 1: Find POI ways and collect their node refs
   console.log('Pass 1: Finding POI ways and collecting required node IDs...');
@@ -485,7 +692,9 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
 
       if (pois.length >= batchSize) {
         await insertBatch(pool, pois);
+        await checkNotAborted(); // Check if we've been aborted
         processed += pois.length;
+        await updateRecordsImported(processed); // Update progress in DB
         console.log(`  Processed: ${processed} POIs (${nodesPOIs} nodes, ${waysPOIs} ways)`);
         pois = [];
       }
@@ -518,7 +727,9 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
 
                 if (pois.length >= batchSize) {
                   await insertBatch(pool, pois);
+                  await checkNotAborted(); // Check if we've been aborted
                   processed += pois.length;
+                  await updateRecordsImported(processed); // Update progress in DB
                   console.log(`  Processed: ${processed} POIs (${nodesPOIs} nodes, ${waysPOIs} ways)`);
                   pois = [];
                 }
@@ -535,6 +746,7 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName) {
           if (pois.length > 0) {
             await insertBatch(pool, pois);
             processed += pois.length;
+            await updateRecordsImported(processed); // Final count update
           }
           console.log(`\n✓ PBF parsing complete`);
           console.log(`  Total: ${processed} POIs (${nodesPOIs} nodes, ${waysPOIs} ways)`);
@@ -723,21 +935,23 @@ async function insertBatch(pool, pois) {
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  const pbfPath = process.argv[2];
-  const poiType = process.argv[3] || 'hotel';
+  const input = process.argv[2];
+  const poiType = process.argv[3] || 'all';
 
-  if (!pbfPath) {
-    console.error('Usage: node src/import-osm-pbf.js <pbf-file> [poi-type]');
-    console.error('');
-    console.error('Examples:');
-    console.error('  node src/import-osm-pbf.js thailand-latest.osm.pbf');
-    console.error('  node src/import-osm-pbf.js europe-latest.osm.pbf hotel');
-    console.error('');
-    console.error('Download PBF files from: https://download.geofabrik.de/');
+  if (!input) {
+    console.log('Usage: node src/import-osm-pbf.js <keyword-or-file> [poi-type]');
+    console.log('');
+    console.log('Examples:');
+    console.log('  node src/import-osm-pbf.js france           # Download and import France (all POIs)');
+    console.log('  node src/import-osm-pbf.js thailand hotel   # Download and import Thailand hotels');
+    console.log('  node src/import-osm-pbf.js local.osm.pbf    # Import from local file');
+    console.log('');
+    console.log('Available keywords are stored in the import_sources table.');
+    console.log('Run migration: psql $DATABASE_URL < data/migrations/001_import_sources.sql');
     process.exit(1);
   }
 
-  importPBF(pbfPath, poiType);
+  importOSM(input, poiType);
 }
 
-export { importPBF };
+export { importOSM };
