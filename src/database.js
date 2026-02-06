@@ -82,8 +82,14 @@ export class TravelDatabase {
   // Config cache TTL in milliseconds (5 minutes)
   static CONFIG_CACHE_TTL = 5 * 60 * 1000;
 
-  constructor() {
-    this.pool = new pg.Pool({ connectionString: CONNECTION_STRING });
+  /**
+   * Create a TravelDatabase instance
+   * @param {Object} options - Configuration options
+   * @param {pg.Pool} options.pool - Optional: inject a custom pool (for testing with mocks)
+   */
+  constructor(options = {}) {
+    // Allow pool injection for testing, otherwise create default pool
+    this.pool = options.pool || new pg.Pool({ connectionString: CONNECTION_STRING });
     this.googlePlaces = null; // Initialize later with config
     this.googlePlacesReady = this.initGooglePlaces(); // Store promise
 
