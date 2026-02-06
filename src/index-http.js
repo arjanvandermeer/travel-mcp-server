@@ -330,8 +330,10 @@ async function main() {
     const parsedUrl = parse(req.url, true);
     const pathname = parsedUrl.pathname;
 
-    // Log all incoming requests
-    console.error(`[${req.method}] ${pathname}`);
+    // Log all incoming requests (except health checks to reduce noise)
+    if (pathname !== '/health') {
+      console.error(`[${req.method}] ${pathname}`);
+    }
 
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');

@@ -68,6 +68,30 @@ async function unzip(zipPath, outputPath) {
   });
 }
 
+/**
+ * Clean up stale imports that have been 'running' for more than 24 hours
+ * @param {pg.Pool} pool - PostgreSQL pool
+ */
+async function cleanupStaleImports(pool) {
+  const result = await pool.query(`
+    UPDATE imports
+    SET status = 'failed',
+        completed_at = CURRENT_TIMESTAMP,
+        error_message = 'Job running longer than 24 hours - likely interrupted or crashed'
+    WHERE status = 'running'
+      AND started_at < CURRENT_TIMESTAMP - INTERVAL '24 hours'
+    RETURNING id, import_type, started_at
+  `);
+
+  if (result.rowCount > 0) {
+    console.log(`⚠️  Cleaned up ${result.rowCount} stale import(s):`);
+    for (const row of result.rows) {
+      console.log(`   - Import #${row.id} (${row.import_type}) started at ${row.started_at}`);
+    }
+    console.log('');
+  }
+}
+
 async function importCountries(pool) {
   console.log('\n=== Importing Countries ===');
 
@@ -150,14 +174,27 @@ async function importCountries(pool) {
     await client.query('COMMIT');
     console.log(`✓ Imported ${imported} countries`);
 
-    // Mark import as completed
-    await pool.query(`
-      UPDATE imports
-      SET status = 'completed',
-          completed_at = CURRENT_TIMESTAMP,
-          records_imported = $2
-      WHERE id = $1
-    `, [importId, imported]);
+    // Check if any records were imported
+    if (imported === 0) {
+      await pool.query(`
+        UPDATE imports
+        SET status = 'failed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = 0,
+            error_message = 'No countries found in countryInfo.txt. File may be empty or corrupted.'
+        WHERE id = $1
+      `, [importId]);
+      console.log('⚠️  Import completed but found 0 countries');
+    } else {
+      // Mark import as completed
+      await pool.query(`
+        UPDATE imports
+        SET status = 'completed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = $2
+        WHERE id = $1
+      `, [importId, imported]);
+    }
 
   } catch (error) {
     await client.query('ROLLBACK');
@@ -276,14 +313,27 @@ async function importCities(pool) {
     await client.query('COMMIT');
     console.log(`✓ Imported ${imported} cities`);
 
-    // Mark import as completed
-    await pool.query(`
-      UPDATE imports
-      SET status = 'completed',
-          completed_at = CURRENT_TIMESTAMP,
-          records_imported = $2
-      WHERE id = $1
-    `, [importId, imported]);
+    // Check if any records were imported
+    if (imported === 0) {
+      await pool.query(`
+        UPDATE imports
+        SET status = 'failed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = 0,
+            error_message = 'No cities found in cities1000.txt. File may be empty or corrupted.'
+        WHERE id = $1
+      `, [importId]);
+      console.log('⚠️  Import completed but found 0 cities');
+    } else {
+      // Mark import as completed
+      await pool.query(`
+        UPDATE imports
+        SET status = 'completed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = $2
+        WHERE id = $1
+      `, [importId, imported]);
+    }
 
   } catch (error) {
     await client.query('ROLLBACK');
@@ -375,14 +425,27 @@ async function importAdmin1Codes(pool) {
     await client.query('COMMIT');
     console.log(`✓ Imported ${imported} admin1 codes`);
 
-    // Update import status
-    await pool.query(`
-      UPDATE imports
-      SET status = 'completed',
-          completed_at = CURRENT_TIMESTAMP,
-          records_imported = $2
-      WHERE id = $1
-    `, [importId, imported]);
+    // Check if any records were imported
+    if (imported === 0) {
+      await pool.query(`
+        UPDATE imports
+        SET status = 'failed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = 0,
+            error_message = 'No admin1 codes found in admin1CodesASCII.txt. File may be empty or corrupted.'
+        WHERE id = $1
+      `, [importId]);
+      console.log('⚠️  Import completed but found 0 admin1 codes');
+    } else {
+      // Update import status
+      await pool.query(`
+        UPDATE imports
+        SET status = 'completed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = $2
+        WHERE id = $1
+      `, [importId, imported]);
+    }
 
   } catch (error) {
     await client.query('ROLLBACK');
@@ -414,6 +477,9 @@ async function main() {
   try {
     console.log('GeoNames Import to PostgreSQL');
     console.log('==============================');
+
+    // Clean up stale imports (running > 24 hours)
+    await cleanupStaleImports(pool);
 
     await importCountries(pool);
     await importCities(pool);

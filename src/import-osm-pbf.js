@@ -74,6 +74,135 @@ const POI_MAPPINGS = {
   'shop=supermarket': 'supermarket',
 };
 
+// Geofabrik region mappings for deriving source URLs
+const GEOFABRIK_REGIONS = {
+  // Continents / Major Regions
+  'europe': 'europe',
+  'asia': 'asia',
+  'africa': 'africa',
+  'north-america': 'north-america',
+  'south-america': 'south-america',
+  'central-america': 'central-america',
+  'australia-oceania': 'australia-oceania',
+  'russia': 'russia',
+
+  // Asia
+  'thailand': 'asia/thailand',
+  'vietnam': 'asia/vietnam',
+  'cambodia': 'asia/cambodia',
+  'laos': 'asia/laos',
+  'myanmar': 'asia/myanmar',
+  'malaysia-singapore-brunei': 'asia/malaysia-singapore-brunei',
+  'indonesia': 'asia/indonesia',
+  'philippines': 'asia/philippines',
+  'japan': 'asia/japan',
+  'south-korea': 'asia/south-korea',
+  'china': 'asia/china',
+  'india': 'asia/india',
+  'nepal': 'asia/nepal',
+  'taiwan': 'asia/taiwan',
+  'hong-kong': 'asia/china', // Part of China extract
+  'singapore': 'asia/malaysia-singapore-brunei',
+  'sri-lanka': 'asia/sri-lanka',
+  'bangladesh': 'asia/bangladesh',
+  'pakistan': 'asia/pakistan',
+
+  // Europe
+  'germany': 'europe/germany',
+  'france': 'europe/france',
+  'italy': 'europe/italy',
+  'spain': 'europe/spain',
+  'great-britain': 'europe/great-britain',
+  'united-kingdom': 'europe/great-britain',
+  'netherlands': 'europe/netherlands',
+  'belgium': 'europe/belgium',
+  'switzerland': 'europe/switzerland',
+  'austria': 'europe/austria',
+  'poland': 'europe/poland',
+  'czech-republic': 'europe/czech-republic',
+  'greece': 'europe/greece',
+  'portugal': 'europe/portugal',
+  'ireland-and-northern-ireland': 'europe/ireland-and-northern-ireland',
+  'ireland': 'europe/ireland-and-northern-ireland',
+  'sweden': 'europe/sweden',
+  'norway': 'europe/norway',
+  'finland': 'europe/finland',
+  'denmark': 'europe/denmark',
+  'hungary': 'europe/hungary',
+  'romania': 'europe/romania',
+  'croatia': 'europe/croatia',
+  'turkey': 'europe/turkey',
+
+  // Americas
+  'us': 'north-america/us',
+  'usa': 'north-america/us',
+  'united-states': 'north-america/us',
+  'canada': 'north-america/canada',
+  'mexico': 'north-america/mexico',
+  'brazil': 'south-america/brazil',
+  'argentina': 'south-america/argentina',
+  'chile': 'south-america/chile',
+  'colombia': 'south-america/colombia',
+  'peru': 'south-america/peru',
+
+  // Oceania
+  'australia': 'australia-oceania/australia',
+  'new-zealand': 'australia-oceania/new-zealand',
+
+  // Africa
+  'south-africa': 'africa/south-africa',
+  'egypt': 'africa/egypt',
+  'morocco': 'africa/morocco',
+  'kenya': 'africa/kenya',
+  'tanzania': 'africa/tanzania',
+  'ethiopia': 'africa/ethiopia',
+  'nigeria': 'africa/nigeria',
+};
+
+/**
+ * Derive Geofabrik download URL from region name
+ * @param {string} regionName - e.g., 'thailand-latest' or 'thailand'
+ * @returns {string|null} - Full URL or null if unknown region
+ */
+function deriveGeofabrikUrl(regionName) {
+  // Remove '-latest' suffix if present
+  const baseName = regionName.replace(/-latest$/, '');
+
+  // Check if we have a mapping for this region
+  const regionPath = GEOFABRIK_REGIONS[baseName];
+  if (regionPath) {
+    return `https://download.geofabrik.de/${regionPath}-latest.osm.pbf`;
+  }
+
+  // Try to guess based on common patterns
+  // If it looks like a country name, try to find it
+  return null;
+}
+
+/**
+ * Clean up stale imports that have been 'running' for more than 24 hours
+ * @param {pg.Pool} pool - PostgreSQL pool
+ */
+async function cleanupStaleImports(pool) {
+  const result = await pool.query(`
+    UPDATE imports
+    SET status = 'failed',
+        completed_at = CURRENT_TIMESTAMP,
+        error_message = 'Job running longer than 24 hours - likely interrupted or crashed'
+    WHERE status = 'running'
+      AND started_at < CURRENT_TIMESTAMP - INTERVAL '24 hours'
+    RETURNING id, import_type, started_at
+  `);
+
+  if (result.rowCount > 0) {
+    console.log(`⚠️  Cleaned up ${result.rowCount} stale import(s):`);
+    for (const row of result.rows) {
+      console.log(`   - Import #${row.id} (${row.import_type}) started at ${row.started_at}`);
+    }
+    console.log('');
+  }
+}
+
 async function importPBF(pbfPath, poiType = 'hotel') {
   if (!fs.existsSync(pbfPath)) {
     console.error('❌ PBF file not found:', pbfPath);
@@ -84,9 +213,20 @@ async function importPBF(pbfPath, poiType = 'hotel') {
 
   const regionName = path.basename(pbfPath, '.osm.pbf');
   const sourceFile = path.basename(pbfPath);
+
+  // Get file stats for source_date
+  const fileStats = fs.statSync(pbfPath);
+  const sourceDate = fileStats.mtime; // Use modification time as source date
+
+  // Derive source URL from Geofabrik pattern (common download source)
+  // e.g., thailand-latest.osm.pbf -> https://download.geofabrik.de/asia/thailand-latest.osm.pbf
+  const sourceUrl = deriveGeofabrikUrl(regionName);
+
   console.log(`Starting import from: ${pbfPath}`);
   console.log(`Region: ${regionName}`);
   console.log(`POI Type: ${poiType}`);
+  console.log(`Source URL: ${sourceUrl || 'unknown'}`);
+  console.log(`Source Date: ${sourceDate.toISOString().split('T')[0]}`);
   console.log('');
 
   // Connect to PostgreSQL
@@ -99,27 +239,48 @@ async function importPBF(pbfPath, poiType = 'hotel') {
     console.log('✓ Connected to PostgreSQL');
     client.release();
 
+    // Clean up stale imports (running > 24 hours)
+    await cleanupStaleImports(pool);
+
     // Record import start
     const importResult = await pool.query(`
-      INSERT INTO imports (import_type, source_file, region_name, status, started_at)
-      VALUES ($1, $2, $3, 'running', CURRENT_TIMESTAMP)
+      INSERT INTO imports (import_type, source_file, source_url, source_date, region_name, status, started_at)
+      VALUES ($1, $2, $3, $4, $5, 'running', CURRENT_TIMESTAMP)
       RETURNING id
-    `, [`osm_${poiType}`, sourceFile, regionName]);
+    `, [`osm_${poiType}`, sourceFile, sourceUrl, sourceDate, regionName]);
     importId = importResult.rows[0].id;
 
     // Parse PBF and import
     const recordsImported = await parsePBFFile(pbfPath, pool, poiType, regionName);
 
-    // Record import completion
-    await pool.query(`
-      UPDATE imports
-      SET status = 'completed',
-          completed_at = CURRENT_TIMESTAMP,
-          records_imported = $1
-      WHERE id = $2
-    `, [recordsImported, importId]);
+    // Check if any records were imported
+    if (recordsImported === 0) {
+      await pool.query(`
+        UPDATE imports
+        SET status = 'failed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = 0,
+            error_message = $1
+        WHERE id = $2
+      `, [`No ${poiType} POIs found in ${sourceFile}. The file may not contain data for the requested POI type, or all POIs were filtered out (e.g., missing names).`, importId]);
 
-    console.log('\n✅ Import complete!');
+      console.log(`\n⚠️  Import completed but found 0 ${poiType} POIs`);
+      console.log('   This may indicate:');
+      console.log('   - The PBF file doesn\'t contain data for this POI type');
+      console.log('   - All POIs were filtered out (missing required name field)');
+      console.log('   - Wrong POI type specified');
+    } else {
+      // Record import completion
+      await pool.query(`
+        UPDATE imports
+        SET status = 'completed',
+            completed_at = CURRENT_TIMESTAMP,
+            records_imported = $1
+        WHERE id = $2
+      `, [recordsImported, importId]);
+
+      console.log('\n✅ Import complete!');
+    }
 
     // Show statistics
     if (poiType === 'all') {
@@ -442,12 +603,13 @@ function extractPOIData(item, poiType, regionName) {
     }
   }
 
-  // Extract room/bed counts (validate they're actual numbers)
+  // Extract room/bed counts (validate they're actual numbers within reasonable range)
+  // Max 100000 to avoid INTEGER overflow and filter bad OSM data
   let rooms = tags.rooms ? parseInt(tags.rooms) : null;
-  if (rooms !== null && (isNaN(rooms) || rooms < 0)) rooms = null;
+  if (rooms !== null && (isNaN(rooms) || rooms < 0 || rooms > 100000)) rooms = null;
 
   let beds = tags.beds ? parseInt(tags.beds) : null;
-  if (beds !== null && (isNaN(beds) || beds < 0)) beds = null;
+  if (beds !== null && (isNaN(beds) || beds < 0 || beds > 100000)) beds = null;
 
   return {
     osm_id: item.id,
@@ -517,26 +679,37 @@ async function insertBatch(pool, pois) {
     `;
 
     for (const poi of pois) {
-      await client.query(insertQuery, [
-        poi.osm_id,
-        poi.osm_type,
-        poi.poi_type,
-        poi.name,
-        poi.latitude,
-        poi.longitude,
-        poi.address,
-        poi.phone,
-        poi.email,
-        poi.website,
-        poi.opening_hours,
-        poi.cuisine,
-        poi.wheelchair,
-        poi.stars,
-        poi.rooms,
-        poi.beds,
-        poi.source_region,
-        JSON.stringify(poi.osm_tags),
-      ]);
+      try {
+        await client.query(insertQuery, [
+          poi.osm_id,
+          poi.osm_type,
+          poi.poi_type,
+          poi.name,
+          poi.latitude,
+          poi.longitude,
+          poi.address,
+          poi.phone,
+          poi.email,
+          poi.website,
+          poi.opening_hours,
+          poi.cuisine,
+          poi.wheelchair,
+          poi.stars,
+          poi.rooms,
+          poi.beds,
+          poi.source_region,
+          JSON.stringify(poi.osm_tags),
+        ]);
+      } catch (insertError) {
+        console.error(`\n❌ INSERT ERROR for POI:`);
+        console.error(`   osm_id: ${poi.osm_id}`);
+        console.error(`   name: ${poi.name}`);
+        console.error(`   rooms: ${poi.rooms} (type: ${typeof poi.rooms})`);
+        console.error(`   beds: ${poi.beds} (type: ${typeof poi.beds})`);
+        console.error(`   stars: ${poi.stars}`);
+        console.error(`   Error: ${insertError.message}`);
+        throw insertError;
+      }
     }
 
     await client.query('COMMIT');
