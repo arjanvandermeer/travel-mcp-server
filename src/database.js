@@ -17,7 +17,7 @@ function removeNullFields(obj) {
   if (Array.isArray(obj)) {
     return obj.map(removeNullFields);
   }
-  if (obj !== null && typeof obj === 'object') {
+  if (obj !== null && typeof obj === 'object' && !(obj instanceof Date)) {
     return Object.entries(obj)
       .filter(([_, v]) => v !== null && v !== undefined)
       .reduce((acc, [k, v]) => ({ ...acc, [k]: removeNullFields(v) }), {});

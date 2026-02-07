@@ -58,6 +58,22 @@
     .contact-row { margin-top: 12px; padding-top: 12px; border-top: 1px solid #eee; }
     .contact-row a { display: block; margin-bottom: 6px; }
     .contact-row a:last-child { margin-bottom: 0; }
+    .maps-link {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 12px;
+      padding: 8px 14px;
+      background: #f0f0f0;
+      border-radius: 20px;
+      color: #333;
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 0.2s;
+    }
+    .maps-link:hover { background: #e0e0e0; text-decoration: none; }
+    .maps-link svg { width: 16px; height: 16px; flex-shrink: 0; }
     .hours-list { list-style: none; font-size: 14px; }
     .hours-list li { padding: 4px 0; border-bottom: 1px solid #eee; }
     .hours-list li:last-child { border-bottom: none; }
@@ -89,27 +105,28 @@
       font-size: 14px;
     }
     .amenity .icon { font-size: 16px; }
-    .review-card {
-      border-left: 3px solid #667eea;
-      padding-left: 12px;
-      margin-bottom: 16px;
+    .reviews-scroll {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      padding-bottom: 8px;
     }
-    .review-card:last-child { margin-bottom: 0; }
+    .reviews-scroll::-webkit-scrollbar { height: 4px; }
+    .reviews-scroll::-webkit-scrollbar-thumb { background: #ccc; border-radius: 2px; }
+    .review-card {
+      flex: 0 0 280px;
+      scroll-snap-align: start;
+      border-left: 3px solid #667eea;
+      padding: 12px;
+      background: #fafafa;
+      border-radius: 0 8px 8px 0;
+    }
     .review-author { font-weight: 600; font-size: 14px; }
     .review-rating { color: #f5a623; font-size: 13px; margin: 4px 0; }
-    .review-text { font-size: 14px; color: #555; line-height: 1.5; }
+    .review-text { font-size: 14px; color: #555; line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden; }
     .review-date { font-size: 12px; color: #999; margin-top: 4px; }
-    .map-link {
-      display: block;
-      background: #667eea;
-      color: white;
-      text-align: center;
-      padding: 14px;
-      border-radius: 8px;
-      text-decoration: none;
-      font-weight: 600;
-    }
-    .map-link:hover { background: #5a6fd6; }
     .favorite-banner {
       background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
       border-left: 4px solid #f5a623;
@@ -199,6 +216,10 @@
       {{#each address_lines}}
       <span class="address-line">{{this}}</span>
       {{/each}}
+      <a class="maps-link" href="{{mapsUrl ../osm_latitude ../osm_longitude ../google_place_id}}" target="_blank">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+        View on Google Maps
+      </a>
       {{#if ../has_contact}}
       <div class="contact-row">
         {{#if ../google_phone}}
@@ -318,22 +339,20 @@
     {{#if reviews_list}}
     <div class="card">
       <h2>Reviews</h2>
-      {{#each reviews_list}}
-      <div class="review-card">
-        <div class="review-author">{{author}}</div>
-        <div class="review-rating">{{ratingStars}}</div>
-        <p class="review-text">{{text}}</p>
-        {{#if relativeTime}}
-        <div class="review-date">{{relativeTime}}</div>
-        {{/if}}
+      <div class="reviews-scroll">
+        {{#each reviews_list}}
+        <div class="review-card">
+          <div class="review-author">{{author}}</div>
+          <div class="review-rating">{{ratingStars}}</div>
+          <p class="review-text">{{text}}</p>
+          {{#if relativeTime}}
+          <div class="review-date">{{relativeTime}}</div>
+          {{/if}}
+        </div>
+        {{/each}}
       </div>
-      {{/each}}
     </div>
     {{/if}}
-
-    <a class="map-link" href="{{mapsUrl osm_latitude osm_longitude google_place_id}}" target="_blank">
-      Open in Google Maps
-    </a>
   </div>
 
   <script>

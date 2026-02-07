@@ -157,15 +157,17 @@ describe('renderPOIPreview general rendering', () => {
     assert.ok(html.includes('★★★★★'), 'Should show star display');
   });
 
-  it('should render Google Maps link', () => {
+  it('should render Google Maps link in Location card', () => {
     const poi = makePOI({
       osm_latitude: 13.75,
       osm_longitude: 100.50,
+      osm_address: '123 Test Road, Bangkok',
     });
     const html = renderPOIPreview(poi, render);
 
-    assert.ok(html.includes('Open in Google Maps'), 'Should have maps link');
+    assert.ok(html.includes('View on Google Maps'), 'Should have maps link');
     assert.ok(html.includes('google.com/maps'), 'Should link to Google Maps');
+    assert.ok(html.includes('maps-link'), 'Should use maps-link class');
   });
 });
 
