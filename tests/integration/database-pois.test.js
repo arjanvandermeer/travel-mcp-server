@@ -330,6 +330,241 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.strictEqual(result._enrichment.status, 'failed');
       assert.ok(result._enrichment.message?.includes('no matching location'));
     });
+
+    it('should preserve Date fields (not convert to empty objects)', async () => {
+      const enrichedAt = new Date('2025-06-15T12:00:00Z');
+      const cacheExpires = new Date('2025-06-22T12:00:00Z');
+      const poiWithDates = {
+        ...samplePOIDetail,
+        google_enriched_at: enrichedAt,
+        google_cache_expires_at: cacheExpires,
+        mapped_at: new Date('2025-06-15T11:00:00Z'),
+      };
+      mockPool.setResponse('enriched_pois', dbResult([poiWithDates]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getPOIDetails(12345);
+
+      assert.ok(result);
+      assert.ok(result.google_enriched_at instanceof Date, 'google_enriched_at should remain a Date');
+      assert.ok(result.google_cache_expires_at instanceof Date, 'google_cache_expires_at should remain a Date');
+      assert.strictEqual(result.google_enriched_at.toISOString(), enrichedAt.toISOString());
+      assert.strictEqual(result.google_cache_expires_at.toISOString(), cacheExpires.toISOString());
+    });
+
+    it('should remove null fields but preserve all non-null values', async () => {
+      const poiWithNulls = {
+        ...samplePOIDetail,
+        osm_phone: null,
+        osm_email: null,
+        osm_website: 'https://example.com',
+        google_rating: 4.5,
+        osm_stars: 0,
+      };
+      mockPool.setResponse('enriched_pois', dbResult([poiWithNulls]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getPOIDetails(12345);
+
+      assert.ok(result);
+      assert.strictEqual(result.osm_phone, undefined, 'Null fields should be removed');
+      assert.strictEqual(result.osm_email, undefined, 'Null fields should be removed');
+      assert.strictEqual(result.osm_website, 'https://example.com', 'Non-null strings should be preserved');
+      assert.strictEqual(result.google_rating, 4.5, 'Numbers should be preserved');
+      assert.strictEqual(result.osm_stars, 0, 'Falsy non-null values (0) should be preserved');
+    });
+
+    it('should preserve all field types through the full data pipeline', async () => {
+      // Simulates a realistic enriched_pois row with every field type
+      // that PostgreSQL/pg driver returns: strings, numbers, booleans,
+      // Date objects, arrays, nested objects (JSONB), and nulls.
+      const fullPOI = {
+        // Core identifiers (integers, strings)
+        osm_id: 12345,
+        osm_type: 'node',
+        poi_type: 'restaurant',
+
+        // OSM string fields
+        osm_name: 'Thai Kitchen',
+        osm_address: '789 Silom Road, Bangkok',
+        osm_phone: '+66 2 345 6789',
+        osm_email: 'info@thaikitchen.com',
+        osm_website: 'https://thaikitchen.com',
+        osm_opening_hours: 'Mo-Su 10:00-22:00',
+        osm_cuisine: 'thai;international',
+        osm_wheelchair: 'yes',
+        osm_brand: 'Thai Kitchen',
+        osm_operator: null, // null - should be stripped
+        source_region: 'thailand',
+
+        // OSM numeric fields (including zero and falsy values)
+        osm_latitude: 13.7450,
+        osm_longitude: 100.5300,
+        osm_stars: 0, // falsy but valid
+        osm_rooms: null, // null - should be stripped
+        osm_beds: null, // null - should be stripped
+
+        // OSM JSONB (nested object)
+        osm_tags: { brand: 'Thai Kitchen', cuisine: 'thai;international', name: 'Thai Kitchen' },
+
+        // OSM Date
+        osm_imported_at: new Date('2025-01-15T10:00:00Z'),
+
+        // City/country strings
+        city: 'Bangkok',
+        country_code: 'TH',
+        city_geoname_id: 1609350,
+
+        // Google Places string fields
+        google_place_id: 'ChIJ456',
+        google_name: 'Thai Kitchen Restaurant',
+        google_display_name: { text: 'Thai Kitchen Restaurant', languageCode: 'en' }, // JSONB object
+        google_address: '789 Silom Road, Bang Rak, Bangkok 10500',
+        google_short_address: '789 Silom Road',
+        google_international_phone: '+66 2 345 6789',
+        google_phone: '02-345-6789',
+        google_website: 'https://thaikitchen.com',
+        google_maps_url: 'https://maps.google.com/?cid=123456',
+        google_primary_type: 'restaurant',
+        google_primary_type_display: 'Restaurant',
+        google_editorial_summary: 'Authentic Thai cuisine in the heart of Silom.',
+        google_price_level: 'PRICE_LEVEL_MODERATE',
+        google_business_status: 'OPERATIONAL',
+        google_plus_code: '7P52PG9R+5W',
+
+        // Google Places numeric fields
+        google_rating: 4.3,
+        google_review_count: 850,
+        google_latitude: 13.7451,
+        google_longitude: 100.5301,
+        google_utc_offset_minutes: 420,
+
+        // Google Places JSONB arrays
+        google_types: ['restaurant', 'food', 'point_of_interest', 'establishment'],
+        google_photos: [
+          { name: 'places/ChIJ456/photos/abc', heightPx: 1200, widthPx: 1600 },
+          { name: 'places/ChIJ456/photos/def', heightPx: 800, widthPx: 1200 },
+        ],
+        google_reviews: [
+          {
+            authorAttribution: { displayName: 'John Doe', uri: 'https://maps.google.com/user1' },
+            rating: 5,
+            text: { text: 'Best Thai food in Bangkok!' },
+            relativePublishTimeDescription: '2 weeks ago',
+          },
+          {
+            authorAttribution: { displayName: 'Jane Smith' },
+            rating: 4,
+            text: { text: 'Great pad thai and green curry.' },
+            relativePublishTimeDescription: '1 month ago',
+          },
+        ],
+        google_address_components: [
+          { longText: '789', shortText: '789', types: ['street_number'] },
+          { longText: 'Silom Road', shortText: 'Silom Rd', types: ['route'] },
+        ],
+
+        // Google Places JSONB objects
+        google_opening_hours: {
+          openNow: true,
+          weekdayDescriptions: ['Monday: 10:00–22:00', 'Tuesday: 10:00–22:00'],
+        },
+        google_current_opening_hours: { openNow: true },
+        google_service_options: { dineIn: true, takeout: true, delivery: false },
+        google_accessibility: { wheelchairAccessibleEntrance: true, wheelchairAccessibleSeating: true },
+        google_amenities: {
+          restroom: true,
+          goodForChildren: true,
+          paymentOptions: { acceptsCreditCards: true },
+        },
+
+        // Google Places Date fields
+        google_enriched_at: new Date('2025-06-15T12:00:00Z'),
+        google_cache_expires_at: new Date('2025-06-22T12:00:00Z'),
+
+        // Mapping metadata (strings, numbers, Date)
+        mapping_status: 'active',
+        match_confidence: 0.95,
+        match_method: 'name_proximity',
+        match_distance_meters: 12.5,
+        mapping_notes: null, // null - should be stripped
+        mapped_at: new Date('2025-06-15T11:59:00Z'),
+        last_verified_at: new Date('2025-06-15T12:00:00Z'),
+      };
+
+      mockPool.setResponse('enriched_pois', dbResult([fullPOI]));
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getPOIDetails(12345);
+
+      assert.ok(result, 'Should return a result');
+
+      // Strings preserved
+      assert.strictEqual(result.osm_name, 'Thai Kitchen');
+      assert.strictEqual(result.osm_cuisine, 'thai;international');
+      assert.strictEqual(result.google_editorial_summary, 'Authentic Thai cuisine in the heart of Silom.');
+      assert.strictEqual(result.google_place_id, 'ChIJ456');
+
+      // Numbers preserved (including zero)
+      assert.strictEqual(result.google_rating, 4.3);
+      assert.strictEqual(result.google_review_count, 850);
+      assert.strictEqual(result.osm_stars, 0, 'Zero should be preserved');
+      assert.strictEqual(result.match_confidence, 0.95);
+      assert.strictEqual(result.match_distance_meters, 12.5);
+      assert.strictEqual(result.google_utc_offset_minutes, 420);
+
+      // Null fields stripped
+      assert.strictEqual(result.osm_operator, undefined, 'Null string should be stripped');
+      assert.strictEqual(result.osm_rooms, undefined, 'Null number should be stripped');
+      assert.strictEqual(result.mapping_notes, undefined, 'Null should be stripped');
+
+      // Date objects preserved as Dates (not empty objects)
+      assert.ok(result.google_enriched_at instanceof Date, 'google_enriched_at should be Date');
+      assert.ok(result.google_cache_expires_at instanceof Date, 'google_cache_expires_at should be Date');
+      assert.ok(result.osm_imported_at instanceof Date, 'osm_imported_at should be Date');
+      assert.ok(result.mapped_at instanceof Date, 'mapped_at should be Date');
+      assert.ok(result.last_verified_at instanceof Date, 'last_verified_at should be Date');
+      assert.strictEqual(result.google_enriched_at.toISOString(), '2025-06-15T12:00:00.000Z');
+
+      // Arrays preserved
+      assert.ok(Array.isArray(result.google_types), 'google_types should be array');
+      assert.strictEqual(result.google_types.length, 4);
+      assert.strictEqual(result.google_types[0], 'restaurant');
+      assert.ok(Array.isArray(result.google_photos), 'google_photos should be array');
+      assert.strictEqual(result.google_photos.length, 2);
+      assert.ok(Array.isArray(result.google_reviews), 'google_reviews should be array');
+      assert.strictEqual(result.google_reviews.length, 2);
+      assert.ok(Array.isArray(result.google_address_components), 'google_address_components should be array');
+
+      // Nested objects preserved with structure intact
+      assert.strictEqual(typeof result.google_display_name, 'object');
+      assert.strictEqual(result.google_display_name.text, 'Thai Kitchen Restaurant');
+      assert.strictEqual(result.google_display_name.languageCode, 'en');
+
+      assert.strictEqual(typeof result.google_opening_hours, 'object');
+      assert.strictEqual(result.google_opening_hours.openNow, true);
+      assert.ok(Array.isArray(result.google_opening_hours.weekdayDescriptions));
+
+      assert.strictEqual(typeof result.google_service_options, 'object');
+      assert.strictEqual(result.google_service_options.dineIn, true);
+      assert.strictEqual(result.google_service_options.delivery, false, 'Boolean false should be preserved');
+
+      assert.strictEqual(typeof result.google_amenities, 'object');
+      assert.strictEqual(result.google_amenities.restroom, true);
+      assert.strictEqual(result.google_amenities.paymentOptions.acceptsCreditCards, true, 'Deeply nested values should be preserved');
+
+      assert.strictEqual(typeof result.osm_tags, 'object');
+      assert.strictEqual(result.osm_tags.brand, 'Thai Kitchen');
+
+      // Nested objects inside arrays preserved
+      assert.strictEqual(result.google_reviews[0].authorAttribution.displayName, 'John Doe');
+      assert.strictEqual(result.google_reviews[0].rating, 5);
+      assert.strictEqual(result.google_reviews[0].text.text, 'Best Thai food in Bangkok!');
+      assert.strictEqual(result.google_photos[0].name, 'places/ChIJ456/photos/abc');
+
+      // Enrichment metadata added
+      assert.ok(result._enrichment, 'Should have _enrichment');
+      assert.strictEqual(result._enrichment.status, 'complete');
+    });
   });
 
   describe('addFavoriteStatus', () => {
