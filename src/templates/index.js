@@ -134,4 +134,15 @@ Handlebars.registerHelper('poiName', function (poi) {
   return poi.osm_name || 'Unknown';
 });
 
+/**
+ * Helper to format a date as a readable string (e.g., "January 15, 2025")
+ * Usage: {{formatDate dateValue}}
+ */
+Handlebars.registerHelper('formatDate', function (date) {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+});
+
 export default { render, getTemplate };

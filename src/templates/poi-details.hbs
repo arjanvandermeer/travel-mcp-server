@@ -108,6 +108,31 @@
       font-weight: 600;
     }
     .map-link:hover { background: #5a6fd6; }
+    .favorite-banner {
+      background: linear-gradient(135deg, #fff8e1 0%, #ffecb3 100%);
+      border-left: 4px solid #f5a623;
+      padding: 14px 16px;
+      margin-bottom: 16px;
+      border-radius: 0 12px 12px 0;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+    }
+    .favorite-banner .favorite-title {
+      font-weight: 700;
+      font-size: 15px;
+      color: #b8860b;
+    }
+    .favorite-banner .favorite-date {
+      font-size: 13px;
+      color: #8d6e00;
+      margin-top: 4px;
+    }
+    .favorite-banner .favorite-notes {
+      font-size: 14px;
+      color: #555;
+      margin-top: 8px;
+      font-style: italic;
+      line-height: 1.5;
+    }
   </style>
 </head>
 <body>
@@ -147,6 +172,18 @@
   </div>
 
   <div class="content">
+    {{#if is_favorite}}
+    <div class="favorite-banner">
+      <div class="favorite-title">⭐ On Your Favorites</div>
+      {{#if favorite_since}}
+      <div class="favorite-date">Added {{formatDate favorite_since}}</div>
+      {{/if}}
+      {{#if favorite_notes}}
+      <div class="favorite-notes">{{favorite_notes}}</div>
+      {{/if}}
+    </div>
+    {{/if}}
+
     {{#if google_editorial_summary}}
     <div class="card">
       <h2>About</h2>

@@ -387,11 +387,15 @@ async function main() {
     // Random POI preview endpoint
     if (pathname === '/preview/poi/random') {
       try {
-        const poi = await db.getRandomPOI();
+        let poi = await db.getRandomPOI();
         if (!poi) {
           res.writeHead(404, { 'Content-Type': 'text/html' });
           res.end('<h1>No POIs found</h1>');
           return;
+        }
+        const user = await getUserFromRequest(req);
+        if (user) {
+          [poi] = await db.addFavoriteStatus([poi], user.id);
         }
         const html = renderPOIPreview(poi, render);
         res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -408,11 +412,15 @@ async function main() {
     if (poiPreviewMatch) {
       try {
         const osmId = parseInt(poiPreviewMatch[1], 10);
-        const poi = await db.getPOIDetails(osmId);
+        let poi = await db.getPOIDetails(osmId);
         if (!poi) {
           res.writeHead(404, { 'Content-Type': 'text/html' });
           res.end(`<h1>POI not found</h1><p>OSM ID: ${osmId}</p>`);
           return;
+        }
+        const user = await getUserFromRequest(req);
+        if (user) {
+          [poi] = await db.addFavoriteStatus([poi], user.id);
         }
         const html = renderPOIPreview(poi, render);
         res.writeHead(200, { 'Content-Type': 'text/html' });
