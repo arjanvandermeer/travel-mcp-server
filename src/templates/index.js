@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // Cache compiled templates
 const templateCache = new Map();
+const isDev = process.env.NODE_ENV !== 'production';
 
 /**
  * Load and compile a template from a .hbs file
@@ -19,7 +20,7 @@ const templateCache = new Map();
  * @returns {HandlebarsTemplateDelegate} Compiled template function
  */
 export function getTemplate(name) {
-  if (templateCache.has(name)) {
+  if (!isDev && templateCache.has(name)) {
     return templateCache.get(name);
   }
 
