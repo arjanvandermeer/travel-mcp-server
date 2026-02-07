@@ -1022,9 +1022,67 @@ export async function executeToolHandler(name, args, db, options = {}) {
  * @param {function} render - Template render function
  * @returns {string} - Rendered HTML
  */
+/**
+ * Determine if a POI is currently open based on Google Places opening hours periods
+ * and the venue's UTC offset.
+ *
+ * @param {object|null} openingHours - Google Places opening_hours object with periods array
+ * @param {number|null} utcOffsetMinutes - The venue's UTC offset in minutes (e.g. 420 for UTC+7)
+ * @returns {{ isOpen: boolean, label: string }|null} - null if no hours data available
+ */
+export function isOpenNow(openingHours, utcOffsetMinutes) {
+  if (!openingHours?.periods || !Array.isArray(openingHours.periods) || utcOffsetMinutes == null) {
+    return null;
+  }
+
+  // Get current time at the venue's timezone
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const localMs = utcMs + utcOffsetMinutes * 60000;
+  const localDate = new Date(localMs);
+  const day = localDate.getDay(); // 0=Sunday
+  const hour = localDate.getHours();
+  const minute = localDate.getMinutes();
+  const currentMinutes = hour * 60 + minute;
+
+  for (const period of openingHours.periods) {
+    if (!period.open) continue;
+    const openDay = period.open.day;
+    const openMin = period.open.hour * 60 + period.open.minute;
+
+    // 24-hour venue (no close means open all day)
+    if (!period.close) {
+      if (openDay === day) return { isOpen: true, label: 'Open 24 hours' };
+      continue;
+    }
+
+    const closeDay = period.close.day;
+    const closeMin = period.close.hour * 60 + period.close.minute;
+
+    // Same-day period
+    if (openDay === closeDay && openDay === day) {
+      if (currentMinutes >= openMin && currentMinutes < closeMin) {
+        return { isOpen: true, label: 'Open now' };
+      }
+    }
+    // Overnight period (e.g. open Fri 20:00, close Sat 02:00)
+    else if (openDay !== closeDay) {
+      if (day === openDay && currentMinutes >= openMin) {
+        return { isOpen: true, label: 'Open now' };
+      }
+      if (day === closeDay && currentMinutes < closeMin) {
+        return { isOpen: true, label: 'Open now' };
+      }
+    }
+  }
+
+  return { isOpen: false, label: 'Closed' };
+}
+
 export function renderPOIPreview(poi, render) {
-  const opening_hours = poi.google_opening_hours?.weekdayDescriptions || null;
+  const opening_hours_list = poi.google_opening_hours?.weekdayDescriptions || null;
   const photo_url = poi.google_photos?.[0]?.url || null;
+  const photo_urls = poi.google_photos?.map(p => p.url).filter(Boolean) || null;
   const address = poi.osm_address || poi.google_address || '';
   const address_lines = address.split(',').map(s => s.trim()).filter(Boolean);
 
@@ -1139,21 +1197,33 @@ export function renderPOIPreview(poi, render) {
   }
   if (accessItems.length > 0) accessibility_list = [...new Set(accessItems)]; // Remove duplicates
 
-  // Reviews (top 3)
+  // Reviews (top 3) — DB stores simplified format: { author, text, rating, relativeTime }
   let reviews_list = null;
   if (poi.google_reviews && Array.isArray(poi.google_reviews) && poi.google_reviews.length > 0) {
     reviews_list = poi.google_reviews.slice(0, 3).map(review => ({
-      author: review.authorAttribution?.displayName || 'Anonymous',
+      author: review.author || 'Anonymous',
       ratingStars: '★'.repeat(review.rating || 0) + '☆'.repeat(5 - (review.rating || 0)),
-      text: review.text?.text || review.originalText?.text || '',
-      relativeTime: review.relativePublishTimeDescription || null,
+      text: review.text || '',
+      relativeTime: review.relativeTime || null,
     })).filter(r => r.text); // Only include reviews with text
   }
+
+  // Open/closed status (only for non-accommodation types)
+  const open_status = !is_accommodation
+    ? isOpenNow(poi.google_opening_hours, poi.google_utc_offset_minutes)
+    : null;
+
+  // Opening hours list (only for non-accommodation types)
+  const opening_hours = !is_accommodation ? opening_hours_list : null;
+
+  // Website URL for the button
+  const website_url = poi.google_website || poi.osm_website || null;
 
   return render('poi-details', {
     ...poi,
     opening_hours,
     photo_url,
+    photo_urls,
     address_lines,
     is_food,
     is_accommodation,
@@ -1165,10 +1235,12 @@ export function renderPOIPreview(poi, render) {
     business_status_display,
     business_status_class,
     website_display,
+    website_url,
     service_options_list,
     amenities_list,
     accessibility_list,
     reviews_list,
+    open_status,
   });
 }
 

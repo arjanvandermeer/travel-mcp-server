@@ -8,7 +8,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import { render } from '../../src/templates/index.js';
-import { renderPOIPreview } from '../../src/tools-config.js';
+import { renderPOIPreview, isOpenNow } from '../../src/tools-config.js';
 
 // =============================================================================
 // formatDate Helper
@@ -157,7 +157,7 @@ describe('renderPOIPreview general rendering', () => {
     assert.ok(html.includes('★★★★★'), 'Should show star display');
   });
 
-  it('should render Google Maps link in Location card', () => {
+  it('should render Google Maps button in Location card', () => {
     const poi = makePOI({
       osm_latitude: 13.75,
       osm_longitude: 100.50,
@@ -165,9 +165,181 @@ describe('renderPOIPreview general rendering', () => {
     });
     const html = renderPOIPreview(poi, render);
 
-    assert.ok(html.includes('View on Google Maps'), 'Should have maps link');
-    assert.ok(html.includes('google.com/maps'), 'Should link to Google Maps');
-    assert.ok(html.includes('maps-link'), 'Should use maps-link class');
+    assert.ok(html.includes('Google Maps'), 'Should have maps button text');
+    assert.ok(html.includes('13.75,100.5'), 'Should have correct coordinates in maps URL');
+    // Verify it's in the body, not just CSS
+    const mapsIdx = html.indexOf('13.75,100.5');
+    assert.ok(mapsIdx > html.indexOf('</style>'), 'Maps URL should be in body');
+  });
+
+  it('should render Website button next to Google Maps when website exists', () => {
+    const poi = makePOI({
+      osm_address: '123 Test Road, Bangkok',
+      google_website: 'https://www.testhotel.com',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('href="https://www.testhotel.com"'), 'Should link to website');
+    assert.ok(html.includes('Website'), 'Should have Website text');
+    // Verify it's an action button (not just in CSS)
+    const websiteIdx = html.indexOf('https://www.testhotel.com');
+    assert.ok(websiteIdx > html.indexOf('</style>'), 'Website link should be in body, not just CSS');
+  });
+
+  it('should not render Website button when no website', () => {
+    const poi = makePOI({
+      osm_address: '123 Test Road, Bangkok',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(!html.includes('>Website<'), 'Should not have Website button');
+  });
+
+  it('should render reviews when google_reviews exist', () => {
+    const poi = makePOI({
+      google_reviews: [
+        { author: 'Jane Doe', rating: 5, text: 'Wonderful stay!', relativeTime: '2 months ago' },
+        { author: 'John Smith', rating: 4, text: 'Great location.', relativeTime: '1 month ago' },
+      ],
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('Reviews'), 'Should have Reviews section');
+    assert.ok(html.includes('Jane Doe'), 'Should show first author');
+    assert.ok(html.includes('Wonderful stay!'), 'Should show first review text');
+    assert.ok(html.includes('2 months ago'), 'Should show relative time');
+    assert.ok(html.includes('review-carousel'), 'Should use carousel for reviews');
+  });
+
+  it('should not show opening hours for hotels', () => {
+    const poi = makePOI({
+      poi_type: 'hotel',
+      google_opening_hours: {
+        periods: [{ open: { day: 0, hour: 0, minute: 0 } }],
+        weekdayDescriptions: ['Monday: Open 24 hours'],
+      },
+      google_utc_offset_minutes: 420,
+    });
+    const html = renderPOIPreview(poi, render);
+
+    // Check for actual rendered content, not CSS class names
+    assert.ok(!html.includes('open-badge is-open'), 'Should not show open badge for hotel');
+    assert.ok(!html.includes('open-badge is-closed'), 'Should not show closed badge for hotel');
+    assert.ok(!html.includes('Monday: Open 24 hours'), 'Should not show hours text for hotel');
+  });
+
+  it('should show open/closed badge for restaurants with opening hours', () => {
+    const poi = makePOI({
+      poi_type: 'restaurant',
+      google_opening_hours: {
+        periods: [
+          { open: { day: 0, hour: 0, minute: 0 }, close: { day: 0, hour: 23, minute: 59 } },
+          { open: { day: 1, hour: 0, minute: 0 }, close: { day: 1, hour: 23, minute: 59 } },
+          { open: { day: 2, hour: 0, minute: 0 }, close: { day: 2, hour: 23, minute: 59 } },
+          { open: { day: 3, hour: 0, minute: 0 }, close: { day: 3, hour: 23, minute: 59 } },
+          { open: { day: 4, hour: 0, minute: 0 }, close: { day: 4, hour: 23, minute: 59 } },
+          { open: { day: 5, hour: 0, minute: 0 }, close: { day: 5, hour: 23, minute: 59 } },
+          { open: { day: 6, hour: 0, minute: 0 }, close: { day: 6, hour: 23, minute: 59 } },
+        ],
+        weekdayDescriptions: ['Monday: 12:00 AM – 11:59 PM'],
+      },
+      google_utc_offset_minutes: 420,
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('open-badge'), 'Should have open badge');
+    assert.ok(html.includes('hours-tooltip'), 'Should have hours tooltip');
+  });
+});
+
+// =============================================================================
+// isOpenNow function
+// =============================================================================
+
+describe('isOpenNow', () => {
+  it('should return null when no opening hours provided', () => {
+    assert.strictEqual(isOpenNow(null, 420), null);
+  });
+
+  it('should return null when no utc offset provided', () => {
+    const hours = { periods: [{ open: { day: 0, hour: 8, minute: 0 }, close: { day: 0, hour: 22, minute: 0 } }] };
+    assert.strictEqual(isOpenNow(hours, null), null);
+  });
+
+  it('should return null when periods is not an array', () => {
+    assert.strictEqual(isOpenNow({ periods: 'invalid' }, 420), null);
+  });
+
+  it('should detect open during business hours', () => {
+    // Create a period that covers the current time at the given offset
+    const now = new Date();
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const testOffset = 0; // UTC
+    const localDate = new Date(utcMs + testOffset * 60000);
+    const day = localDate.getDay();
+
+    const hours = {
+      periods: [
+        { open: { day, hour: 0, minute: 0 }, close: { day, hour: 23, minute: 59 } },
+      ],
+    };
+    const result = isOpenNow(hours, testOffset);
+    assert.strictEqual(result.isOpen, true);
+    assert.strictEqual(result.label, 'Open now');
+  });
+
+  it('should detect closed outside business hours', () => {
+    // Create period for a day that is NOT today
+    const now = new Date();
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const testOffset = 0;
+    const localDate = new Date(utcMs + testOffset * 60000);
+    const today = localDate.getDay();
+    const otherDay = (today + 3) % 7; // 3 days away, definitely not today
+
+    const hours = {
+      periods: [
+        { open: { day: otherDay, hour: 8, minute: 0 }, close: { day: otherDay, hour: 17, minute: 0 } },
+      ],
+    };
+    const result = isOpenNow(hours, testOffset);
+    assert.strictEqual(result.isOpen, false);
+    assert.strictEqual(result.label, 'Closed');
+  });
+
+  it('should handle 24-hour venues', () => {
+    const now = new Date();
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const testOffset = 0;
+    const localDate = new Date(utcMs + testOffset * 60000);
+    const today = localDate.getDay();
+
+    const hours = {
+      periods: [
+        { open: { day: today, hour: 0, minute: 0 } }, // No close = open all day
+      ],
+    };
+    const result = isOpenNow(hours, testOffset);
+    assert.strictEqual(result.isOpen, true);
+    assert.strictEqual(result.label, 'Open 24 hours');
+  });
+
+  it('should handle overnight periods', () => {
+    const now = new Date();
+    const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+    const testOffset = 0;
+    const localDate = new Date(utcMs + testOffset * 60000);
+    const today = localDate.getDay();
+    const tomorrow = (today + 1) % 7;
+
+    // Open from today 00:00 to tomorrow 06:00
+    const hours = {
+      periods: [
+        { open: { day: today, hour: 0, minute: 0 }, close: { day: tomorrow, hour: 6, minute: 0 } },
+      ],
+    };
+    const result = isOpenNow(hours, testOffset);
+    assert.strictEqual(result.isOpen, true);
   });
 });
 
