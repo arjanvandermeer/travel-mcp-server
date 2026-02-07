@@ -1,8 +1,14 @@
 # Travel MCP Server
 
-MCP server for travel information using GeoNames city data, OpenStreetMap POI data, and Google Places API enrichment.
+An MCP server for travel information, powered by GeoNames city data, OpenStreetMap POIs, and Google Places enrichment.
 
-This MCP server uses publicly available data and API's. All code is written by me (and Claude) in my own time and has no correlation to my employer or colleagues. 
+- **OAuth 2.1 authentication** — seamless sign-in via Google
+- **Hotel & restaurant discovery** — search by city name or geographic coordinates
+- **Point-of-interest search** — explore museums, attractions, cafes, and more across the globe
+- **Personal favorites** — bookmark and retrieve your preferred hotels and restaurants
+- **Rich detail views** — access comprehensive POI information as structured JSON or rendered HTML pages ([MCP resource templates](src/templates/))
+
+**All code is written by me (and Claude) in my own time and has no affiliation with my employer or colleagues.**
 
 ## Features
 
