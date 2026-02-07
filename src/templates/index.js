@@ -136,6 +136,14 @@ Handlebars.registerHelper('poiName', function (poi) {
 });
 
 /**
+ * Helper for greater-than comparison (used in carousel conditionals)
+ * Usage: {{#if (gt value threshold)}}...{{/if}}
+ */
+Handlebars.registerHelper('gt', function (a, b) {
+  return a > b;
+});
+
+/**
  * Helper to format a date as a readable string (e.g., "January 15, 2025")
  * Usage: {{formatDate dateValue}}
  */
