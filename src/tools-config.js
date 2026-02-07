@@ -902,11 +902,11 @@ export async function executeToolHandler(name, args, db, options = {}) {
         };
       }
 
-      // UI version returns structuredContent for detail page rendering
+      // UI version returns structuredContent with pre-rendered HTML for widget display
       if (name === 'get_poi_details_ui') {
         return {
           content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],
-          structuredContent: poi,
+          structuredContent: { ...poi, _html: renderPOIPreview(poi, render) },
         };
       }
       return { content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }] };
