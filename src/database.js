@@ -1100,9 +1100,9 @@ export class TravelDatabase {
       const limitCheck2 = await this.checkGoogleApiLimit();
       if (!limitCheck2.allowed) {
         console.error(`Google API daily limit reached (${limitCheck2.current}/${limitCheck2.limit}). Skipping details for OSM ${osmId}`);
-        await this.createMapping(osmId, matchResult.place_id, {
+        await this.createMapping(osmId, null, {
           mapping_status: 'pending',
-          mapping_notes: 'Rate limit reached before details fetch'
+          mapping_notes: `Rate limit reached before details fetch (place_id: ${matchResult.place_id})`
         });
         return;
       }
@@ -1112,9 +1112,9 @@ export class TravelDatabase {
       await this.incrementGoogleApiCounter(); // Count the details API call
 
       if (!placeDetails) {
-        await this.createMapping(osmId, matchResult.place_id, {
+        await this.createMapping(osmId, null, {
           mapping_status: 'error',
-          mapping_notes: 'Failed to retrieve place details'
+          mapping_notes: `Failed to retrieve place details (place_id: ${matchResult.place_id})`
         });
         return;
       }
@@ -1326,8 +1326,8 @@ export class TravelDatabase {
     } = metadata;
 
     if (!googlePlaceId) {
-      // Only insert if not_found or error status
-      if (mapping_status === 'not_found' || mapping_status === 'error') {
+      // Insert mapping with NULL google_place_id for non-active statuses
+      if (mapping_status === 'not_found' || mapping_status === 'error' || mapping_status === 'pending') {
         await this.pool.query(`
           INSERT INTO osm_google_mappings (
             osm_id,
@@ -1335,12 +1335,12 @@ export class TravelDatabase {
             mapping_status,
             mapping_notes,
             mapped_at
-          ) VALUES ($1, $2, $3, $4, CURRENT_TIMESTAMP)
+          ) VALUES ($1, NULL, $2, $3, CURRENT_TIMESTAMP)
           ON CONFLICT (osm_id) DO UPDATE SET
             mapping_status = EXCLUDED.mapping_status,
             mapping_notes = EXCLUDED.mapping_notes,
             mapped_at = CURRENT_TIMESTAMP
-        `, [osmId, 'not_found_placeholder', mapping_status, mapping_notes]);
+        `, [osmId, mapping_status, mapping_notes]);
       }
       return;
     }
