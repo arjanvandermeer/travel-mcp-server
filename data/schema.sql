@@ -7,6 +7,8 @@ CREATE EXTENSION IF NOT EXISTS postgis;
 -- Drop existing tables if they exist (for development)
 DROP TABLE IF EXISTS osm_google_mappings CASCADE;
 DROP TABLE IF EXISTS google_places CASCADE;
+DROP TABLE IF EXISTS import_sources CASCADE;
+DROP TABLE IF EXISTS import_log CASCADE;
 DROP TABLE IF EXISTS imports CASCADE;
 DROP TABLE IF EXISTS osm_pois CASCADE;
 DROP TABLE IF EXISTS hotels CASCADE;
@@ -18,25 +20,43 @@ DROP TABLE IF EXISTS regions CASCADE;
 -- ============================================================================
 -- Import Tracking
 -- ============================================================================
-CREATE TABLE imports (
+CREATE TABLE import_log (
     id SERIAL PRIMARY KEY,
-    import_type VARCHAR(50) NOT NULL,        -- 'geonames_countries', 'geonames_cities', 'osm_pois', 'regions'
+    import_type VARCHAR(50) NOT NULL,        -- 'geonames_countries', 'geonames_cities', 'osm_all', 'osm_hotel', etc.
     source_file VARCHAR(500),                -- e.g., 'thailand-latest.osm.pbf', 'allCountries.txt'
     source_url VARCHAR(1000),                -- Original download URL
     source_date DATE,                        -- Date of source file (from filename or metadata)
     region_name VARCHAR(200),                -- For regional imports (e.g., 'thailand-latest', 'bangkok')
     started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     completed_at TIMESTAMP,
-    status VARCHAR(20) NOT NULL DEFAULT 'running',  -- 'running', 'completed', 'failed'
+    status VARCHAR(20) NOT NULL DEFAULT 'running',  -- 'running', 'completed', 'failed', 'aborted'
     records_imported INTEGER,
     error_message TEXT,
     metadata JSONB                           -- Additional import details
 );
 
-CREATE INDEX idx_imports_type ON imports(import_type);
-CREATE INDEX idx_imports_region ON imports(region_name);
-CREATE INDEX idx_imports_status ON imports(status);
-CREATE INDEX idx_imports_completed ON imports(completed_at DESC);
+-- ============================================================================
+-- Import Sources (Region Registry)
+-- Pre-seeded with 65 regions for automatic Geofabrik downloads
+-- ============================================================================
+CREATE TABLE import_sources (
+    id SERIAL PRIMARY KEY,
+    keyword VARCHAR(100) UNIQUE NOT NULL,           -- Short name (e.g., 'france', 'thailand')
+    source_url VARCHAR(500) NOT NULL,               -- Geofabrik download URL
+    display_name VARCHAR(200),                      -- Human-readable name
+    min_pois INTEGER DEFAULT 100,                   -- Minimum POIs expected (fail if fewer)
+    refresh_interval_days INTEGER DEFAULT 30,       -- How often to re-import
+    enabled BOOLEAN DEFAULT TRUE,                   -- Can disable without deleting
+    last_imported_at TIMESTAMP,                     -- When last successfully imported
+    last_import_id INTEGER,                         -- FK to import_log
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (last_import_id) REFERENCES import_log(id)
+);
+
+CREATE UNIQUE INDEX import_sources_keyword_key ON import_sources(keyword);
+CREATE INDEX idx_import_sources_keyword ON import_sources(keyword);
+CREATE INDEX idx_import_sources_enabled ON import_sources(enabled);
 
 -- ============================================================================
 -- Application Configuration
@@ -107,7 +127,7 @@ CREATE INDEX idx_countries_geoname_id ON geonames_countries(geoname_id);
 -- GeoNames Admin1 Codes (States/Provinces)
 -- ============================================================================
 CREATE TABLE geonames_admin1_codes (
-    code VARCHAR(15) PRIMARY KEY,           -- e.g., 'US.NY', 'GB.ENG'
+    code VARCHAR(20) PRIMARY KEY,           -- e.g., 'US.NY', 'GB.ENG'
     country_code VARCHAR(2) NOT NULL,       -- ISO country code
     admin1_code VARCHAR(20) NOT NULL,       -- Admin1 code (e.g., 'NY', 'ENG')
     name VARCHAR(200) NOT NULL,             -- Full name (e.g., 'New York')
@@ -119,7 +139,6 @@ CREATE TABLE geonames_admin1_codes (
 CREATE INDEX idx_admin1_country ON geonames_admin1_codes(country_code);
 CREATE INDEX idx_admin1_code ON geonames_admin1_codes(admin1_code);
 CREATE INDEX idx_admin1_name ON geonames_admin1_codes(name);
-CREATE INDEX idx_admin1_country_code ON geonames_admin1_codes(country_code, admin1_code);
 
 -- ============================================================================
 -- GeoNames Cities
@@ -152,10 +171,15 @@ CREATE TABLE geonames_cities (
 CREATE INDEX idx_cities_location ON geonames_cities USING GIST(location);
 
 -- Other useful indexes
-CREATE INDEX idx_cities_name ON geonames_cities(name);
 CREATE INDEX idx_cities_country ON geonames_cities(country_code);
 CREATE INDEX idx_cities_population ON geonames_cities(population DESC);
 CREATE INDEX idx_cities_name_country ON geonames_cities(name, country_code);
+CREATE INDEX idx_cities_country_admin1 ON geonames_cities(country_code, admin1_code);
+CREATE INDEX idx_cities_country_population ON geonames_cities(country_code, population DESC);
+
+-- Trigram indexes for fuzzy name search
+CREATE INDEX idx_cities_name_trgm ON geonames_cities USING GIN(name gin_trgm_ops);
+CREATE INDEX idx_cities_ascii_name_trgm ON geonames_cities USING GIN(ascii_name gin_trgm_ops);
 
 -- Note: Hotels are now stored in the POIs table with poi_type='hotel'
 -- This better reflects OSM's data model where hotels are just tourism POIs
@@ -311,16 +335,26 @@ CREATE TABLE osm_pois (
     FOREIGN KEY (nearest_city_id) REFERENCES geonames_cities(geoname_id)
 );
 
--- Indexes
-CREATE INDEX idx_osm_pois_location ON osm_pois USING GIST(location);
-CREATE INDEX idx_osm_pois_name ON osm_pois(name);
+-- Indexes: geography-based spatial for distance queries
+CREATE INDEX idx_osm_pois_location_geog ON osm_pois USING GIST((location::geography));
+CREATE INDEX idx_osm_pois_location_accommodation ON osm_pois USING GIST((location::geography))
+    WHERE poi_type IN ('hotel', 'guest_house', 'motel', 'hostel');
+
+-- Type and name indexes
 CREATE INDEX idx_osm_pois_type ON osm_pois(poi_type);
-CREATE INDEX idx_osm_pois_type_name ON osm_pois(poi_type, name);  -- For type-specific searches
+CREATE INDEX idx_osm_pois_type_name ON osm_pois(poi_type, name);
+CREATE INDEX idx_osm_pois_type_city ON osm_pois(poi_type, nearest_city_id);
 CREATE INDEX idx_osm_pois_source_region ON osm_pois(source_region);
-CREATE INDEX idx_osm_pois_nearest_city ON osm_pois(nearest_city_id);
-CREATE INDEX idx_osm_pois_tags ON osm_pois USING GIN(tags);
-CREATE INDEX idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);  -- For fuzzy search
-CREATE INDEX idx_osm_pois_stars ON osm_pois(stars) WHERE stars IS NOT NULL;  -- For hotel filtering
+CREATE INDEX idx_osm_pois_nearest_city_id ON osm_pois(nearest_city_id);
+CREATE INDEX idx_osm_pois_stars ON osm_pois(stars) WHERE stars IS NOT NULL;
+CREATE INDEX idx_osm_pois_cuisine ON osm_pois(cuisine) WHERE cuisine IS NOT NULL;
+
+-- Trigram indexes for fuzzy name search (general + type-specific partial)
+CREATE INDEX idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);
+CREATE INDEX idx_osm_pois_name_trgm_accommodation ON osm_pois USING GIN(name gin_trgm_ops)
+    WHERE poi_type IN ('hotel', 'guest_house', 'motel', 'hostel');
+CREATE INDEX idx_osm_pois_name_trgm_food ON osm_pois USING GIN(name gin_trgm_ops)
+    WHERE poi_type IN ('restaurant', 'cafe', 'fast_food', 'bar', 'pub');
 
 -- Enable trigram extension for fuzzy name search
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -637,7 +671,7 @@ CREATE TABLE user_config (
 -- INSERT INTO user_config (user_id, key, value) VALUES (1, 'google_places_limit', 'unlimited');
 -- INSERT INTO user_config (user_id, key, value) VALUES (1, 'role', 'admin');
 
--- User favorites (future feature)
+-- User favorites
 CREATE TABLE user_favorites (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     poi_osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
@@ -659,6 +693,8 @@ CREATE INDEX idx_user_favorites_poi ON user_favorites(poi_osm_id);
 -- SELECT COUNT(*) FROM osm_pois;
 -- SELECT COUNT(*) FROM osm_pois WHERE poi_type = 'hotel';
 -- SELECT COUNT(*) FROM osm_pois WHERE poi_type = 'restaurant';
+-- SELECT COUNT(*) FROM import_log WHERE status = 'completed';
+-- SELECT COUNT(*) FROM import_sources WHERE enabled = TRUE;
 -- SELECT COUNT(*) FROM regions;
 -- SELECT PostGIS_Version();
 --
