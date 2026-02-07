@@ -49,24 +49,58 @@ async function lookupImportSource(pool, keyword) {
 }
 
 /**
+ * Check if a file should be downloaded based on age
+ * @param {string} filePath - Path to the file
+ * @param {number} maxAgeDays - Maximum age in days before re-downloading
+ * @returns {{shouldDownload: boolean, reason: string, fileAge?: number}}
+ */
+function checkFileAge(filePath, maxAgeDays = 7) {
+  if (!fs.existsSync(filePath)) {
+    return { shouldDownload: true, reason: 'file does not exist' };
+  }
+
+  const stats = fs.statSync(filePath);
+  const fileAgeDays = (Date.now() - stats.mtime.getTime()) / (1000 * 60 * 60 * 24);
+
+  if (fileAgeDays > maxAgeDays) {
+    return {
+      shouldDownload: true,
+      reason: `file is ${fileAgeDays.toFixed(1)} days old (max: ${maxAgeDays} days)`,
+      fileAge: fileAgeDays,
+    };
+  }
+
+  return {
+    shouldDownload: false,
+    reason: `file is ${fileAgeDays.toFixed(1)} days old (still fresh)`,
+    fileAge: fileAgeDays,
+  };
+}
+
+/**
  * Download a file from URL with progress display
+ * Does NOT delete files on failure - allows resuming/retrying
  * @param {string} url - URL to download from
  * @param {string} destPath - Local path to save file
  * @returns {Promise<void>}
  */
 async function downloadFile(url, destPath) {
+  // Use a temp file for downloading to avoid corrupting existing files
+  const tempPath = destPath + '.downloading';
+
   return new Promise((resolve, reject) => {
     console.log(`📥 Downloading from: ${url}`);
     console.log(`   Saving to: ${destPath}`);
 
     const protocol = url.startsWith('https') ? https : http;
-    const file = fs.createWriteStream(destPath);
+    const file = fs.createWriteStream(tempPath);
 
     const request = protocol.get(url, (response) => {
       // Handle redirects
       if (response.statusCode === 301 || response.statusCode === 302) {
         file.close();
-        fs.unlinkSync(destPath);
+        // Clean up temp file on redirect
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
         console.log(`   Following redirect to: ${response.headers.location}`);
         downloadFile(response.headers.location, destPath).then(resolve).catch(reject);
         return;
@@ -74,7 +108,8 @@ async function downloadFile(url, destPath) {
 
       if (response.statusCode !== 200) {
         file.close();
-        fs.unlinkSync(destPath);
+        // Clean up temp file on HTTP error
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
         reject(new Error(`Download failed with status ${response.statusCode}`));
         return;
       }
@@ -100,6 +135,11 @@ async function downloadFile(url, destPath) {
 
       file.on('finish', () => {
         file.close();
+        // Move temp file to final destination on success
+        if (fs.existsSync(destPath)) {
+          fs.unlinkSync(destPath); // Remove old file first
+        }
+        fs.renameSync(tempPath, destPath);
         console.log('\n   ✓ Download complete\n');
         resolve();
       });
@@ -107,13 +147,16 @@ async function downloadFile(url, destPath) {
 
     request.on('error', (err) => {
       file.close();
-      fs.unlinkSync(destPath);
+      // Keep temp file for debugging but don't corrupt the original
+      console.error(`\n   ⚠️  Download interrupted: ${err.message}`);
+      console.error(`   Partial file kept at: ${tempPath}`);
       reject(err);
     });
 
     file.on('error', (err) => {
       file.close();
-      fs.unlinkSync(destPath);
+      // Keep temp file for debugging
+      console.error(`\n   ⚠️  File write error: ${err.message}`);
       reject(err);
     });
   });
@@ -283,19 +326,35 @@ async function importOSM(input, poiType = 'all') {
       regionName = source.keyword;
       transaction.setTag('region', regionName);
 
-      // Download the file with telemetry tracking
+      // Check if we need to download the file
       const filename = `${source.keyword}-latest.osm.pbf`;
       pbfPath = path.join(process.cwd(), filename);
 
-      const downloadSpan = transaction.startChild('http', `Download ${regionName}`);
-      await downloadFile(source.source_url, pbfPath);
-      downloadSpan.finish();
+      const fileCheck = checkFileAge(pbfPath, 7); // 7 days max age
 
-      // Record file size
-      const fileSize = fs.statSync(pbfPath).size;
-      telemetry.recordDistribution('osm.download.size', fileSize, { tags: { region: regionName }, unit: 'byte' });
+      if (fileCheck.shouldDownload) {
+        console.log(`📂 ${fileCheck.reason}`);
 
-      shouldDeleteFile = true;
+        // Download the file with telemetry tracking
+        const downloadSpan = transaction.startChild('http', `Download ${regionName}`);
+        await downloadFile(source.source_url, pbfPath);
+        downloadSpan.finish();
+
+        // Record file size
+        const fileSize = fs.statSync(pbfPath).size;
+        telemetry.recordDistribution('osm.download.size', fileSize, { tags: { region: regionName }, unit: 'byte' });
+
+        shouldDeleteFile = true;
+      } else {
+        const fileSize = fs.statSync(pbfPath).size;
+        const fileSizeMB = (fileSize / 1024 / 1024).toFixed(1);
+        console.log(`📂 Using cached file: ${pbfPath}`);
+        console.log(`   ${fileCheck.reason} (${fileSizeMB} MB)`);
+        console.log(`   To force re-download, delete the file or wait until it's older than 7 days\n`);
+
+        // Don't delete cached files after import
+        shouldDeleteFile = false;
+      }
     }
 
     // Get file stats for source_date
