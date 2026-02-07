@@ -15,8 +15,8 @@ Before you begin, ensure you have:
 
 ```bash
 cd ~/Documents/Development  # Or your preferred location
-git clone <your-repo-url> hotel-mcp-server
-cd hotel-mcp-server
+git clone <your-repo-url> travel-mcp-server
+cd travel-mcp-server
 ```
 
 ---
@@ -540,9 +540,9 @@ pwd
 ```
 
 **Example output:**
-- macOS: `/Users/yourname/Documents/Development/hotel-mcp-server`
-- Linux: `/home/yourname/Documents/Development/hotel-mcp-server`
-- Windows: `C:\Users\yourname\Documents\Development\hotel-mcp-server`
+- macOS: `/Users/yourname/Documents/Development/travel-mcp-server`
+- Linux: `/home/yourname/Documents/Development/travel-mcp-server`
+- Windows: `C:\Users\yourname\Documents\Development\travel-mcp-server`
 
 ### 8.3 Locate Claude Desktop Config File
 
@@ -570,7 +570,7 @@ Add this to the config file (create it if it doesn't exist):
   "mcpServers": {
     "travel-info": {
       "command": "/FULL/PATH/TO/node",
-      "args": ["/FULL/PATH/TO/hotel-mcp-server/src/index.js"]
+      "args": ["/FULL/PATH/TO/travel-mcp-server/src/index.js"]
     }
   }
 }
@@ -583,7 +583,7 @@ Add this to the config file (create it if it doesn't exist):
   "mcpServers": {
     "travel-info": {
       "command": "/Users/arjan/.nvm/versions/node/v24.0.0/bin/node",
-      "args": ["/Users/arjan/Documents/Development/hotel-mcp-server/src/index.js"]
+      "args": ["/Users/arjan/Documents/Development/travel-mcp-server/src/index.js"]
     }
   }
 }
@@ -596,7 +596,7 @@ Add this to the config file (create it if it doesn't exist):
   "mcpServers": {
     "travel-info": {
       "command": "C:\\Program Files\\nodejs\\node.exe",
-      "args": ["C:\\Users\\arjan\\Documents\\Development\\hotel-mcp-server\\src\\index.js"]
+      "args": ["C:\\Users\\arjan\\Documents\\Development\\travel-mcp-server\\src\\index.js"]
     }
   }
 }

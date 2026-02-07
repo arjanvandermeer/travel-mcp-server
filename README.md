@@ -496,7 +496,7 @@ See [TODO.md](TODO.md) for planned improvements:
 ## Project Structure
 
 ```
-hotel-mcp-server/
+travel-mcp-server/
 ├── src/
 │   ├── index.js                   # MCP server (stdio transport)
 │   ├── index-http.js              # MCP server (HTTP transport - dual protocol)
