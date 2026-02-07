@@ -40,8 +40,9 @@ describe('formatDate Handlebars helper', () => {
     const html = renderPOIPreview(poi, render);
 
     // Banner should still show, just without the date line
-    assert.ok(html.includes('On Your Favorites'), 'Should show favorite banner');
-    assert.ok(!html.includes('Added '), 'Should not show Added line when date is null');
+    const body = getBody(html);
+    assert.ok(body.includes('On Your Favorites'), 'Should show favorite banner');
+    assert.ok(!body.includes('Added '), 'Should not show Added line when date is null');
   });
 });
 
@@ -54,14 +55,14 @@ describe('renderPOIPreview favorite banner', () => {
     const poi = makePOI();
     const html = renderPOIPreview(poi, render);
 
-    assert.ok(!html.includes('On Your Favorites'), 'Should not contain favorite text');
+    assert.ok(!getBody(html).includes('On Your Favorites'), 'Should not contain favorite text');
   });
 
   it('should not show favorite banner when is_favorite is false', () => {
     const poi = makePOI({ is_favorite: false });
     const html = renderPOIPreview(poi, render);
 
-    assert.ok(!html.includes('On Your Favorites'), 'Should not contain favorite text');
+    assert.ok(!getBody(html).includes('On Your Favorites'), 'Should not contain favorite text');
   });
 
   it('should show favorite banner when POI is favorited', () => {
@@ -97,7 +98,9 @@ describe('renderPOIPreview favorite banner', () => {
     const html = renderPOIPreview(poi, render);
 
     assert.ok(html.includes('On Your Favorites'), 'Should show banner');
-    assert.ok(!html.includes('class="favorite-notes"'), 'Should not render notes element');
+    // Check only the rendered body (between </style> and <script>), not the client-side JS
+    const bodyContent = html.substring(html.indexOf('</style>'), html.indexOf('<script'));
+    assert.ok(!bodyContent.includes('favorite-notes'), 'Should not render notes element in body');
   });
 
   it('should render favorite banner before other content cards', () => {
@@ -346,6 +349,11 @@ describe('isOpenNow', () => {
 // =============================================================================
 // Helper: Create a minimal valid POI object for rendering
 // =============================================================================
+
+/** Extract only the rendered body content (between </style> and <script), excluding client-side JS */
+function getBody(html) {
+  return html.substring(html.indexOf('</style>'), html.indexOf('<script'));
+}
 
 function makePOI(overrides = {}) {
   return {
