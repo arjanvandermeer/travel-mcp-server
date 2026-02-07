@@ -12,13 +12,114 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 
 ## Features
 
-- **Multi-Source Data Integration**: Combines GeoNames cities, OpenStreetMap POIs, and Google Places enrichment
-- **Comprehensive POI Search**: Hotels, restaurants, cafes, museums, attractions, shopping, and more
-- **City Search**: Search cities worldwide from GeoNames database (150k+ cities)
-- **Smart Location-Based Search**: Find POIs by city name, coordinates, or combined name+location queries
-- **Google Places Enrichment**: Automatic background enrichment with ratings, reviews, photos, and verified details
-- **Unified Search API**: Single `search_pois` tool supports all POI types with flexible filtering
-- **PostgreSQL + PostGIS**: Efficient spatial queries with geographic indexing
+### Multi-Source Data Integration
+Combines three complementary data sources into a unified view: **GeoNames** for 150k+ cities worldwide, **OpenStreetMap** for 350k+ points of interest, and **Google Places** for ratings, reviews, photos, and verified business details. An `enriched_pois` database view merges OSM and Google data automatically, always selecting the best available field from each source.
+
+### Comprehensive Search
+Search across 30+ POI categories — hotels, hostels, restaurants, cafes, bars, museums, attractions, castles, ruins, shopping malls, places of worship, and more. All searches support multiple modes: by name (with fuzzy matching and similarity scoring), by city, by geographic coordinates with configurable radius, or any combination. Results are sorted by distance when coordinates are provided, and include favorite status for authenticated users.
+
+### Google Places Enrichment
+Automatic, lazy-loaded enrichment for "bookable" POIs (hotels, restaurants, museums, etc.). When a search returns results, the top 10 are enriched in the background via Google's Places API — adding star ratings, review counts, price levels, photos, verified phone numbers, websites, opening hours, service options (dine-in, takeout, delivery), amenities, and accessibility information. All enrichment data is cached for 7 days to minimise API costs, with daily call limits and retry prevention.
+
+### Personal Favorites
+Authenticated users can bookmark any POI as a favorite, attach personal notes, and retrieve their collection later — filtered by city, coordinates, or POI type. Favorite status is also surfaced in all search results, so you can immediately see which results you've previously saved.
+
+### Rich Detail Views
+Every POI is accessible as structured JSON (for LLM consumption) or as a rendered HTML detail page via [MCP resource templates](src/templates/). The HTML pages feature photo galleries, rating stars, review excerpts, opening hours tables, service option badges, amenity icons, and accessibility indicators — suitable for embedding in ChatGPT via the Apps SDK or browsing directly.
+
+### OAuth 2.1 Authentication
+Full OAuth 2.1 implementation with Google as identity provider, powered by a Cloudflare Worker. Supports PKCE (S256), dynamic client registration (RFC 7591), token introspection, refresh token rotation, and automatic user provisioning on first login. Also supports simple database tokens for programmatic access (e.g., Claude Desktop).
+
+### OpenStreetMap Data Synchronization
+65 pre-seeded regions (continents and major countries) with automatic Geofabrik downloads, configurable refresh intervals, duplicate import protection, and three-pass memory-efficient PBF parsing that handles multi-gigabyte files in under 2 GB of RAM. The `refresh-imports` command identifies stale regions and re-imports them on schedule.
+
+### PostgreSQL + PostGIS
+All geographic queries backed by PostGIS spatial indexing — GIST indexes on geometry columns, GIN trigram indexes for fuzzy name matching, and aggressive indexing on read-heavy import tables (13 indexes on `osm_pois` alone). The database-first configuration model (`app_config` table) keeps settings environment-independent and changeable at runtime.
+
+### Telemetry & Monitoring
+Sentry integration for error tracking and performance monitoring, with custom metrics for authentication, session management, Google Places API usage, and MCP protocol errors. Health check endpoint reports server status, version, git commit, and active session count.
+
+## Authentication
+
+The server supports two authentication methods, used in sequence — if an OAuth token is not present or invalid, the server falls back to database tokens. Unauthenticated requests are treated as anonymous (no 401/403 errors), but features like favorites require a logged-in user.
+
+### OAuth 2.1 (Primary)
+
+A full OAuth 2.1 flow implemented via a **Cloudflare Worker**, with Google as the identity provider.
+
+| Component | Detail |
+|-----------|--------|
+| **Code challenge** | PKCE with S256 |
+| **Client registration** | Dynamic (RFC 7591) |
+| **Discovery** | `/.well-known/oauth-authorization-server` (RFC 8414) and `/.well-known/oauth-protected-resource` (RFC 9728) |
+| **Token exchange** | `/token` endpoint with authorization code grant |
+| **Introspection** | `/introspect` for token validation |
+| **Revocation** | `/revoke` endpoint |
+| **Access tokens** | 7-day lifetime |
+| **Refresh tokens** | 30-day lifetime, rotated on each use |
+| **Authorization codes** | 5-minute lifetime |
+
+New users are **auto-provisioned** on first OAuth login — the server calls the introspection endpoint, retrieves the Google profile, and creates a local user record. Subsequent logins update the profile (name, picture) and record `last_login_at`.
+
+### Database Tokens (Programmatic)
+
+For non-browser clients like Claude Desktop, the server supports long-lived database tokens — 64-character hex strings stored in the `user_tokens` table. Tokens track `created_at`, `expires_at`, `last_used_at`, and can be revoked individually. The `whoami` MCP tool returns the authenticated user's identity regardless of which method was used.
+
+### Mid-Session Authentication
+
+The HTTP server supports **authentication upgrades mid-session** — a client can start anonymously and authenticate later without reconnecting. User context is passed to all tool handlers via a mutable reference, so tools always see the current authentication state.
+
+---
+
+## OpenStreetMap Data Synchronization
+
+### Import System
+
+The server maintains a registry of **65 pre-seeded regions** (continents and individual countries), each with a Geofabrik download URL, a minimum POI threshold, and a configurable refresh interval (default: 30 days).
+
+**Keyword-based import** — supply a region name and the server downloads the correct PBF file automatically:
+```bash
+node src/import-osm-pbf.js france          # All POI types for France
+node src/import-osm-pbf.js thailand hotel  # Hotels only for Thailand
+node src/import-osm-pbf.js maldives all    # Everything for Maldives
+```
+
+**Scheduled refresh** — the `refresh-imports` script identifies regions whose data has gone stale:
+```bash
+node src/refresh-imports.js --list          # Show all regions and their status
+node src/refresh-imports.js --dry-run       # Preview what would be refreshed
+node src/refresh-imports.js --max=5         # Refresh up to 5 stale regions
+node src/refresh-imports.js --region=france # Refresh a specific region
+```
+
+### Three-Pass Memory-Efficient Parsing
+
+Large PBF files (e.g., the 4 GB Europe extract) are parsed in three passes to keep memory usage below 2 GB:
+
+1. **Pass 1** — Scan for POI ways and collect the node IDs they reference
+2. **Pass 2** — Collect coordinates only for nodes identified in Pass 1
+3. **Pass 3** — Process POI nodes directly and resolve way centroids from collected coordinates
+
+### Import Safety
+
+- **Duplicate protection** — if an import is already running for the same region, the existing job is aborted before the new one starts
+- **Graceful termination** — running imports check every 30 seconds whether they've been aborted
+- **Stale job cleanup** — imports running for more than 24 hours are automatically marked as failed
+- **Minimum POI threshold** — each region has a `min_pois` value; imports that produce fewer records are flagged
+
+### POI Types Imported
+
+| Category | Types |
+|----------|-------|
+| Accommodation | hotel, hostel, guest_house, motel, resort, apartment, bed_and_breakfast |
+| Food & Drink | restaurant, cafe, bar, pub, fast_food, food_court |
+| Tourism | attraction, museum, viewpoint, artwork, gallery, theme_park, zoo |
+| Historic | monument, memorial, castle, ruins, archaeological_site |
+| Entertainment | cinema, theatre, nightclub |
+| Shopping | shopping_mall, department_store, supermarket |
+| Religious | place_of_worship |
+
+---
 
 ## Recent Updates
 
@@ -107,94 +208,148 @@ For Claude Desktop configuration and detailed setup instructions, see [GETTING_S
 
 ## Available MCP Tools
 
-### 1. `search_cities`
+All search tools enforce a **maximum limit of 100 results**. Each search tool also has a `_ui` variant (e.g., `search_hotels_ui`) that returns structured content for ChatGPT's Apps SDK in addition to plain text.
 
-Search for cities by name with optional country filtering.
+---
 
-```json
-{
-  "query": "Bangkok",
-  "country_code": "TH",
-  "limit": 10
-}
-```
+### Search Tools
 
-Returns cities with coordinates, population, timezone.
+#### `search_cities`
 
-### 2. `search_hotels`
+Search the GeoNames database of 150k+ cities worldwide. Requires either a `country_code` or coordinates — a bare `query` alone will return an error.
 
-Search for hotels by name, location, or both.
+**Parameters**: `query`, `country_code`, `state`, `latitude`, `longitude`, `limit` (default 10, max 100)
 
-**Search modes:**
-- By name only: `{ "query": "Marriott" }`
-- By city: `{ "city_name": "Bangkok", "country_code": "TH" }`
-- By coordinates: `{ "latitude": 13.7563, "longitude": 100.5018, "radius_km": 5 }`
-- Combined: `{ "query": "Marriott", "city_name": "Bangkok" }`
+**Valid combinations**:
+| Parameters | Behaviour |
+|------------|-----------|
+| `query` + `country_code` | Name search within a country |
+| `query` + `country_code` + `state` | Name search within a state/province |
+| `query` + `latitude` + `longitude` | Name search near a point |
+| `country_code` | List largest cities by population |
+| `country_code` + `state` | List cities in a state |
+| `latitude` + `longitude` | Nearest cities to a point (default radius 50 km) |
 
-**Response includes**:
-- OSM data: name, address, phone, website, stars, rooms
-- Google Places data (if enriched): rating, reviews, photos, verified details
-- Distance from search center
-- Enrichment status
+**Returns**: `geoname_id`, `name`, `country_code`, `country_name`, `state_code`, `state_name`, `population`, `latitude`, `longitude`, `timezone`, `distance_km` (coordinate searches)
 
-### 3. `search_restaurants`
+---
 
-Search for restaurants by name, location, or both. Same flexible search modes as `search_hotels`.
+#### `search_hotels` / `search_hotels_ui`
 
-```json
-{
-  "query": "Italian restaurant",
-  "city_name": "Bangkok",
-  "country_code": "TH",
-  "limit": 20
-}
-```
+Search for accommodation: hotels, hostels, guest houses, motels, resorts, apartments, and B&Bs. Supports fuzzy name matching with similarity scoring.
 
-**Response includes**:
-- OSM data: name, cuisine, opening_hours, phone, website
-- Google Places data (if enriched): rating, reviews, price_level, photos
-- Distance from search center
+**Parameters**: `query`, `city_name`, `country_code`, `state`, `latitude`, `longitude`, `radius_km` (default 15, max 50), `limit` (default 50, max 100)
 
-### 4. `search_pois`
+**Valid combinations**:
+- `query` — global brand/name search (e.g., "Marriott")
+- `city_name` + `country_code` — all hotels in a city
+- `latitude` + `longitude` — hotels within radius of a point
+- `query` + `city_name` + `country_code` — brand search in a specific city
+- `query` + `latitude` + `longitude` — brand search near coordinates
+- Any of the above with optional `state` for disambiguation
 
-Universal POI search supporting all POI types.
+**Response fields**: `osm_id`, `name`, `poi_type`, `latitude`, `longitude`, `city`, `country_code`, `osm_stars`, `osm_brand`, `google_rating`, `google_review_count`, `google_price_level`, `google_phone`, `google_website`, `google_maps_url`, `google_opening_hours`, `google_photos`, `photo_url`, `preview_url`, `resource_uri`, `distance_meters`, `is_favorite`, `favorite_since`, `favorite_notes`
 
-```json
-{
-  "query": "museum",
-  "city_name": "Paris",
-  "country_code": "FR",
-  "poi_type": "museum",
-  "limit": 20
-}
-```
+Searches automatically trigger **background Google Places enrichment** for the top 10 results.
 
-**Parameters**:
-- `query`: Optional name to search for
-- `city_name` / `country_code`: Optional location filter
-- `latitude` / `longitude` / `radius_km`: Optional coordinate-based search
-- `poi_type`: Optional type filter (hotel, restaurant, museum, etc.)
-- `limit`: Max results (default: 50)
+---
 
-### 5. `get_poi_details`
+#### `search_restaurants` / `search_restaurants_ui`
 
-Get detailed information about a specific POI, including Google Places enrichment.
+Search for dining and drinking venues: restaurants, cafes, bars, pubs, fast food, and food courts. Same flexible search modes as `search_hotels`.
 
-```json
-{
-  "osm_id": 255562903
-}
-```
+**Additional parameter**: `type` — optional enum filter (`restaurant`, `cafe`, `bar`, `pub`, `fast_food`, `food_court`)
 
-**Triggers background enrichment** if POI hasn't been enriched yet.
+**Extra response fields**: `osm_cuisine` (cuisine types from OSM)
 
-### 6. `get_stats`
+---
 
-Get database statistics: countries, cities, POIs by type, coverage by region.
+#### `search_pois` / `search_pois_ui`
 
-```json
-{}
-```
+Universal search across all 30+ POI categories. Useful for exploring attractions, museums, castles, ruins, shopping, entertainment, and places of worship — or searching across all types at once.
+
+**Additional parameters**:
+- `poi_type` — single type filter (e.g., `museum`)
+- `poiTypes` — array filter for multiple types (e.g., `["museum", "gallery", "castle"]`)
+
+---
+
+### Detail Tools
+
+#### `get_poi_details` / `get_poi_details_ui`
+
+Retrieve full information about a single POI by its OpenStreetMap ID or Google Place ID. If the POI has not yet been enriched with Google Places data, this call **triggers background enrichment** and returns a status message — call again after ~1 minute to get the enriched result.
+
+**Parameters**: `osm_id` or `google_place_id`
+
+**Enrichment statuses**: `complete` (data available), `pending` (enrichment in progress), `failed` (no match found), `disabled` (Google Places not configured)
+
+**Response includes** all search fields plus: full Google reviews (top 5 with author, rating, text), service options (dine-in, takeout, delivery, reservations), amenities, accessibility features, parking and payment options, editorial summary, and business status.
+
+The `_ui` variant renders a rich HTML detail page with photo galleries, rating stars, review excerpts, opening hours tables, and amenity icons.
+
+---
+
+### Favorites Tools
+
+All favorites tools require authentication. Anonymous users receive a clear error message.
+
+#### `add_favorite`
+
+Bookmark a POI with optional personal notes. Uses upsert — calling it again on the same POI updates the notes.
+
+**Parameters**: `osm_id` (required), `notes` (optional string)
+
+#### `remove_favorite`
+
+Remove a POI from your favorites.
+
+**Parameters**: `osm_id` (required)
+
+#### `list_favorites`
+
+Retrieve your saved POIs with full detail, filtered by location or type.
+
+**Parameters**: `city_name`, `country_code`, `state`, `latitude`, `longitude`, `radius_km` (default 50), `poi_types` (array filter, e.g., `["restaurant", "hotel"]`), `limit` (default 100, max 100)
+
+**Returns**: Full POI details plus `is_favorite: true`, `favorite_since`, and `favorite_notes`. Sorted by distance (coordinate searches) or by date saved (city searches).
+
+---
+
+### Identity & Statistics
+
+#### `whoami`
+
+Returns the authenticated user's profile (`id`, `email`, `name`, `picture_url`) or `{ authenticated: false }` for anonymous sessions.
+
+#### `get_stats`
+
+Returns comprehensive database statistics: total countries, cities, POIs, and hotels; breakdowns by POI type and country; Google Places enrichment status distribution; and the 10 most recent completed imports with record counts.
+
+---
+
+### MCP Prompts
+
+The server exposes five discovery-friendly prompts that guide LLMs through common workflows:
+
+| Prompt | Description |
+|--------|-------------|
+| `find_hotels_in_city` | Search hotels in a given city and country |
+| `find_restaurants_nearby` | Search restaurants near geographic coordinates |
+| `find_attractions` | Discover tourist attractions in a city |
+| `explore_area` | Comprehensive area exploration (hotels + restaurants + attractions) |
+| `find_near_landmark` | Two-step workflow: find a landmark's coordinates, then search nearby |
+
+---
+
+### MCP Resources
+
+| Resource | Description |
+|----------|-------------|
+| `info://version` | Server version and git commit info |
+| `info://random-poi` | Link to a random enriched POI preview |
+| `samples://queries` | Example queries with suggested workflows |
+| `ui://{host}/poi/{osm_id}` | Rich HTML detail page for a specific POI |
 
 ## Google Places Enrichment
 
