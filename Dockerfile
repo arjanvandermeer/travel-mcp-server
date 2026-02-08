@@ -23,7 +23,8 @@ COPY src ./src
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
-    adduser -S nodejs -u 1001
+    adduser -S nodejs -u 1001 && \
+    mkdir -p /app/data && chown nodejs:nodejs /app/data
 USER nodejs
 
 EXPOSE 3000

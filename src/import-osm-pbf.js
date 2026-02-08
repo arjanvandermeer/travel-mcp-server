@@ -327,8 +327,11 @@ async function importOSM(input, poiType = 'all') {
       transaction.setTag('region', regionName);
 
       // Check if we need to download the file
+      // Use ./data/ subdir if it exists (writable in Docker), otherwise cwd
       const filename = `${source.keyword}-latest.osm.pbf`;
-      pbfPath = path.join(process.cwd(), filename);
+      const dataDir = path.join(process.cwd(), 'data');
+      const downloadDir = fs.existsSync(dataDir) ? dataDir : process.cwd();
+      pbfPath = path.join(downloadDir, filename);
 
       const fileCheck = checkFileAge(pbfPath, 7); // 7 days max age
 
