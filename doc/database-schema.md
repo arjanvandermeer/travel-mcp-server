@@ -6,7 +6,7 @@ Complete reference for the Travel MCP Server database schema using PostgreSQL 17
 
 **Connection:**
 ```
-postgresql://[user]:[password]@[host]:5432/[database]
+postgresql://<user>:<password>@<host>:5432/<database>
 ```
 
 ## Tables Overview

@@ -28,7 +28,7 @@ psql "postgresql://postgres:<password>@<host>:5432/postgres"
 CREATE DATABASE travel;
 
 -- Create the application user
-CREATE USER traveluser WITH PASSWORD 'your-secure-password';
+CREATE USER traveluser WITH PASSWORD '<password>';
 
 -- Make traveluser the owner of the database
 ALTER DATABASE travel OWNER TO traveluser;
@@ -59,13 +59,13 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT ALL ON TABLES TO traveluser;
 
 ```bash
 # Local PostgreSQL
-export DATABASE_URL="postgresql://traveluser:your-secure-password@localhost:5432/travel"
+export DATABASE_URL="postgresql://traveluser:<password>@localhost:5432/travel"
 
 # Remote PostgreSQL (with SSL)
-export DATABASE_URL="postgresql://traveluser:your-secure-password@hostname:5432/travel?sslmode=require"
+export DATABASE_URL="postgresql://traveluser:<password>@<host>:5432/travel?sslmode=require"
 
 # Remote PostgreSQL (skip certificate verification)
-export DATABASE_URL="postgresql://traveluser:your-secure-password@hostname:5432/travel?sslmode=no-verify"
+export DATABASE_URL="postgresql://traveluser:<password>@<host>:5432/travel?sslmode=no-verify"
 ```
 
 ### 5. Initialize the schema and import data
@@ -192,7 +192,7 @@ INSERT INTO users (email, name) VALUES ('user@example.com', 'User Name');
 
 -- Create a token for the user
 INSERT INTO user_tokens (user_id, token, name)
-VALUES (1, 'your-64-char-hex-token', 'Claude Desktop');
+VALUES (1, '<token>', 'Claude Desktop');
 
 -- Set unlimited Google Places access
 INSERT INTO user_config (user_id, key, value)
@@ -204,7 +204,7 @@ VALUES (1, 'google_places_limit', 'unlimited');
 Include the token in the Authorization header when connecting to the MCP server:
 
 ```
-Authorization: Bearer <your-token>
+Authorization: Bearer <token>
 ```
 
 Authentication is completely optional - anonymous access continues to work with default rate limits.

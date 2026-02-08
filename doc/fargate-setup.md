@@ -90,7 +90,7 @@ aws rds create-db-instance \
   --engine postgres \
   --engine-version 16 \
   --master-username postgres \
-  --master-user-password <your-secure-password> \
+  --master-user-password <password> \
   --allocated-storage 20 \
   --vpc-security-group-ids <rds-sg-id> \
   --no-publicly-accessible
@@ -99,7 +99,7 @@ aws rds create-db-instance \
 Then prepare the database — see [database-setup.md](database-setup.md). Connect with `?sslmode=require`:
 
 ```bash
-psql "postgresql://postgres:<master-password>@<rds-endpoint>:5432/postgres?sslmode=require"
+psql "postgresql://postgres:<password>@<rds-endpoint>:5432/postgres?sslmode=require"
 ```
 
 ### 4. Create ECS Cluster

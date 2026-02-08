@@ -90,7 +90,7 @@ RETURNING id;
 
 -- Create token (use the id from above)
 INSERT INTO user_tokens (user_id, token, name)
-VALUES (1, 'your-64-char-hex-token', 'Claude Desktop');
+VALUES (1, '<token>', 'Claude Desktop');
 
 -- Grant unlimited Google Places access
 INSERT INTO user_config (user_id, key, value)
@@ -103,15 +103,15 @@ VALUES (1, 'google_places_limit', 'unlimited');
 ```bash
 npx @modelcontextprotocol/inspector \
   --transport streamable-http \
-  --url https://[YOUR_MCP_SERVER_URL]/mcp \
-  --header "Authorization: Bearer YOUR_TOKEN_HERE"
+  --url https://<mcp-server-url>/mcp \
+  --header "Authorization: Bearer <token>"
 ```
 
 **curl**:
 ```bash
-curl -X POST https://[YOUR_MCP_SERVER_URL]/mcp \
+curl -X POST https://<mcp-server-url>/mcp \
   -H "Content-Type: application/json" \
-  -H "Authorization: Bearer YOUR_TOKEN_HERE" \
+  -H "Authorization: Bearer <token>" \
   -d '{"jsonrpc":"2.0","method":"initialize","params":{...},"id":1}'
 ```
 
@@ -191,7 +191,7 @@ Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authoriz
 ```
 ┌─────────────────────┐     ┌─────────────────────────────────────┐
 │    MCP Client       │     │  Cloudflare Worker (OAuth Server)   │
-│  (ChatGPT/Claude)   │     │  [YOUR_OAUTH_WORKER_URL]            │
+│  (ChatGPT/Claude)   │     │  <oauth-worker-url>            │
 └─────────┬───────────┘     └─────────────────┬───────────────────┘
           │                                   │
           │ 1. Discover auth server           │
@@ -228,7 +228,7 @@ Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authoriz
           ▼                                   │
 ┌─────────────────────┐                       │
 │   MCP Server        │   7. Validate token   │
-│ [YOUR_MCP_SERVER]   │◄──────────────────────┤
+│ <mcp-server>   │◄──────────────────────┤
 │                     │   POST /introspect    │
 └─────────────────────┘                       │
 ```
@@ -254,7 +254,7 @@ Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authoriz
 4. Name: `Travel MCP OAuth`
 5. Authorized redirect URIs:
    - Development: `http://localhost:8787/callback`
-   - Production: `https://[YOUR_OAUTH_WORKER_URL]/callback`
+   - Production: `https://<oauth-worker-url>/callback`
 6. Save the **Client ID** and **Client Secret**
 
 #### 1.3 Configure OAuth Consent Screen
@@ -311,8 +311,8 @@ Go to your Worker → **Settings → Variables**:
 | `GOOGLE_CLIENT_ID` | Your Google OAuth client ID | Yes |
 | `GOOGLE_CLIENT_SECRET` | Your Google OAuth client secret | Yes |
 | `COOKIE_ENCRYPTION_KEY` | Run `openssl rand -hex 32` to generate | Yes |
-| `MCP_SERVER_URL` | `https://[YOUR_MCP_SERVER_URL]` | No |
-| `OAUTH_ISSUER` | `https://[YOUR_OAUTH_WORKER_URL]` | No |
+| `MCP_SERVER_URL` | `https://<mcp-server-url>` | No |
+| `OAUTH_ISSUER` | `https://<oauth-worker-url>` | No |
 
 **A.5 Set Compatibility Settings**
 
@@ -366,7 +366,7 @@ wrangler secret put COOKIE_ENCRYPTION_KEY
 
 # Your MCP server URL
 wrangler secret put MCP_SERVER_URL
-# e.g., https://[YOUR_MCP_SERVER_URL]
+# e.g., https://<mcp-server-url>
 ```
 
 **B.4 Update Configuration**
@@ -375,7 +375,7 @@ Edit `wrangler.toml`:
 
 ```toml
 [vars]
-OAUTH_ISSUER = "https://[YOUR_OAUTH_WORKER_URL]"
+OAUTH_ISSUER = "https://<oauth-worker-url>"
 ```
 
 **B.5 Deploy**
@@ -388,20 +388,20 @@ wrangler deploy
 
 ```bash
 # Authorization server metadata
-curl https://[YOUR_OAUTH_WORKER_URL]/.well-known/oauth-authorization-server
+curl https://<oauth-worker-url>/.well-known/oauth-authorization-server
 
 # Health check
-curl https://[YOUR_OAUTH_WORKER_URL]/health
+curl https://<oauth-worker-url>/health
 ```
 
 Expected metadata response:
 ```json
 {
-  "issuer": "https://[YOUR_OAUTH_WORKER_URL]",
-  "authorization_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/authorize",
-  "token_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/token",
-  "registration_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/register",
-  "introspection_endpoint": "https://[YOUR_OAUTH_WORKER_URL]/introspect",
+  "issuer": "https://<oauth-worker-url>",
+  "authorization_endpoint": "https://<oauth-worker-url>/authorize",
+  "token_endpoint": "https://<oauth-worker-url>/token",
+  "registration_endpoint": "https://<oauth-worker-url>/register",
+  "introspection_endpoint": "https://<oauth-worker-url>/introspect",
   "code_challenge_methods_supported": ["S256"],
   "grant_types_supported": ["authorization_code", "refresh_token"],
   ...
@@ -417,7 +417,7 @@ The MCP server reads configuration from the `app_config` database table. Add the
 ```sql
 -- For each environment (local dev and production)
 INSERT INTO app_config (key, value)
-VALUES ('oauth_issuer', 'https://[YOUR_OAUTH_WORKER_URL]')
+VALUES ('oauth_issuer', 'https://<oauth-worker-url>')
 ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value;
 ```
 
@@ -483,7 +483,7 @@ app.get('/.well-known/oauth-protected-resource', async (req, res) => {
 ```bash
 npx @modelcontextprotocol/inspector \
   --transport streamable-http \
-  --url https://[YOUR_MCP_SERVER_URL]/mcp \
+  --url https://<mcp-server-url>/mcp \
   --oauth
 ```
 
@@ -497,7 +497,7 @@ The Inspector will:
 **ChatGPT Configuration:**
 
 In ChatGPT's MCP connector settings:
-1. **MCP Server URL**: `https://[YOUR_MCP_SERVER_URL]/mcp`
+1. **MCP Server URL**: `https://<mcp-server-url>/mcp`
 2. **Authentication**: OAuth
 3. ChatGPT will automatically discover endpoints via well-known metadata
 
@@ -535,7 +535,7 @@ In ChatGPT's MCP connector settings:
 
 **"Invalid redirect_uri"**
 Ensure the callback URL in Google Console matches exactly:
-- `https://[YOUR_OAUTH_WORKER_URL]/callback`
+- `https://<oauth-worker-url>/callback`
 
 **"Session expired"**
 The auth session lasts 10 minutes. Restart the OAuth flow.
@@ -550,7 +550,7 @@ wrangler tail
 
 ### Custom Domain (Optional)
 
-To use a custom domain like `auth.[your-domain].com`:
+To use a custom domain like `auth.<your-domain>.com`:
 
 1. Go to Cloudflare Dashboard → Workers → Your Worker → Triggers
 2. Add Custom Domain
@@ -570,9 +570,9 @@ npm install
 
 **Configure Local Secrets** - Create `.dev.vars` file:
 ```
-GOOGLE_CLIENT_ID=your-client-id
-GOOGLE_CLIENT_SECRET=your-client-secret
-COOKIE_ENCRYPTION_KEY=your-32-byte-hex-key
+GOOGLE_CLIENT_ID=<google-client-id>
+GOOGLE_CLIENT_SECRET=<google-client-secret>
+COOKIE_ENCRYPTION_KEY=<32-byte-hex-key>
 MCP_SERVER_URL=http://localhost:3000
 OAUTH_ISSUER=http://localhost:8787
 ```
