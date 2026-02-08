@@ -18,7 +18,7 @@ npm-debug.log*
 .env
 .env.local
 .env.aws
-task-definition.json
+task-definition*.json
 
 # IDE
 .claude/

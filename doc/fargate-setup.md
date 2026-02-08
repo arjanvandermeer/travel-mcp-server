@@ -28,24 +28,25 @@ Internet ─→ Cloudflare    │                                             �
 
 | Resource | Value |
 |----------|-------|
-| AWS Account | `REDACTED_ACCOUNT_ID` |
+| AWS Account | See `.env.aws` → `AWS_ACCOUNT_ID` |
 | Region | `us-east-1` |
-| ECR Image | `REDACTED_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/travel-mcp-server` |
+| ECR Image | `<account-id>.dkr.ecr.us-east-1.amazonaws.com/travel-mcp-server` |
 | ECS Cluster | `travel-mcp-cluster` |
-| VPC | `REDACTED_VPC` |
-| Subnet 1 | `REDACTED_SUBNET_1` |
-| Subnet 2 | `REDACTED_SUBNET_2` |
-| ALB SG | `REDACTED_ALB_SG` |
-| ECS SG | `REDACTED_ECS_SG` |
-| RDS SG | `REDACTED_RDS_SG` |
-| RDS Endpoint | `REDACTED_RDS_ENDPOINT` |
-| ALB DNS | `travel-mcp-alb-29081112.us-east-1.elb.amazonaws.com` |
+| VPC | See `.env.aws` → `VPC_ID` |
+| Subnet 1 | See `.env.aws` → `SUBNET_1` |
+| Subnet 2 | See `.env.aws` → `SUBNET_2` |
+| ALB SG | See `.env.aws` → `ALB_SECURITY_GROUP` |
+| ECS SG | See `.env.aws` → `ECS_SECURITY_GROUP` |
+| RDS SG | See `.env.aws` → `RDS_SECURITY_GROUP` |
+| RDS Endpoint | See `.env.aws` → `RDS_ENDPOINT` |
+| ALB DNS | See `.env.aws` → `ALB_ARN` |
 | Public URL | `https://mcp.arjanvandermeer.com` |
 
 Network configuration (reused across all `run-task` commands):
 
 ```bash
-NETWORK="awsvpcConfiguration={subnets=[REDACTED_SUBNET_1,REDACTED_SUBNET_2],securityGroups=[REDACTED_ECS_SG],assignPublicIp=ENABLED}"
+# Values from .env.aws
+NETWORK="awsvpcConfiguration={subnets=[$SUBNET_1,$SUBNET_2],securityGroups=[$ECS_SECURITY_GROUP],assignPublicIp=ENABLED}"
 ```
 
 ---
@@ -361,17 +362,17 @@ aws logs create-log-group --log-group-name /ecs/travel-import --region us-east-1
   "ephemeralStorage": {
     "sizeInGiB": 50
   },
-  "executionRoleArn": "arn:aws:iam::REDACTED_ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "executionRoleArn": "arn:aws:iam::<account-id>:role/ecsTaskExecutionRole",
   "containerDefinitions": [
     {
       "name": "import",
-      "image": "REDACTED_ACCOUNT_ID.dkr.ecr.us-east-1.amazonaws.com/travel-mcp-server:latest",
+      "image": "<account-id>.dkr.ecr.us-east-1.amazonaws.com/travel-mcp-server:latest",
       "command": ["echo", "Provide command override when running task"],
       "essential": true,
       "environment": [
         {
           "name": "DATABASE_URL",
-          "value": "postgresql://traveluser:REDACTED_PASSWORD@REDACTED_RDS_ENDPOINT:5432/travel?sslmode=no-verify"
+          "value": "postgresql://traveluser:<password>@<rds-endpoint>:5432/travel?sslmode=no-verify"
         },
         {
           "name": "TELEMETRY_ENABLED",
@@ -579,7 +580,7 @@ Refresh and optimize jobs are lightweight — the default sizing is fine regardl
 ## Notes
 
 - **Two task definitions, one image**: `travel-mcp-task` (server) and `travel-import-task` (jobs) both use the same `travel-mcp-server:latest` ECR image
-- **Security group** `REDACTED_ECS_SG` (ECS SG) already allows access to RDS
+- **Security group** (ECS SG from `.env.aws`) already allows access to RDS
 - **`assignPublicIp=ENABLED`** is required for pulling ECR images and downloading PBF files (no NAT gateway)
 - The import script tracks progress in `import_log` and supports abort detection, so concurrent runs for the same region are safe
 - The refresh script runs imports sequentially, spawning `import-osm-pbf.js` as a child process for each stale region
