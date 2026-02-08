@@ -184,7 +184,7 @@ Save as `task-definition.json`:
         { "containerPort": 3000, "protocol": "tcp" }
       ],
       "environment": [
-        {"name": "DATABASE_URL", "value": "postgresql://traveluser:<password>@<rds-endpoint>:5432/travel?sslmode=no-verify"}
+        {"name": "DATABASE_URL", "value": "postgresql://<user>:<password>@<rds-endpoint>:5432/travel?sslmode=no-verify"}
       ],
       "logConfiguration": {
         "logDriver": "awslogs",
@@ -372,7 +372,7 @@ aws logs create-log-group --log-group-name /ecs/travel-import --region us-east-1
       "environment": [
         {
           "name": "DATABASE_URL",
-          "value": "postgresql://traveluser:<password>@<rds-endpoint>:5432/travel?sslmode=no-verify"
+          "value": "postgresql://<user>:<password>@<rds-endpoint>:5432/travel?sslmode=no-verify"
         },
         {
           "name": "TELEMETRY_ENABLED",
