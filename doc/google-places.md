@@ -28,7 +28,7 @@ Configuration stored in the database persists across restarts:
 
 ```bash
 # Set your API key
-node scripts/manage-config.js set google_places_api_key YOUR_API_KEY_HERE
+node scripts/manage-config.js set google_places_api_key <google-api-key>
 
 # Enable Google Places enrichment
 node scripts/manage-config.js set google_places_enabled true
@@ -51,8 +51,8 @@ cp .env.example .env
 Edit `.env`:
 
 ```env
-DATABASE_URL=postgresql://[user]:[password]@[host]:5432/[database]
-GOOGLE_PLACES_API_KEY=your_api_key_here
+DATABASE_URL=postgresql://<user>:<password>@<host>:5432/<database>
+GOOGLE_PLACES_API_KEY=<google-api-key>
 GOOGLE_PLACES_ENABLED=true
 GOOGLE_PLACES_CACHE_HOURS=168
 ```

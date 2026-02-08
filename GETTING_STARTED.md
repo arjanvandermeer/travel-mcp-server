@@ -343,7 +343,7 @@ Google Places API enriches POIs with ratings, reviews, photos, and verified busi
 
 ```bash
 # Set API key
-node scripts/manage-config.js set google_places_api_key YOUR_API_KEY_HERE
+node scripts/manage-config.js set google_places_api_key <google-api-key>
 
 # Verify it's saved
 node scripts/manage-config.js list
@@ -356,7 +356,7 @@ node scripts/manage-config.js list
 Add to `.env` file:
 
 ```bash
-GOOGLE_PLACES_API_KEY=your_api_key_here
+GOOGLE_PLACES_API_KEY=<google-api-key>
 GOOGLE_PLACES_ENABLED=true
 GOOGLE_PLACES_CACHE_HOURS=168  # 7 days
 ```
@@ -380,7 +380,7 @@ Sentry provides error tracking and performance monitoring. It helps you understa
 
 1. Go to [Sentry.io](https://sentry.io/) and create an account
 2. Create a new project (select Node.js)
-3. Go to **Settings** → **Projects** → **YOUR_PROJECT** → **Client Keys (DSN)**
+3. Go to **Settings** → **Projects** → **<sentry-project>** → **Client Keys (DSN)**
 4. Copy your DSN (looks like: `https://xxxxx@xxx.ingest.sentry.io/xxxxx`)
 
 **Cost:** Sentry has a free tier with 5K errors/month.
@@ -389,7 +389,7 @@ Sentry provides error tracking and performance monitoring. It helps you understa
 
 ```bash
 # Set Sentry DSN
-node scripts/manage-config.js set sentry_dsn YOUR_SENTRY_DSN_HERE
+node scripts/manage-config.js set sentry_dsn <sentry-dsn>
 
 # Verify it's saved
 node scripts/manage-config.js list
@@ -826,7 +826,7 @@ curl -L -o data/thailand-latest.osm.pbf https://download.geofabrik.de/asia/thail
 
 # Manage Google API config
 node scripts/manage-config.js list
-node scripts/manage-config.js set google_places_api_key YOUR_KEY
+node scripts/manage-config.js set google_places_api_key <google-api-key>
 node scripts/manage-config.js delete google_places_api_key
 
 # Database management
