@@ -53,7 +53,8 @@ Add optional authentication to enable per-user features (API limit bypass, favor
 - [x] oauth_issuer config stored in database (not env var)
 - [ ] Cache OAuth introspection results (5 min TTL) to reduce Worker calls
 - [ ] Test with MCP Inspector `--oauth` flag
-- [ ] Test with ChatGPT MCP connector
+- [ ] Test with ChatGPT MCP connector (Developer Mode: Settings → Connectors → Advanced)
+- [ ] Verify all tools work correctly in ChatGPT (tool discovery, execution, error handling)
 
 **Phase 3: User Features**
 - [x] Favorites system (save POIs, add notes) ✅ COMPLETED 2026-02-02
