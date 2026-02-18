@@ -525,3 +525,4 @@ travel-mcp-server/
 ## License
 
 MIT
+
