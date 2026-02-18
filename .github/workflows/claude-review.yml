@@ -45,8 +45,8 @@ jobs:
         if: steps.override.outputs.override != 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: claude-sonnet-4-5-20250929
-          direct_prompt: |
+          claude_args: --model claude-sonnet-4-5-20250929
+          prompt: |
             Review this pull request. You are a code reviewer for a Node.js MCP server project.
 
             ## Review Checklist
