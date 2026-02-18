@@ -2,6 +2,7 @@ import pg from 'pg';
 import { GooglePlacesClient } from './google-places.js';
 import dotenv from 'dotenv';
 
+// Test change for Claude review workflow
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
 
