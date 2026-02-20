@@ -3,6 +3,30 @@
  *
  * Implements OAuth 2.1 with PKCE for MCP clients (ChatGPT, Claude, MCP Inspector).
  * Uses Google OAuth for user identity, issues tokens for the MCP server.
+ *
+ * Flow:
+ * 1. MCP client discovers endpoints via /.well-known/oauth-authorization-server
+ * 2. Client registers dynamically (DCR) or uses Client ID Metadata Document (CIMD)
+ * 3. User authenticates via Google OAuth
+ * 4. Worker issues access token
+ * 5. MCP server validates token by calling this worker's /introspect endpoint
+ *
+ * Environment bindings (Env):
+ * @property {KVNamespace} OAUTH_KV - Cloudflare KV namespace for token/session storage
+ * @property {string} GOOGLE_CLIENT_ID - Google OAuth client ID
+ * @property {string} GOOGLE_CLIENT_SECRET - Google OAuth client secret
+ * @property {string} COOKIE_ENCRYPTION_KEY - Random 32-byte hex for cookie encryption
+ * @property {string} MCP_SERVER_URL - MCP server URL (e.g., https://mcp.example.com)
+ * @property {string} OAUTH_ISSUER - This worker's public URL
+ *
+ * Token payload stored in KV:
+ * @typedef {Object} TokenPayload
+ * @property {string} sub - Google subject ID
+ * @property {string} email
+ * @property {string} [name]
+ * @property {string} [picture]
+ * @property {number} iat - Issued at (unix timestamp)
+ * @property {number} exp - Expires at (unix timestamp)
  */
 
 // Google OAuth configuration
