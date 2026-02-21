@@ -1932,9 +1932,10 @@ export class TravelDatabase {
     }
 
     const result = await this.pool.query(`
-      SELECT iso_alpha2 as code, country as name, continent
-      FROM geonames_countries
-      ORDER BY country
+      SELECT co.iso_alpha2 as code, co.country as name, co.continent
+      FROM geonames_countries co
+      WHERE EXISTS (SELECT 1 FROM geonames_cities c WHERE c.country_code = co.iso_alpha2)
+      ORDER BY co.country
     `);
 
     this._countriesCache = result.rows;
