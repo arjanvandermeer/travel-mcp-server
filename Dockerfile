@@ -18,8 +18,9 @@ WORKDIR /app
 COPY package*.json ./
 RUN npm install --omit=dev
 
-# Copy source
+# Copy source and web frontend
 COPY src ./src
+COPY web ./web
 
 # Create non-root user for security
 RUN addgroup -g 1001 -S nodejs && \
