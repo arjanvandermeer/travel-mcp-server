@@ -50,6 +50,7 @@ IMPORTANT: Do NOT suggest introducing new technologies, frameworks, patterns, or
 - Input validation at system boundaries (user input, external API data)
 - No sensitive data (user emails, tokens, internal paths) in error messages or logs
 - New dependencies must be justified — prefer Node.js built-ins over adding packages. Flag packages with GPL/AGPL licenses, no recent releases (>2 years), or very low adoption
+- No high or critical severity vulnerabilities allowed in dependencies. Run `npm audit` — if it reports high/critical issues, the PR must not be merged until they are resolved
 
 ### 5. Error Handling
 - MCP tool handlers (`executeToolHandler` cases) must ALWAYS return a structured response, never throw unhandled exceptions. Errors must return `{ isError: true, content: [{ type: 'text', text: '...' }] }`
