@@ -55,7 +55,6 @@ CREATE TABLE import_sources (
 );
 
 CREATE UNIQUE INDEX import_sources_keyword_key ON import_sources(keyword);
-CREATE INDEX idx_import_sources_keyword ON import_sources(keyword);
 CREATE INDEX idx_import_sources_enabled ON import_sources(enabled);
 
 -- ============================================================================
@@ -121,7 +120,6 @@ CREATE TABLE geonames_countries (
 );
 
 CREATE INDEX idx_countries_name ON geonames_countries(country);
-CREATE INDEX idx_countries_geoname_id ON geonames_countries(geoname_id);
 
 -- ============================================================================
 -- GeoNames Admin1 Codes (States/Provinces)
@@ -167,13 +165,11 @@ CREATE TABLE geonames_cities (
     FOREIGN KEY (country_code) REFERENCES geonames_countries(iso_alpha2)
 );
 
--- Spatial index for fast geographic queries
-CREATE INDEX idx_cities_location ON geonames_cities USING GIST(location);
+-- Geography index for fast ST_DWithin distance queries
+CREATE INDEX idx_geonames_cities_location_geog ON geonames_cities USING GIST((location::geography));
 
 -- Other useful indexes
 CREATE INDEX idx_cities_country ON geonames_cities(country_code);
-CREATE INDEX idx_cities_population ON geonames_cities(population DESC);
-CREATE INDEX idx_cities_name_country ON geonames_cities(name, country_code);
 CREATE INDEX idx_cities_country_admin1 ON geonames_cities(country_code, admin1_code);
 CREATE INDEX idx_cities_country_population ON geonames_cities(country_code, population DESC);
 
@@ -335,26 +331,17 @@ CREATE TABLE osm_pois (
     FOREIGN KEY (nearest_city_id) REFERENCES geonames_cities(geoname_id)
 );
 
--- Indexes: geography-based spatial for distance queries
+-- Geography index for fast ST_DWithin distance queries
 CREATE INDEX idx_osm_pois_location_geog ON osm_pois USING GIST((location::geography));
-CREATE INDEX idx_osm_pois_location_accommodation ON osm_pois USING GIST((location::geography))
-    WHERE poi_type IN ('hotel', 'guest_house', 'motel', 'hostel');
 
--- Type and name indexes
+-- Type and lookup indexes
 CREATE INDEX idx_osm_pois_type ON osm_pois(poi_type);
-CREATE INDEX idx_osm_pois_type_name ON osm_pois(poi_type, name);
 CREATE INDEX idx_osm_pois_type_city ON osm_pois(poi_type, nearest_city_id);
 CREATE INDEX idx_osm_pois_source_region ON osm_pois(source_region);
-CREATE INDEX idx_osm_pois_nearest_city_id ON osm_pois(nearest_city_id);
-CREATE INDEX idx_osm_pois_stars ON osm_pois(stars) WHERE stars IS NOT NULL;
-CREATE INDEX idx_osm_pois_cuisine ON osm_pois(cuisine) WHERE cuisine IS NOT NULL;
+CREATE INDEX idx_osm_pois_nearest_city_id ON osm_pois(nearest_city_id) WHERE nearest_city_id IS NOT NULL;
 
--- Trigram indexes for fuzzy name search (general + type-specific partial)
+-- Trigram index for fuzzy name search
 CREATE INDEX idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);
-CREATE INDEX idx_osm_pois_name_trgm_accommodation ON osm_pois USING GIN(name gin_trgm_ops)
-    WHERE poi_type IN ('hotel', 'guest_house', 'motel', 'hostel');
-CREATE INDEX idx_osm_pois_name_trgm_food ON osm_pois USING GIN(name gin_trgm_ops)
-    WHERE poi_type IN ('restaurant', 'cafe', 'fast_food', 'bar', 'pub');
 
 -- Enable trigram extension for fuzzy name search
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -641,7 +628,7 @@ CREATE TABLE users (
     last_login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_users_email ON users(email);
+-- Note: email already has UNIQUE constraint index (users_email_key), no separate index needed
 CREATE INDEX idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
 
 -- API tokens for authentication

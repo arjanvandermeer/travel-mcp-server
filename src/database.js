@@ -679,7 +679,7 @@ export class TravelDatabase {
     });
   }
 
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50, userId = null) {
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50, userId = null, excludeOsmIds = null) {
     // Debug logging
     const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
     console.error(`[searchPOIsNearCoordinates] lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, types=${typeDesc}, limit=${limit}`);
@@ -724,6 +724,11 @@ export class TravelDatabase {
     if (typeFilter) {
       query += ` AND poi_type = ANY($${params.length + 1})`;
       params.push(typeFilter);
+    }
+
+    if (excludeOsmIds && excludeOsmIds.length > 0) {
+      query += ` AND osm_id != ALL($${params.length + 1})`;
+      params.push(excludeOsmIds);
     }
 
     query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1}`;

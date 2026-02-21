@@ -8,8 +8,27 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-travelpass}
     ports:
       - "5432:5432"
+    shm_size: '512mb'
     volumes:
       - pgdata:/var/lib/postgresql/data
+    command:
+      - "postgres"
+      - "-c"
+      - "shared_buffers=256MB"
+      - "-c"
+      - "effective_cache_size=1GB"
+      - "-c"
+      - "work_mem=16MB"
+      - "-c"
+      - "maintenance_work_mem=256MB"
+      - "-c"
+      - "random_page_cost=1.1"
+      - "-c"
+      - "effective_io_concurrency=200"
+      - "-c"
+      - "default_statistics_target=200"
+      - "-c"
+      - "jit=off"
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-traveluser} -d travel"]
