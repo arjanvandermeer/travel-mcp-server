@@ -580,7 +580,7 @@ async function main() {
               newSessionId,
               totalSessions: sessions.size,
               authenticated: !!user,
-              email: user?.email,
+              userId: user?.id,
             });
           } else {
             console.error(`New session created: ${newSessionId} (total: ${sessions.size})${user ? ` [${obfuscateEmail(user.email)}]` : ''}`);
@@ -590,7 +590,7 @@ async function main() {
               sessionId: newSessionId,
               totalSessions: sessions.size,
               authenticated: !!user,
-              email: user?.email,
+              userId: user?.id,
             });
           }
 

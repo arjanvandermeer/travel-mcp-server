@@ -138,6 +138,7 @@ Alpine.store('auth', {
       this.city = null;
       this.cityQuery = '';
       this.citySuggestions = [];
+      this.poiQuery = '';
       this.poiSuggestions = [];
       this.results = [];
       this.searched = false;
@@ -148,6 +149,8 @@ Alpine.store('auth', {
       this.city = null;
       this.cityQuery = '';
       this.citySuggestions = [];
+      this.poiQuery = '';
+      this.poiSuggestions = [];
       this.results = [];
       this.searched = false;
     },
@@ -187,6 +190,7 @@ Alpine.store('auth', {
       this.cityQuery = city.name + (city.state_name ? `, ${city.state_name}` : '');
       this.citySuggestions = [];
       this.cityOpen = false;
+      this.poiQuery = '';
       this.poiSuggestions = [];
       this.results = [];
       this.searched = false;
@@ -243,7 +247,6 @@ Alpine.store('auth', {
       // Navigate to detail page
       window.location.hash = `/poi/${poi.osm_id}`;
       this.poiOpen = false;
-      this.poiQuery = '';
     },
 
     poiKeydown(event) {

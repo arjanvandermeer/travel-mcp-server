@@ -203,7 +203,8 @@
         <div class="poi-detail-actions" x-show="$store.auth.authenticated">
           <button class="btn-search" style="width:auto;padding:8px 16px;font-size:14px"
             x-data="{ fav: false, loading: true }"
-            x-init="
+            x-effect="
+              fav = false; loading = true;
               if ($store.auth.authenticated && $store.route.poiOsmId) {
                 apiGet('/api/v1/poi/' + $store.route.poiOsmId).then(d => { fav = d.is_favorite; loading = false; }).catch(() => { loading = false; });
               } else { loading = false; }

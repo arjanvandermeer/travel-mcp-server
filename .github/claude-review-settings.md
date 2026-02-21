@@ -49,6 +49,7 @@ IMPORTANT: Do NOT suggest introducing new technologies, frameworks, patterns, or
 - No command injection via child_process or exec with user input
 - Input validation at system boundaries (user input, external API data)
 - No sensitive data (user emails, tokens, internal paths) in error messages or logs
+- PII obfuscation: email addresses in `console.error()` logs must use `obfuscateEmail()` (masks local part). Telemetry extras must use `userId` (numeric ID), never raw email. The `/auth/me` API endpoint may return the email as part of its contract — that is acceptable
 - New dependencies must be justified — prefer Node.js built-ins over adding packages. Flag packages with GPL/AGPL licenses, no recent releases (>2 years), or very low adoption
 - No high or critical severity vulnerabilities allowed in dependencies. Run `npm audit` — if it reports high/critical issues, the PR must not be merged until they are resolved
 
