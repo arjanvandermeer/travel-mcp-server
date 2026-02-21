@@ -53,52 +53,5 @@ jobs:
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: --model claude-haiku-4-5-20251001
-          prompt: |
-            Review this pull request. You are a code reviewer for a Node.js MCP server project.
-
-            ## Review Checklist
-
-            ### 1. Test Coverage
-            - Every significant code change MUST have corresponding unit or integration tests
-            - Every bug fix MUST include a regression test
-            - Check that new functions, edge cases, and error paths are tested
-            - Flag any changed code that lacks test coverage
-
-            ### 2. Code Quality & Style
-            - Code should be clean, readable, and follow existing patterns
-            - No over-engineering: no unnecessary abstractions, helpers, or feature flags
-            - Functions should be focused and reasonably sized
-            - Variable and function names should be descriptive
-            - No dead code, commented-out code, or TODO comments without tracking
-
-            ### 3. Secrets & Credential Hygiene
-            - CRITICAL: No API keys, passwords, tokens, or secrets in code
-            - No AWS account IDs, resource ARNs, security group IDs, VPC/subnet IDs
-            - No RDS endpoints or database connection strings with real credentials
-            - Placeholders must use <placeholder-name> format (angle brackets, lowercase, hyphens)
-            - Check for patterns: hardcoded URLs with credentials, base64-encoded secrets, .env values pasted in code
-            - Local dev credentials (traveluser/travelpass for localhost Docker) are acceptable
-
-            ### 4. Security Vulnerabilities
-            - SQL injection: all user input must use parameterized queries ($1, $2), never string concatenation
-            - No command injection via child_process or exec with user input
-            - Input validation at system boundaries (user input, external API data)
-            - No sensitive data in error messages or logs
-            - Dependencies: flag any new dependencies that seem unnecessary or unmaintained
-
-            ### 5. Project-Specific Conventions
-            - NEVER use console.log() in the stdio server (src/index.js) - it breaks the JSON-RPC protocol
-            - All MCP tool definitions must be in src/tools-config.js (single source of truth)
-            - MCP tools must return { isError: true } for error responses
-            - Database operations belong in src/database.js
-            - Use prepared statements for all database queries
-
-            ## Review Output
-            For each issue found, post an inline comment on the relevant line.
-            Categorize issues as:
-            - 🔴 **BLOCKING** — Must fix before merge (security, bugs, missing tests)
-            - 🟡 **WARNING** — Should fix, but not a blocker (style, minor improvements)
-            - 🟢 **NIT** — Optional suggestion
-
-            If there are no blocking issues, APPROVE the PR.
-            If there are blocking issues, REQUEST CHANGES with a summary.
+          settings: .github/claude-review-settings.md
+          prompt: Review this pull request following the rules in your settings.
