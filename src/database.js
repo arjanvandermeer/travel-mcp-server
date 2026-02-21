@@ -1934,7 +1934,11 @@ export class TravelDatabase {
     const result = await this.pool.query(`
       SELECT co.iso_alpha2 as code, co.country as name, co.continent
       FROM geonames_countries co
-      WHERE EXISTS (SELECT 1 FROM geonames_cities c WHERE c.country_code = co.iso_alpha2)
+      WHERE EXISTS (
+        SELECT 1 FROM osm_pois p
+        JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+        WHERE c.country_code = co.iso_alpha2
+      )
       ORDER BY co.country
     `);
 

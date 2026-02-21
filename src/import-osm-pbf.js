@@ -29,6 +29,7 @@ import through2 from 'through2';
 import * as telemetry from './telemetry.js';
 import { matchPOIType, extractPOIData, shouldFilterPOI } from './lib/osm-mappings.js';
 import { parseImportArgs } from './lib/arg-parsers.js';
+import { linkPOIsToCities } from './link-pois-to-cities.js';
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
 
@@ -442,6 +443,16 @@ async function importOSM(input, poiType = 'all') {
 
       // Show statistics
       await showStatistics(pool, poiType);
+
+      // Link newly imported POIs to nearest cities
+      if (recordsImported > 0) {
+        try {
+          console.log('\nLinking imported POIs to nearest cities...');
+          await linkPOIsToCities(pool, regionName);
+        } catch (linkError) {
+          console.warn('Warning: City linking failed (non-fatal):', linkError.message);
+        }
+      }
 
     } catch (error) {
       // Handle abort vs failure differently
