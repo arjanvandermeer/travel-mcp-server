@@ -1932,13 +1932,9 @@ export class TravelDatabase {
     }
 
     const result = await this.pool.query(`
-      SELECT DISTINCT co.iso_alpha2 as code, co.country as name, co.continent
-      FROM geonames_countries co
-      WHERE EXISTS (SELECT 1 FROM geonames_cities c WHERE c.country_code = co.iso_alpha2)
-        AND EXISTS (SELECT 1 FROM osm_pois p
-                    JOIN geonames_cities c2 ON p.nearest_city_id = c2.geoname_id
-                    WHERE c2.country_code = co.iso_alpha2)
-      ORDER BY co.country
+      SELECT iso_alpha2 as code, country as name, continent
+      FROM geonames_countries
+      ORDER BY country
     `);
 
     this._countriesCache = result.rows;
