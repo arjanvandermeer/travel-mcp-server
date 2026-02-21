@@ -1,7 +1,11 @@
 /**
  * Main app — Alpine.js stores, initialization
+ *
+ * Alpine is imported as an ES module (not CDN auto-init) to avoid
+ * timing issues between defer scripts and module scripts.
  */
 
+import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
 import { apiGet, apiPost, apiDelete } from './api.js';
 
 // POI type options (static list from tools-config.js types)
@@ -55,11 +59,9 @@ function debounce(fn, ms) {
   };
 }
 
-// Initialize Alpine stores when Alpine is ready
-document.addEventListener('alpine:init', () => {
+// ─── Register Alpine stores ───
 
-  // ─── Auth Store ───
-  Alpine.store('auth', {
+Alpine.store('auth', {
     checked: false,
     authenticated: false,
     user: null,
@@ -387,8 +389,11 @@ document.addEventListener('alpine:init', () => {
     },
   });
 
-  // Bootstrap
-  Alpine.store('auth').check();
-  Alpine.store('search').loadCountries();
-  Alpine.store('route').init();
-});
+// Bootstrap
+Alpine.store('auth').check();
+Alpine.store('search').loadCountries();
+Alpine.store('route').init();
+
+// Make Alpine available globally for devtools, then start
+window.Alpine = Alpine;
+Alpine.start();
