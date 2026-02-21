@@ -272,7 +272,7 @@ async function importOSM(input, poiType = 'all') {
   let shouldDeleteFile = false;
   let importSourceId = null;
   let sourceUrl = null;
-  let regionName = null;
+  let regionName;
   const importStartTime = Date.now();
 
   // Initialize telemetry

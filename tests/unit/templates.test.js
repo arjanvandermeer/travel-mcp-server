@@ -118,6 +118,95 @@ describe('renderPOIPreview favorite banner', () => {
 });
 
 // =============================================================================
+// poiName Helper
+// =============================================================================
+
+describe('poiName Handlebars helper', () => {
+  it('should use google_display_name.text when it is an object', () => {
+    const poi = makePOI({
+      google_display_name: { text: 'Google Name', languageCode: 'en' },
+      osm_name: 'OSM Name',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('Google Name'), 'Should use google display name text');
+  });
+
+  it('should fall back to osm_name when google_display_name object has no text', () => {
+    const poi = makePOI({
+      google_display_name: { languageCode: 'en' },
+      osm_name: 'Fallback OSM Name',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('Fallback OSM Name'), 'Should fall back to osm_name');
+  });
+
+  it('should parse google_display_name when it is a JSON string', () => {
+    const poi = makePOI({
+      google_display_name: JSON.stringify({ text: 'Parsed Google Name' }),
+      osm_name: 'OSM Name',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('Parsed Google Name'), 'Should parse JSON string display name');
+  });
+
+  it('should use string directly when google_display_name is invalid JSON', () => {
+    const poi = makePOI({
+      google_display_name: 'Plain String Name',
+      osm_name: 'OSM Name',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('Plain String Name'), 'Should use plain string display name');
+  });
+
+  it('should fall back to osm_name when no google_display_name', () => {
+    const poi = makePOI({
+      google_display_name: null,
+      osm_name: 'My OSM Place',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('My OSM Place'), 'Should fall back to osm_name');
+  });
+
+  it('should show Unknown when no name is available', () => {
+    const poi = makePOI({
+      google_display_name: null,
+      osm_name: null,
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('Unknown'), 'Should show Unknown');
+  });
+
+  it('should fall back to osm_name when google_display_name JSON text is empty', () => {
+    const poi = makePOI({
+      google_display_name: JSON.stringify({ text: '' }),
+      osm_name: 'Backup Name',
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('Backup Name'), 'Should fall back to osm_name when parsed text is empty');
+  });
+});
+
+// =============================================================================
+// formatDistance Helper
+// =============================================================================
+
+describe('formatDistance Handlebars helper', () => {
+  it('should format distance to 1 decimal place', () => {
+    const poi = makePOI({ distance_km: 12.3456 });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('12.3'), 'Should format to 1 decimal');
+  });
+});
+
+// =============================================================================
 // renderPOIPreview general rendering (non-favorite)
 // =============================================================================
 

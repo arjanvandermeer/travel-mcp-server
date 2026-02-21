@@ -5,6 +5,7 @@
  */
 
 import { versionInfo } from './version.js';
+import { render } from './templates/index.js';
 
 // Shared constants
 export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
@@ -1398,7 +1399,7 @@ export async function handleReadResource(uri, db, render) {
   // POI detail page by ID: ui://{host}/poi/{osm_id}
   // Format: ui://mcp.arjanvandermeer.com/poi/1313852747
   // Used when user clicks a search result - the host part is dynamic
-  const poiMatch = uri.match(/^ui:\/\/[^\/]+\/poi\/(\d+)$/);
+  const poiMatch = uri.match(/^ui:\/\/[^/]+\/poi\/(\d+)$/);
   if (poiMatch) {
     const osmId = parseInt(poiMatch[1], 10);
     const poi = await db.getPOIDetails(osmId);

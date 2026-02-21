@@ -13,9 +13,7 @@
 
 import fs from 'fs';
 import https from 'https';
-import { pipeline } from 'stream/promises';
-import { createGunzip } from 'zlib';
-import { createReadStream, createWriteStream } from 'fs';
+import { createWriteStream } from 'fs';
 import pg from 'pg';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -96,7 +94,7 @@ async function importCountries(pool) {
   console.log('\n=== Importing Countries ===');
 
   const filePath = join(DATA_DIR, 'countryInfo.txt');
-  let importId = null;
+  let importId;
 
   if (!fs.existsSync(filePath)) {
     console.log('Downloading countryInfo.txt...');
@@ -221,7 +219,7 @@ async function importCities(pool) {
 
   const zipPath = join(DATA_DIR, 'cities1000.zip');
   const txtPath = join(DATA_DIR, 'cities1000.txt');
-  let importId = null;
+  let importId;
 
   if (!fs.existsSync(txtPath)) {
     if (!fs.existsSync(zipPath)) {
@@ -359,7 +357,7 @@ async function importAdmin1Codes(pool) {
   console.log('\n=== Importing Admin1 Codes (States/Provinces) ===');
 
   const filePath = join(DATA_DIR, 'admin1CodesASCII.txt');
-  let importId = null;
+  let importId;
 
   if (!fs.existsSync(filePath)) {
     console.log('Downloading admin1CodesASCII.txt...');

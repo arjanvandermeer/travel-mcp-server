@@ -11,7 +11,7 @@
 
 import * as Sentry from '@sentry/node';
 import dotenv from 'dotenv';
-import { versionInfo, getVersionString } from './version.js';
+import { getVersionString } from './version.js';
 
 // Load environment variables
 dotenv.config();

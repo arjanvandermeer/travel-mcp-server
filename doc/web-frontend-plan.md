@@ -606,6 +606,25 @@ Only 3 new database methods needed. The rest reuses what's already there.
 1. **`autocompleteSearch(query, options)`** — Fast name-prefix search with `ILIKE` for type-ahead. Returns minimal fields (`osm_id`, `name`, `poi_type`, `rating`, `city`), limited to 10 results.
 2. **`listCountriesWithPOIs()`** — Returns countries that have POIs in the database (for the country picker). Uses `SELECT DISTINCT osm_country_code FROM osm_pois JOIN geonames_countries`.
 
+### Template rendering: Handlebars vs Alpine.js (separation of concerns)
+
+The project now uses **two** rendering approaches for **different audiences**:
+
+| | Handlebars (server-side) | Alpine.js (client-side) |
+|---|---|---|
+| **Runs in** | Node.js | Browser |
+| **Serves** | MCP clients (Claude, ChatGPT) | Website users |
+| **Templates** | `src/templates/*.hbs` | `web/index.html` + Alpine directives |
+| **Rendering** | Server generates complete HTML string | Browser reactively updates DOM |
+| **Interactivity** | None (static HTML output) | Full (forms, type-ahead, routing) |
+
+**Rules**:
+- **Never load Handlebars in the browser** for the website. Alpine.js handles all client-side rendering.
+- **Never use Alpine.js for MCP output**. MCP clients need complete server-rendered HTML.
+- **POI detail pages** use Handlebars (`poi-details.hbs`) and are reused by the website via iframe (`/preview/poi/:osm_id`). No duplication.
+- **Search result cards** have similar markup in both worlds (Handlebars for MCP, Alpine `x-for` for website). This is acceptable — they serve different audiences with different interaction patterns.
+- **Shared design**: Both use the same CSS design tokens (colors, card styles, typography). The website's `web/css/style.css` reuses values from the existing template styles.
+
 ### Nothing else changes
 
 The existing MCP tools, templates, and MCP protocol handling remain untouched.

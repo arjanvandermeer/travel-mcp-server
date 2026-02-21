@@ -281,7 +281,7 @@ export class TravelDatabase {
       if (dbSampleRate) config.sampleRate = parseFloat(dbSampleRate);
       if (dbEnvironment) config.environment = dbEnvironment;
       if (dbSendDev !== null) config.sendDev = dbSendDev === 'true';
-    } catch (error) {
+    } catch (_error) {
       // Database config is optional, continue with env vars
     }
 
@@ -301,7 +301,7 @@ export class TravelDatabase {
       if (this.googlePlaces.isEnabled()) {
         console.error('✓ Google Places API initialized from database config');
       }
-    } catch (error) {
+    } catch (_error) {
       console.error('⚠️  Could not initialize Google Places from database, using environment variables');
       this.googlePlaces = new GooglePlacesClient();
     }
@@ -466,7 +466,7 @@ export class TravelDatabase {
     console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radius}km, types=${typeDesc}, limit=${limit}`);
 
     let query;
-    let queryParams = [];
+    let queryParams;
 
     // Normalize POI type filter - support both single type and array of types
     const typeFilter = poiTypes || (poiType ? [poiType] : null);
@@ -1908,6 +1908,102 @@ export class TravelDatabase {
     params.push(Math.min(limit, 100));
 
     const result = await this.pool.query(query, params);
+    return result.rows;
+  }
+
+  // =========================================================================
+  // Web Frontend API Methods
+  // =========================================================================
+
+  /**
+   * List countries that have both cities AND POIs in the database.
+   * Used by the country dropdown on the web frontend.
+   * @returns {Array<{code: string, name: string, continent: string}>}
+   */
+  async listCountriesWithData() {
+    const result = await this.pool.query(`
+      SELECT DISTINCT co.iso_alpha2 as code, co.country as name, co.continent
+      FROM geonames_countries co
+      WHERE EXISTS (SELECT 1 FROM geonames_cities c WHERE c.country_code = co.iso_alpha2)
+        AND EXISTS (SELECT 1 FROM osm_pois p
+                    JOIN geonames_cities c2 ON p.nearest_city_id = c2.geoname_id
+                    WHERE c2.country_code = co.iso_alpha2)
+      ORDER BY co.country
+    `);
+    return result.rows;
+  }
+
+  /**
+   * List states/provinces for a country.
+   * Used by the state dropdown on the web frontend.
+   * @param {string} countryCode - ISO alpha2 country code
+   * @returns {Array<{code: string, name: string, ascii_name: string}>}
+   */
+  async listStatesForCountry(countryCode) {
+    const result = await this.pool.query(`
+      SELECT DISTINCT a.admin1_code as code, a.name, a.ascii_name
+      FROM geonames_admin1_codes a
+      WHERE a.country_code = $1
+      ORDER BY a.name
+    `, [countryCode.toUpperCase()]);
+    return result.rows;
+  }
+
+  /**
+   * Fast autocomplete search for POI names (type-ahead).
+   * Returns minimal fields for quick display in a dropdown.
+   * @param {string} query - Search string (min 2 chars recommended)
+   * @param {object} options
+   * @param {string} [options.countryCode] - Filter by country
+   * @param {number} [options.cityGeonameId] - Filter by city geoname_id
+   * @param {string} [options.poiType] - Filter by POI type
+   * @param {number} [options.limit=10] - Max results
+   * @returns {Array<{osm_id: number, name: string, poi_type: string, google_rating: number, city: string, country_code: string}>}
+   */
+  async autocompleteSearch(query, options = {}) {
+    const { countryCode, cityGeonameId, poiType, limit = 10 } = options;
+
+    const conditions = ['p.name IS NOT NULL'];
+    const params = [];
+
+    // Name search condition
+    params.push(`%${query}%`);
+    conditions.push(`(p.name ILIKE $${params.length} OR g.display_name ILIKE $${params.length})`);
+
+    if (countryCode) {
+      params.push(countryCode.toUpperCase());
+      conditions.push(`c.country_code = $${params.length}`);
+    }
+
+    if (cityGeonameId) {
+      params.push(cityGeonameId);
+      conditions.push(`p.nearest_city_id = $${params.length}`);
+    }
+
+    if (poiType) {
+      params.push(poiType);
+      conditions.push(`p.poi_type = $${params.length}`);
+    }
+
+    params.push(Math.min(limit, 50));
+
+    const result = await this.pool.query(`
+      SELECT
+        p.osm_id,
+        COALESCE(g.display_name, p.name) as name,
+        p.poi_type,
+        g.rating as google_rating,
+        c.name as city,
+        c.country_code
+      FROM osm_pois p
+      LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+      LEFT JOIN osm_google_mappings m ON p.osm_id = m.osm_id AND m.mapping_status = 'active'
+      LEFT JOIN google_places g ON m.google_place_id = g.google_place_id
+      WHERE ${conditions.join(' AND ')}
+      ORDER BY g.rating DESC NULLS LAST, p.name
+      LIMIT $${params.length}
+    `, params);
+
     return result.rows;
   }
 }

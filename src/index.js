@@ -15,7 +15,7 @@ import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
 import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, promptsConfig, getPromptMessages } from './tools-config.js';
-import { versionInfo, getVersionString } from './version.js';
+import { getVersionString } from './version.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

@@ -27,7 +27,7 @@
  */
 
 import pg from 'pg';
-import { spawn, spawnSync } from 'child_process';
+import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import * as telemetry from './telemetry.js';
@@ -197,7 +197,7 @@ function padRight(str, len) {
  * Run import for a single region
  */
 async function runImport(keyword) {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve, _reject) => {
     const importScript = path.join(__dirname, 'import-osm-pbf.js');
 
     console.log(`\n${'='.repeat(60)}`);

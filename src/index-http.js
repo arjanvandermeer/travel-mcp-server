@@ -23,7 +23,19 @@ import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResou
 import { versionInfo, getVersionString } from './version.js';
 import http from 'http';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { parse } from 'url';
+import { ApiRouter, parseCookies } from './api-router.js';
+import { registerCountryRoutes } from './api/countries.js';
+import { registerSearchRoutes } from './api/search.js';
+import { registerAutocompleteRoutes } from './api/autocomplete.js';
+import { registerPOIRoutes } from './api/poi.js';
+import { registerFavoritesRoutes } from './api/favorites.js';
+import { registerAuthRoutes } from './api/auth.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const db = new TravelDatabase();
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
@@ -326,6 +338,29 @@ async function main() {
     console.warn('Failed to initialize telemetry:', err.message);
   }
 
+  // Set up API router for /api/v1/* and /auth/* routes
+  const apiRouter = new ApiRouter();
+  registerCountryRoutes(apiRouter);
+  registerSearchRoutes(apiRouter);
+  registerAutocompleteRoutes(apiRouter);
+  registerPOIRoutes(apiRouter);
+  registerFavoritesRoutes(apiRouter);
+  registerAuthRoutes(apiRouter);
+
+  // Static file MIME types
+  const MIME_TYPES = {
+    '.html': 'text/html',
+    '.css': 'text/css',
+    '.js': 'application/javascript',
+    '.json': 'application/json',
+    '.svg': 'image/svg+xml',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.ico': 'image/x-icon',
+  };
+
+  const WEB_DIR = path.join(__dirname, '..', 'web');
+
   const httpServer = http.createServer(async (req, res) => {
     const parsedUrl = parse(req.url, true);
     const pathname = parsedUrl.pathname;
@@ -433,8 +468,53 @@ async function main() {
       return;
     }
 
+    // API routes (/api/v1/* and /auth/*)
+    if (pathname.startsWith('/api/') || pathname.startsWith('/auth/')) {
+      // Extract user from session cookie (web frontend) or Bearer token (API clients)
+      const cookies = parseCookies(req);
+      let user;
+      if (cookies.session) {
+        // Create a fake request with Authorization header for getUserFromRequest
+        const fakeReq = { headers: { authorization: `Bearer ${cookies.session}` } };
+        user = await getUserFromRequest(fakeReq);
+      } else {
+        user = await getUserFromRequest(req);
+      }
+
+      const handled = await apiRouter.handle(req, res, { db, user });
+      if (handled) return;
+      // If no route matched, fall through to 404
+    }
+
+    // Static file serving for web frontend
+    if (req.method === 'GET' && !pathname.startsWith('/mcp')) {
+      // Serve index.html for SPA routes (no extension = SPA route)
+      let filePath;
+      if (pathname === '/' || !path.extname(pathname)) {
+        filePath = path.join(WEB_DIR, 'index.html');
+      } else {
+        // Prevent directory traversal
+        const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
+        filePath = path.join(WEB_DIR, safePath);
+      }
+
+      // Check if file exists
+      try {
+        const stat = fs.statSync(filePath);
+        if (stat.isFile()) {
+          const ext = path.extname(filePath);
+          const contentType = MIME_TYPES[ext] || 'application/octet-stream';
+          res.writeHead(200, { 'Content-Type': contentType });
+          fs.createReadStream(filePath).pipe(res);
+          return;
+        }
+      } catch {
+        // File not found — fall through to MCP or 404
+      }
+    }
+
     // MCP endpoint - handles all MCP requests with multi-session support
-    if (pathname === '/mcp' || pathname === '/') {
+    if (pathname === '/mcp') {
       try {
         // Check for existing session
         const sessionId = req.headers['mcp-session-id'];
@@ -564,6 +644,9 @@ async function main() {
     console.error(`Health check: /health`);
     console.error(`Preview: /preview/poi/{osm_id}`);
     console.error(`Preview random: /preview/poi/random`);
+    console.error(`Web API: /api/v1/*`);
+    console.error(`Web auth: /auth/*`);
+    console.error(`Web frontend: / (serves web/ directory)`);
   });
 }
 

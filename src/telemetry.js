@@ -314,7 +314,7 @@ export function incrementCounter(name, value = 1, tags = {}) {
   if (hasMetricsApi) {
     try {
       Sentry.metrics.increment(name, value, { tags });
-    } catch (error) {
+    } catch (_error) {
       // Silently ignore - metrics API not critical
     }
   }
@@ -335,7 +335,7 @@ export function recordDistribution(name, value, options = {}) {
   if (hasMetricsApi) {
     try {
       Sentry.metrics.distribution(name, value, { tags, unit });
-    } catch (error) {
+    } catch (_error) {
       // Silently ignore - metrics API not critical
     }
   }
@@ -355,7 +355,7 @@ export function recordGauge(name, value, tags = {}) {
   if (hasMetricsApi) {
     try {
       Sentry.metrics.gauge(name, value, { tags });
-    } catch (error) {
+    } catch (_error) {
       // Silently ignore - metrics API not critical
     }
   }
@@ -375,7 +375,7 @@ export function recordSet(name, value, tags = {}) {
   if (hasMetricsApi) {
     try {
       Sentry.metrics.set(name, value, { tags });
-    } catch (error) {
+    } catch (_error) {
       // Silently ignore - metrics API not critical
     }
   }
