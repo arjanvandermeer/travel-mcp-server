@@ -173,32 +173,46 @@ export class TravelDatabase {
   }
 
   /**
-   * Add photo URLs to search results using Google Places API
-   * Generates thumbnail URLs for POIs that have google_photos data
+   * Add photo URLs to search results from stored Google Places photo data.
+   * Photo URLs are resolved during enrichment and stored in the DB as CDN links.
    * @param {Array} pois - Array of POI objects with google_photos
    * @returns {Array} - POIs with photo_url added (google_photos removed)
    */
   async addPhotoUrls(pois) {
     if (!pois || pois.length === 0) return pois;
 
-    await this.ensureGooglePlacesReady();
-    const canGenerateUrls = this.googlePlaces && this.googlePlaces.isEnabled();
-
     return pois.map(poi => {
       const { google_photos, ...rest } = poi;
       let photo_url = null;
 
-      // Generate photo URL if we have photos and the API is available
-      if (canGenerateUrls && google_photos && Array.isArray(google_photos) && google_photos.length > 0) {
+      if (google_photos && Array.isArray(google_photos) && google_photos.length > 0) {
         const firstPhoto = google_photos[0];
-        if (firstPhoto.name) {
-          // Generate a thumbnail URL (200x150 for search results)
-          photo_url = this.googlePlaces.getPhotoUrl(firstPhoto.name, 200, 150);
-        }
+        // Use pre-resolved thumbnail URL from enrichment
+        photo_url = firstPhoto.url_thumbnail || firstPhoto.url || null;
       }
 
       return { ...rest, photo_url };
     });
+  }
+
+  /**
+   * Resolve photo URLs during enrichment via Google Places API.
+   * Called by upsertGooglePlace to store CDN URLs alongside photo metadata.
+   * @param {Array} photos - Raw photos array from Google Places API response
+   * @returns {Array} - Photos with resolved url and url_thumbnail fields
+   */
+  async resolvePhotoUrls(photos) {
+    if (!photos || photos.length === 0) return [];
+
+    const resolved = await Promise.all(photos.slice(0, 10).map(async p => ({
+      name: p.name,
+      widthPx: p.widthPx,
+      heightPx: p.heightPx,
+      url: await this.googlePlaces.resolvePhotoUrl(p.name, 800, 600),
+      url_thumbnail: await this.googlePlaces.resolvePhotoUrl(p.name, 200, 150),
+    })));
+
+    return resolved;
   }
 
   // =========================================================================
@@ -1283,11 +1297,7 @@ export class TravelDatabase {
       placeData.editorialSummary?.text || null,
       JSON.stringify(placeData.regularOpeningHours || null),
       JSON.stringify(placeData.currentOpeningHours || null),
-      JSON.stringify((placeData.photos || []).slice(0, 10).map(p => ({
-        name: p.name,
-        widthPx: p.widthPx,
-        heightPx: p.heightPx
-      }))),
+      JSON.stringify(await this.resolvePhotoUrls(placeData.photos)),
       JSON.stringify({
         delivery: placeData.delivery,
         dineIn: placeData.dineIn,
