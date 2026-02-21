@@ -30,6 +30,9 @@ task-definition*.json
 *.swo
 *~
 
+# Working docs (not for git)
+TODO-NOW.md
+
 # OS
 .DS_Store
 Thumbs.db

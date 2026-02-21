@@ -1,5 +1,6 @@
 import pg from 'pg';
 import { GooglePlacesClient } from './google-places.js';
+import * as telemetry from './telemetry.js';
 import dotenv from 'dotenv';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
@@ -829,6 +830,7 @@ export class TravelDatabase {
           new Promise((_, reject) => setTimeout(() => reject(new Error('Enrichment timeout after 2 minutes')), 120000))
         ]).catch(err => {
           console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
+          telemetry.captureException(err, { context: 'background_enrichment', osmId });
           // Mark as error if enrichment fails
           this.pool.query(`
             UPDATE osm_google_mappings
@@ -1141,6 +1143,7 @@ export class TravelDatabase {
 
     } catch (error) {
       console.error(`Error enriching OSM POI ${osmId}:`, error.message);
+      telemetry.captureException(error, { context: 'enrich_osm_poi', osmId });
       await this.createMapping(osmId, null, {
         mapping_status: 'error',
         mapping_notes: error.message
@@ -1406,6 +1409,7 @@ export class TravelDatabase {
       const batch = idsToEnrich.slice(i, i + maxConcurrent);
       Promise.all(batch.map(osmId => this.enrichOSMPOI(osmId).catch(err => {
         console.error(`Background enrichment error for OSM ${osmId}:`, err.message);
+        telemetry.captureException(err, { context: 'batch_enrichment', osmId });
       })));
     }
   }

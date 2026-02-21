@@ -6,6 +6,7 @@
 
 import { versionInfo } from './version.js';
 import { render } from './templates/index.js';
+import * as telemetry from './telemetry.js';
 
 // Shared constants
 export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
@@ -762,6 +763,7 @@ function triggerBackgroundEnrichment(pois, db) {
     // Fire-and-forget - don't await, don't block response
     db.batchEnrichPOIs(osmIds).catch(err => {
       console.error('Background batch enrichment error:', err.message);
+      telemetry.captureException(err, { context: 'trigger_batch_enrichment' });
     });
   }
 }

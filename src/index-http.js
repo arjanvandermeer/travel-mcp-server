@@ -437,6 +437,7 @@ async function main() {
         res.end(html);
       } catch (err) {
         console.error('Error rendering random POI:', err);
+        telemetry.captureException(err, { context: 'preview_random_poi' });
         res.writeHead(500, { 'Content-Type': 'text/html' });
         res.end(`<h1>Error</h1><pre>${err.message}</pre>`);
       }
@@ -462,6 +463,7 @@ async function main() {
         res.end(html);
       } catch (err) {
         console.error('Error rendering POI:', err);
+        telemetry.captureException(err, { context: 'preview_poi', osmId: parseInt(poiPreviewMatch[1], 10) });
         res.writeHead(500, { 'Content-Type': 'text/html' });
         res.end(`<h1>Error</h1><pre>${err.message}</pre>`);
       }

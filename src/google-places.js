@@ -196,6 +196,7 @@ export class GooglePlacesClient {
       return result.places || [];
     } catch (error) {
       console.error('Google Places Nearby Search error:', error.message);
+      telemetry.captureException(error, { context: 'google_places_nearby_search' });
       return [];
     }
   }
@@ -231,6 +232,7 @@ export class GooglePlacesClient {
       return result.places || [];
     } catch (error) {
       console.error('Google Places Text Search error:', error.message);
+      telemetry.captureException(error, { context: 'google_places_text_search' });
       return [];
     }
   }
@@ -320,6 +322,7 @@ export class GooglePlacesClient {
       return result || null;
     } catch (error) {
       console.error('Google Places Details error:', error.message);
+      telemetry.captureException(error, { context: 'google_places_details' });
       return null;
     }
   }

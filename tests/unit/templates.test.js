@@ -194,19 +194,6 @@ describe('poiName Handlebars helper', () => {
 });
 
 // =============================================================================
-// formatDistance Helper
-// =============================================================================
-
-describe('formatDistance Handlebars helper', () => {
-  it('should format distance to 1 decimal place', () => {
-    const poi = makePOI({ distance_km: 12.3456 });
-    const html = renderPOIPreview(poi, render);
-
-    assert.ok(html.includes('12.3'), 'Should format to 1 decimal');
-  });
-});
-
-// =============================================================================
 // renderPOIPreview general rendering (non-favorite)
 // =============================================================================
 

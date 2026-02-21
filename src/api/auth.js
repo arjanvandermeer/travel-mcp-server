@@ -8,6 +8,7 @@
 
 import crypto from 'crypto';
 import { sendJson } from '../api-router.js';
+import * as telemetry from '../telemetry.js';
 
 // In-memory store for pending PKCE challenges (short-lived)
 const pendingAuth = new Map();
@@ -94,6 +95,7 @@ export function registerAuthRoutes(router) {
       res.end();
     } catch (err) {
       console.error('[Auth] Login error:', err.message);
+      telemetry.captureException(err, { context: 'auth_login' });
       sendJson(res, 500, { error: 'Login failed' });
     }
   });
@@ -160,6 +162,7 @@ export function registerAuthRoutes(router) {
       res.end();
     } catch (err) {
       console.error('[Auth] Callback error:', err.message);
+      telemetry.captureException(err, { context: 'auth_callback' });
       sendJson(res, 500, { error: 'Authentication failed' });
     }
   });

@@ -4,6 +4,7 @@
  */
 
 import { parse } from 'url';
+import * as telemetry from './telemetry.js';
 
 export class ApiRouter {
   constructor() {
@@ -59,6 +60,7 @@ export class ApiRouter {
         });
       } catch (err) {
         console.error(`[API] Error in ${method} ${pathname}:`, err.message);
+        telemetry.captureException(err, { context: 'api_route', method, pathname });
         if (!res.headersSent) {
           sendJson(res, 500, { error: 'Internal server error' });
         }
