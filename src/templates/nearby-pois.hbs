@@ -77,6 +77,7 @@
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    .nearby-fav { color: #e74c3c; font-size: 11px; }
     .nearby-rating {
       font-size: 12px;
       color: #f5a623;
@@ -162,7 +163,7 @@
           </div>
           {{/if}}
           <div class="nearby-info">
-            <div class="nearby-name">{{or name "Unknown"}}</div>
+            <div class="nearby-name">{{#if is_favorite}}<span class="nearby-fav">&#9829;</span> {{/if}}{{or name "Unknown"}}</div>
             {{#if google_rating}}
             <div class="nearby-rating">&#11088; {{google_rating}}</div>
             {{/if}}
@@ -234,7 +235,7 @@
       card.innerHTML =
         thumbHtml +
         '<div class="nearby-info">' +
-          '<div class="nearby-name">' + escapeHtml(name) + '</div>' +
+          '<div class="nearby-name">' + (poi.is_favorite ? '<span class="nearby-fav">&#9829;</span> ' : '') + escapeHtml(name) + '</div>' +
           ratingHtml +
           distanceHtml +
           '<div class="nearby-type">' + (poi.poi_type || '') + '</div>' +

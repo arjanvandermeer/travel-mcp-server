@@ -250,6 +250,7 @@
     .nearby-thumb-placeholder { width: 100%; height: 100px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); display: flex; align-items: center; justify-content: center; font-size: 28px; }
     .nearby-info { padding: 8px 10px 10px; }
     .nearby-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .nearby-fav { color: #e74c3c; font-size: 11px; }
     .nearby-rating { font-size: 12px; color: #f5a623; margin-top: 2px; }
     .nearby-distance { font-size: 11px; color: #888; margin-top: 2px; }
     .nearby-type { font-size: 10px; color: #667eea; text-transform: capitalize; margin-top: 2px; }
@@ -513,7 +514,7 @@
             </div>
             {{/if}}
             <div class="nearby-info">
-              <div class="nearby-name">{{or name "Unknown"}}</div>
+              <div class="nearby-name">{{#if is_favorite}}<span class="nearby-fav">&#9829;</span> {{/if}}{{or name "Unknown"}}</div>
               {{#if google_rating}}
               <div class="nearby-rating">&#11088; {{google_rating}}</div>
               {{/if}}
