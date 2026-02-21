@@ -101,14 +101,20 @@
           </div>
         </div>
 
-        <!-- POI Type -->
+        <!-- POI Category -->
         <div class="form-group">
           <label>Type</label>
-          <select class="form-select" x-model="$store.search.poiType">
-            <template x-for="t in $store.search.poiTypes" :key="t.value">
-              <option :value="t.value" x-text="t.label"></option>
+          <div class="radio-group">
+            <template x-for="cat in $store.search.poiCategories" :key="cat.value">
+              <label class="radio-pill" :class="{ active: $store.search.poiCategory === cat.value }">
+                <input type="radio" name="poi-category"
+                  :value="cat.value"
+                  x-model="$store.search.poiCategory"
+                  style="display:none">
+                <span x-text="cat.label"></span>
+              </label>
             </template>
-          </select>
+          </div>
         </div>
 
         <!-- POI name type-ahead -->

@@ -1974,7 +1974,7 @@ export class TravelDatabase {
    * @returns {Array<{osm_id: number, name: string, poi_type: string, google_rating: number, city: string, country_code: string}>}
    */
   async autocompleteSearch(query, options = {}) {
-    const { countryCode, cityGeonameId, poiType, limit = 10 } = options;
+    const { countryCode, cityGeonameId, poiType, poiTypes, limit = 10 } = options;
 
     const conditions = ['p.name IS NOT NULL'];
     const params = [];
@@ -1982,7 +1982,7 @@ export class TravelDatabase {
     // Name search condition (escape ILIKE wildcards in user input)
     const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
     params.push(`%${escapedQuery}%`);
-    conditions.push(`(p.name ILIKE $${params.length} OR g.display_name ILIKE $${params.length})`);
+    conditions.push(`(p.name ILIKE $${params.length} OR g.name ILIKE $${params.length})`);
 
     if (countryCode) {
       params.push(countryCode.toUpperCase());
@@ -1994,9 +1994,11 @@ export class TravelDatabase {
       conditions.push(`p.nearest_city_id = $${params.length}`);
     }
 
-    if (poiType) {
-      params.push(poiType);
-      conditions.push(`p.poi_type = $${params.length}`);
+    // Support both single type and array of types
+    const typeFilter = poiTypes || (poiType ? [poiType] : null);
+    if (typeFilter && typeFilter.length > 0) {
+      params.push(typeFilter);
+      conditions.push(`p.poi_type = ANY($${params.length})`);
     }
 
     params.push(Math.min(limit, 50));
@@ -2004,7 +2006,7 @@ export class TravelDatabase {
     const result = await this.pool.query(`
       SELECT
         p.osm_id,
-        COALESCE(g.display_name, p.name) as name,
+        COALESCE(g.name, p.name) as name,
         p.poi_type,
         g.rating as google_rating,
         c.name as city,

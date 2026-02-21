@@ -37,6 +37,17 @@ import { registerAuthRoutes } from './api/auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * Obfuscate email for logging — masks the local part before @.
+ * "arjanvdm@gmail.com" → "a******m@gmail.com"
+ */
+function obfuscateEmail(email) {
+  if (!email || !email.includes('@')) return email;
+  const [local, domain] = email.split('@');
+  if (local.length <= 2) return `${local[0]}*@${domain}`;
+  return `${local[0]}${'*'.repeat(local.length - 2)}${local[local.length - 1]}@${domain}`;
+}
+
 const db = new TravelDatabase();
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
 
@@ -83,19 +94,17 @@ async function getUserFromRequest(req) {
     const dbUser = await db.getUserByToken(token);
     if (dbUser) {
       const authDuration = Date.now() - authStartTime;
-      console.error(`[Auth] DB auth success: ${dbUser.email} (${authDuration}ms)`);
+      console.error(`[Auth] DB auth success: ${obfuscateEmail(dbUser.email)} (${authDuration}ms)`);
 
       // Telemetry: successful DB auth
       telemetry.incrementCounter('auth.success', 1, { method: 'database' });
       telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'database', status: 'success' }, unit: 'millisecond' });
-      telemetry.setUser({ id: dbUser.id.toString(), email: dbUser.email });
-      telemetry.setTag('user.email', dbUser.email);
+      telemetry.setUser({ id: dbUser.id.toString() });
       telemetry.setTag('user.id', dbUser.id.toString());
       telemetry.setTag('auth.method', 'database');
-      telemetry.captureMessage(`Auth success: ${dbUser.email}`, 'info', {
+      telemetry.captureMessage(`Auth success: user ${dbUser.id}`, 'info', {
         method: 'database',
         userId: dbUser.id,
-        email: dbUser.email,
         duration: authDuration,
       });
 
@@ -126,27 +135,24 @@ async function getUserFromRequest(req) {
       console.error(`[Auth] Introspection response: ${response.status}`);
       if (response.ok) {
         const data = await response.json();
-        console.error(`[Auth] Introspection data: active=${data.active}, email=${data.email || 'none'}`);
+        console.error(`[Auth] Introspection data: active=${data.active}, email=${data.email ? obfuscateEmail(data.email) : 'none'}`);
 
         if (data.active) {
           // Auto-provision user in database (creates if new, updates if existing)
           const user = await db.upsertGoogleUser(data.sub, data.email, data.name, data.picture);
           const authDuration = Date.now() - authStartTime;
-          console.error(`[Auth] OAuth auth success: ${user.email} (${authDuration}ms)`);
+          console.error(`[Auth] OAuth auth success: ${obfuscateEmail(user.email)} (${authDuration}ms)`);
 
           // Telemetry: successful OAuth auth
           telemetry.incrementCounter('auth.success', 1, { method: 'oauth' });
           telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'oauth', status: 'success' }, unit: 'millisecond' });
-          telemetry.setUser({ id: user.id.toString(), email: user.email, username: user.name });
-          telemetry.setTag('user.email', user.email);
+          telemetry.setUser({ id: user.id.toString() });
           telemetry.setTag('user.id', user.id.toString());
           telemetry.setTag('auth.method', 'oauth');
           telemetry.setTag('user.oauth', 'true');
-          telemetry.captureMessage(`Auth success: ${user.email}`, 'info', {
+          telemetry.captureMessage(`Auth success: user ${user.id}`, 'info', {
             method: 'oauth',
             userId: user.id,
-            email: user.email,
-            googleId: data.sub,
             duration: authDuration,
             introspectDuration,
           });
@@ -278,7 +284,7 @@ function createMCPServer(userRef = { current: null }) {
         // Pass user context to tool handler (dynamically read from ref)
         return await executeToolHandler(name, args, db, { user: userRef.current });
       } catch (error) {
-        telemetry.captureException(error, { tool: name, args, user: userRef.current?.email });
+        telemetry.captureException(error, { tool: name, args, userId: userRef.current?.id });
         return {
           content: [{ type: 'text', text: `Error: ${error.message}` }],
           isError: true,
@@ -534,13 +540,12 @@ async function main() {
           if (newUser && (!session.userRef.current || session.userRef.current.email !== newUser.email)) {
             const wasAnonymous = !session.userRef.current;
             session.userRef.current = newUser;
-            console.error(`Session ${sessionId} authenticated: ${newUser.email}`);
+            console.error(`Session ${sessionId} authenticated: ${obfuscateEmail(newUser.email)}`);
 
             // Telemetry: mid-session authentication upgrade
             telemetry.incrementCounter('session.auth_upgrade', 1, { from: wasAnonymous ? 'anonymous' : 'different_user' });
-            telemetry.captureMessage(`Session authenticated mid-stream: ${newUser.email}`, 'info', {
+            telemetry.captureMessage(`Session authenticated mid-stream: user ${newUser.id}`, 'info', {
               sessionId,
-              email: newUser.email,
               userId: newUser.id,
               wasAnonymous,
             });
@@ -567,7 +572,7 @@ async function main() {
           sessions.set(newSessionId, { server, transport, createdAt: Date.now(), userRef });
 
           if (sessionId) {
-            console.error(`Session expired, created new: ${newSessionId} (total: ${sessions.size})${user ? ` [${user.email}]` : ''}`);
+            console.error(`Session expired, created new: ${newSessionId} (total: ${sessions.size})${user ? ` [${obfuscateEmail(user.email)}]` : ''}`);
             // Telemetry: session expired and recreated
             telemetry.incrementCounter('session.expired', 1);
             telemetry.captureMessage('Session expired, created new', 'info', {
@@ -578,7 +583,7 @@ async function main() {
               email: user?.email,
             });
           } else {
-            console.error(`New session created: ${newSessionId} (total: ${sessions.size})${user ? ` [${user.email}]` : ''}`);
+            console.error(`New session created: ${newSessionId} (total: ${sessions.size})${user ? ` [${obfuscateEmail(user.email)}]` : ''}`);
             // Telemetry: new session created
             telemetry.incrementCounter('session.created', 1, { authenticated: user ? 'true' : 'false' });
             telemetry.captureMessage('New session created', 'info', {

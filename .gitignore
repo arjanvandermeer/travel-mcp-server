@@ -8,7 +8,8 @@ data/*.txt
 data/*.db
 data/*.zip
 data/*.gz
-data/*pbf
+data/*.pbf
+data/*.downloading
 
 # Logs
 *.log

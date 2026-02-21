@@ -34,6 +34,7 @@ export function registerSearchRoutes(router) {
     const countryCode = query.country_code || null;
     const state = query.state || null;
     const poiType = query.poi_type || null;
+    const poiTypes = query.poi_types ? query.poi_types.split(',').map(t => t.trim()).filter(Boolean) : null;
     const name = query.q || null;
     const limit = Math.min(parseInt(query.limit) || 50, 100);
     const latitude = query.latitude ? parseFloat(query.latitude) : null;
@@ -51,6 +52,7 @@ export function registerSearchRoutes(router) {
       latitude,
       longitude,
       poiType,
+      poiTypes,
       name,
       limit,
       userId: user?.id || null,

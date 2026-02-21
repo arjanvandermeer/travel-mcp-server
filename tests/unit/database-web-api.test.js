@@ -130,7 +130,9 @@ describe('autocompleteSearch', () => {
     await db.autocompleteSearch('test', { poiType: 'restaurant' });
 
     const calls = pool.getCalls();
-    assert.ok(calls[0].params.includes('restaurant'), 'Should include poi type');
+    // poiType is converted to a single-element array for ANY() filter
+    const typeParam = calls[0].params.find(p => Array.isArray(p) && p.includes('restaurant'));
+    assert.ok(typeParam, 'Should include poi type as array');
     assert.ok(calls[0].sql.includes('poi_type'), 'Should include type condition');
   });
 
@@ -151,7 +153,7 @@ describe('autocompleteSearch', () => {
     assert.strictEqual(params[0], '%test%');
     assert.strictEqual(params[1], 'JP');
     assert.strictEqual(params[2], 789);
-    assert.strictEqual(params[3], 'hotel');
+    assert.deepStrictEqual(params[3], ['hotel']);
     assert.strictEqual(params[4], 5);
   });
 

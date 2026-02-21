@@ -8,21 +8,12 @@
 import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
 import { apiGet, apiPost, apiDelete } from './api.js';
 
-// POI type options (static list from tools-config.js types)
-const POI_TYPES = [
-  { value: '',            label: 'All types' },
-  { value: 'hotel',       label: 'Hotels' },
-  { value: 'guest_house', label: 'Guest Houses' },
-  { value: 'hostel',      label: 'Hostels' },
-  { value: 'resort',      label: 'Resorts' },
-  { value: 'restaurant',  label: 'Restaurants' },
-  { value: 'cafe',        label: 'Cafes' },
-  { value: 'bar',         label: 'Bars & Pubs' },
-  { value: 'fast_food',   label: 'Fast Food' },
-  { value: 'attraction',  label: 'Attractions' },
-  { value: 'monument',    label: 'Monuments' },
-  { value: 'museum',      label: 'Museums' },
-  { value: 'park',        label: 'Parks' },
+// POI category radio options (grouped types)
+const POI_CATEGORIES = [
+  { value: '',            label: 'All',            types: [] },
+  { value: 'dining',      label: 'Dining',         types: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
+  { value: 'accommodation', label: 'Accommodation', types: ['hotel', 'guest_house', 'hostel', 'resort', 'motel'] },
+  { value: 'attractions', label: 'Attractions',    types: ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'] },
 ];
 
 // POI type icons for autocomplete
@@ -92,14 +83,14 @@ Alpine.store('auth', {
     // Dropdown data
     countries: [],
     states: [],
-    poiTypes: POI_TYPES,
+    poiCategories: POI_CATEGORIES,
 
     // Current selections
     countryCode: '',
     stateCode: '',
     cityQuery: '',
     city: null,    // { geoname_id, name, latitude, longitude }
-    poiType: '',
+    poiCategory: '',  // '' | 'dining' | 'accommodation' | 'attractions'
     poiQuery: '',
 
     // Type-ahead
@@ -233,7 +224,7 @@ Alpine.store('auth', {
               q: query,
               country_code: this.countryCode || undefined,
               city_geoname_id: this.city?.geoname_id || undefined,
-              poi_type: this.poiType || undefined,
+              poi_types: this.selectedPoiTypes().join(',') || undefined,
               limit: 10,
             });
             this.poiSuggestions = data.suggestions || [];
@@ -279,6 +270,12 @@ Alpine.store('auth', {
       return formatPopulation(pop);
     },
 
+    // Get the array of POI types for the selected category
+    selectedPoiTypes() {
+      const cat = POI_CATEGORIES.find(c => c.value === this.poiCategory);
+      return cat ? cat.types : [];
+    },
+
     // ─── Full search ───
     async search() {
       // Need at least something to search by
@@ -288,12 +285,13 @@ Alpine.store('auth', {
       this.searched = true;
       this.poiOpen = false;
       try {
+        const types = this.selectedPoiTypes();
         const params = {
           q: this.poiQuery || undefined,
           country_code: this.countryCode || undefined,
           city_name: this.city?.name || undefined,
           state: this.stateCode || undefined,
-          poi_type: this.poiType || undefined,
+          poi_types: types.length ? types.join(',') : undefined,
           limit: 50,
         };
         const data = await apiGet('/api/v1/search/pois', params);
@@ -301,9 +299,8 @@ Alpine.store('auth', {
         this.resultCount = data.count || 0;
 
         // Build title
-        const typeLabel = this.poiType
-          ? POI_TYPES.find(t => t.value === this.poiType)?.label || this.poiType
-          : 'Places';
+        const cat = POI_CATEGORIES.find(c => c.value === this.poiCategory);
+        const typeLabel = cat && cat.value ? cat.label : 'Places';
         const loc = this.city?.name || '';
         this.resultTitle = loc ? `${typeLabel} in ${loc}` : typeLabel;
       } catch (err) {

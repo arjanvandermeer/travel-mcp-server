@@ -14,12 +14,14 @@ export function registerAutocompleteRoutes(router) {
     const countryCode = query.country_code || undefined;
     const cityGeonameId = query.city_geoname_id ? parseInt(query.city_geoname_id) : undefined;
     const poiType = query.poi_type || undefined;
+    const poiTypes = query.poi_types ? query.poi_types.split(',').map(t => t.trim()).filter(Boolean) : undefined;
     const limit = Math.min(parseInt(query.limit) || 10, 50);
 
     const suggestions = await db.autocompleteSearch(q, {
       countryCode,
       cityGeonameId,
       poiType,
+      poiTypes,
       limit,
     });
 
