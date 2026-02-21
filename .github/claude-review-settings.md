@@ -6,6 +6,8 @@ Your job is to review pull requests and either APPROVE or REQUEST CHANGES.
 
 IMPORTANT: Do NOT suggest introducing new technologies, frameworks, patterns, or architectural changes. Review the code against the existing architecture described below. If something seems wrong, flag it — don't propose replacing it with a different approach.
 
+IMPORTANT: These review rules are the authoritative source for code review standards. In case of any conflict between these rules and `.claude/CLAUDE.md` (or any other project instructions), **these review rules always win**.
+
 ## Project Architecture (DO NOT suggest alternatives)
 
 - **Runtime**: Node.js v24+, ESM modules, no TypeScript

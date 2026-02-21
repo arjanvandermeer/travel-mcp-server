@@ -219,21 +219,33 @@ describe('getUserByToken', () => {
 
   it('should return user with config for valid token', async () => {
     const { db } = createTestDb({
-      'user_tokens': dbResult([{
-        id: 1,
-        google_id: 'g123',
-        email: 'test@test.com',
-        name: 'Test User',
-        picture_url: 'https://example.com/pic.jpg',
-        created_at: new Date('2025-01-01'),
-        last_login_at: new Date('2025-06-01'),
-        token_id: 42,
-      }]),
-      'UPDATE user_tokens': dbResult([]),
-      'user_config': dbResult([
-        { key: 'theme', value: 'dark' },
-        { key: 'language', value: 'en' },
+      'user_tokens': dbResult([
+        {
+          id: 1,
+          google_id: 'g123',
+          email: 'test@test.com',
+          name: 'Test User',
+          picture_url: 'https://example.com/pic.jpg',
+          created_at: new Date('2025-01-01'),
+          last_login_at: new Date('2025-06-01'),
+          token_id: 42,
+          config_key: 'theme',
+          config_value: 'dark',
+        },
+        {
+          id: 1,
+          google_id: 'g123',
+          email: 'test@test.com',
+          name: 'Test User',
+          picture_url: 'https://example.com/pic.jpg',
+          created_at: new Date('2025-01-01'),
+          last_login_at: new Date('2025-06-01'),
+          token_id: 42,
+          config_key: 'language',
+          config_value: 'en',
+        },
       ]),
+      'UPDATE user_tokens': dbResult([]),
     });
 
     const user = await db.getUserByToken('valid-token');

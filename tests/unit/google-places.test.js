@@ -83,26 +83,20 @@ describe('GooglePlacesClient', () => {
     });
   });
 
-  describe('getPhotoUrl', () => {
-    it('should generate photo URL with dimensions', () => {
-      const client = new GooglePlacesClient('test-api-key', true);
+  describe('resolvePhotoUrl', () => {
+    it('should return null when client is disabled', async () => {
+      const client = new GooglePlacesClient(null, false);
       const photoName = 'places/ChIJxxx/photos/AUc7xyz';
-      const url = client.getPhotoUrl(photoName, 800, 600);
+      const url = await client.resolvePhotoUrl(photoName, 800, 600);
 
-      assert.ok(url.includes('googleapis.com'));
-      assert.ok(url.includes('800'));
-      assert.ok(url.includes('600'));
-      assert.ok(url.includes('test-api-key'));
+      assert.strictEqual(url, null);
     });
 
-    it('should use default dimensions when not provided', () => {
+    it('should return null when photoName is empty', async () => {
       const client = new GooglePlacesClient('test-api-key', true);
-      const photoName = 'places/ChIJxxx/photos/AUc7xyz';
-      const url = client.getPhotoUrl(photoName);
+      const url = await client.resolvePhotoUrl(null);
 
-      assert.ok(url.includes('googleapis.com'));
-      // Default dimensions should be used
-      assert.ok(url.includes('400') || url.includes('300'));
+      assert.strictEqual(url, null);
     });
   });
 });

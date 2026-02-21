@@ -69,6 +69,11 @@ export function registerAuthRoutes(router) {
 
         const regData = await regResponse.json();
         clientId = regData.client_id;
+        if (!clientId) {
+          console.error('[Auth] OAuth registration response missing client_id');
+          sendJson(res, 500, { error: 'OAuth client registration returned invalid response' });
+          return;
+        }
         await db.setConfig('web_oauth_client_id', clientId);
         console.error(`[Auth] Registered new OAuth client: ${clientId}`);
       }
@@ -144,6 +149,11 @@ export function registerAuthRoutes(router) {
 
       const tokenData = await tokenResponse.json();
       const accessToken = tokenData.access_token;
+      if (!accessToken) {
+        console.error('[Auth] Token exchange response missing access_token');
+        sendJson(res, 500, { error: 'Token exchange returned invalid response' });
+        return;
+      }
 
       // Set session cookie
       const isSecure = serverBaseUrl.startsWith('https');

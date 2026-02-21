@@ -64,15 +64,8 @@ Add optional authentication to enable per-user features (API limit bypass, favor
 
 **Full documentation**: See [doc/authentication.md](doc/authentication.md)
 
-### BUG: radius_km Doesn't Accept Decimal Values
-- [ ] Fix integer parsing error when `radius_km` is a decimal (e.g., `0.5`)
-- [ ] Error: `"invalid input syntax for type integer: '0.5'"`
-- [ ] Likely in database.js where radius is passed to SQL query
-- [ ] Should accept any positive number, not just integers
-
-**Reproduction**: Call `search_pois` with `{"latitude": 40.6892, "longitude": -74.0445, "radius_km": 0.5}`
-
-**Impact**: Medium - blocks fine-grained location searches
+### ~~BUG: radius_km Doesn't Accept Decimal Values~~ FIXED 2026-02-21
+Fixed by adding `::float8` cast to ST_DWithin radius parameters in database.js.
 
 ### CRITICAL: Fix Unhandled Promise in Background Enrichment
 - [ ] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` at database.js:719
@@ -113,6 +106,24 @@ Algorithm improvements still needed:
   - Reject matches with confidence < 0.7
 
 **Impact**: High - data quality improvement
+
+### Security: Pre-commit Hook for Credential Detection
+- [ ] Add a git pre-commit hook that greps for credential patterns in staged files
+- [ ] Patterns to detect:
+  - `postgresql://.*:.*@` — connection strings with passwords
+  - `key=` in Google Places API URLs
+  - `apiKey`, `api_key`, `secret`, `password` assignments with string literals
+  - AWS account IDs (`\d{12}`)
+  - Base64-encoded secrets
+- [ ] Block the commit if any match is found (with clear error message)
+- [ ] Allow exceptions via `.credential-check-ignore` file for false positives
+- [ ] Add to CI pipeline as well (`.github/workflows/deploy.yml`)
+
+**Rationale**: The codebase had hardcoded DB credentials and Google API keys embedded in photo URLs that made it to production. A pre-commit hook prevents this from happening again.
+
+**Implementation**: Use a simple shell script in `.git/hooks/pre-commit` or integrate with `husky` for team-wide enforcement.
+
+**Impact**: High — prevents credential leaks at the source
 
 ### Security: SQL Injection Audit
 - [ ] Audit all database queries in `src/database.js` for SQL injection vulnerabilities

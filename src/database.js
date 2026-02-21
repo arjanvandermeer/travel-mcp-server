@@ -6,8 +6,11 @@ import dotenv from 'dotenv';
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
 
+if (!process.env.DATABASE_URL && process.env.NODE_ENV === 'production') {
+  throw new Error('DATABASE_URL environment variable is required in production');
+}
 const CONNECTION_STRING = process.env.DATABASE_URL ||
-  'postgresql://traveluser:travelpass@localhost:5432/travel';
+  'postgresql://<user>:<password>@localhost:5432/travel';
 
 /**
  * Recursively removes null and undefined fields from objects and arrays
@@ -96,6 +99,9 @@ export class TravelDatabase {
 
     // Config cache: Map<key, { value, expiresAt }>
     this._configCache = new Map();
+
+    // Enrichment dedup lock: Map<osmId, Promise> - prevents duplicate API calls for same POI
+    this._enrichmentLock = new Map();
   }
 
   /**
@@ -392,7 +398,7 @@ export class TravelDatabase {
     } else {
       queryText += ` ORDER BY c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
     }
-    params.push(limit);
+    params.push(Math.min(limit, 100));
 
     const result = await this.pool.query(queryText, params);
     return removeNullFields(result.rows);
@@ -816,33 +822,42 @@ export class TravelDatabase {
       // No enrichment attempt yet - trigger it
       await this.ensureGooglePlacesReady();
       if (this.googlePlaces && this.googlePlaces.isEnabled()) {
-        // Mark as pending IMMEDIATELY before starting enrichment
-        await this.pool.query(`
-          INSERT INTO osm_google_mappings (osm_id, mapping_status, mapped_at)
-          VALUES ($1, 'pending', CURRENT_TIMESTAMP)
-          ON CONFLICT (osm_id) DO UPDATE SET mapping_status = 'pending', mapped_at = CURRENT_TIMESTAMP
-        `, [osmId]);
+        // Check if enrichment is already in-flight for this POI (dedup concurrent requests)
+        if (this._enrichmentLock.has(osmId)) {
+          enrichment_status = 'pending';
+          enrichment_message = 'Google Places enrichment already in progress. Check back shortly for complete information.';
+        } else {
+          // Mark as pending IMMEDIATELY before starting enrichment
+          await this.pool.query(`
+            INSERT INTO osm_google_mappings (osm_id, mapping_status, mapped_at)
+            VALUES ($1, 'pending', CURRENT_TIMESTAMP)
+            ON CONFLICT (osm_id) DO UPDATE SET mapping_status = 'pending', mapped_at = CURRENT_TIMESTAMP
+          `, [osmId]);
 
-        const startedAt = new Date();
-        const checkBackAt = new Date(startedAt.getTime() + 60000); // 1 minute from now
+          const startedAt = new Date();
+          const checkBackAt = new Date(startedAt.getTime() + 60000); // 1 minute from now
 
-        enrichment_status = 'pending';
-        enrichment_message = `Google Places enrichment started at ${startedAt.toISOString()}. Check back after ${checkBackAt.toISOString()} (approximately 1 minute) for complete information including ratings, reviews, photos, and verified opening hours.`;
+          enrichment_status = 'pending';
+          enrichment_message = `Google Places enrichment started at ${startedAt.toISOString()}. Check back after ${checkBackAt.toISOString()} (approximately 1 minute) for complete information including ratings, reviews, photos, and verified opening hours.`;
 
-        // Fire-and-forget background enrichment with 2-minute timeout
-        Promise.race([
-          this.enrichOSMPOI(osmId),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Enrichment timeout after 2 minutes')), 120000))
-        ]).catch(err => {
-          console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
-          telemetry.captureException(err, { context: 'background_enrichment', osmId });
-          // Mark as error if enrichment fails
-          this.pool.query(`
-            UPDATE osm_google_mappings
-            SET mapping_status = 'error', mapping_notes = $1
-            WHERE osm_id = $2
-          `, [err.message, osmId]).catch(() => {});
-        });
+          // Fire-and-forget background enrichment with 2-minute timeout and dedup lock
+          const enrichmentPromise = Promise.race([
+            this.enrichOSMPOI(osmId),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Enrichment timeout after 2 minutes')), 120000))
+          ]).catch(err => {
+            console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
+            telemetry.captureException(err, { context: 'background_enrichment', osmId });
+            // Mark as error if enrichment fails
+            this.pool.query(`
+              UPDATE osm_google_mappings
+              SET mapping_status = 'error', mapping_notes = $1
+              WHERE osm_id = $2
+            `, [err.message, osmId]).catch(() => {});
+          }).finally(() => {
+            this._enrichmentLock.delete(osmId);
+          });
+          this._enrichmentLock.set(osmId, enrichmentPromise);
+        }
       } else {
         enrichment_status = 'disabled';
         enrichment_message = 'Google Places enrichment is not enabled. Only OpenStreetMap data is available.';
@@ -858,17 +873,8 @@ export class TravelDatabase {
       }
     };
 
-    // Add computed URLs to photos if present
-    if (response.google_photos && Array.isArray(response.google_photos)) {
-      await this.ensureGooglePlacesReady();
-      if (this.googlePlaces && this.googlePlaces.isEnabled()) {
-        response.google_photos = response.google_photos.map(photo => ({
-          ...photo,
-          url: photo.url || this.googlePlaces.getPhotoUrl(photo.name, 800, 600),
-          url_thumbnail: photo.url_thumbnail || this.googlePlaces.getPhotoUrl(photo.name, 200, 150),
-        }));
-      }
-    }
+    // Photos: URLs are resolved during enrichment and stored in the DB.
+    // No runtime URL computation needed — photo urls are direct CDN links.
 
     // Remove null/undefined fields and add resource URIs
     const baseUrl = await this.getServerBaseUrl();
@@ -1507,53 +1513,18 @@ export class TravelDatabase {
   // =========================================================================
 
   async getStats() {
-    const countries = await this.pool.query('SELECT COUNT(*) FROM geonames_countries');
-    const cities = await this.pool.query('SELECT COUNT(*) FROM geonames_cities');
-    const pois = await this.pool.query('SELECT COUNT(*) FROM osm_pois');
-    const hotels = await this.pool.query("SELECT COUNT(*) FROM osm_pois WHERE poi_type = 'hotel'");
-    const regions = await this.pool.query('SELECT COUNT(*) FROM regions');
-
-    const poisByType = await this.pool.query(`
-      SELECT poi_type, COUNT(*) as count
-      FROM osm_pois
-      GROUP BY poi_type
-      ORDER BY count DESC
-    `);
-
-    const poisByCountry = await this.pool.query(`
-      SELECT country_code, COUNT(*) as count
-      FROM enriched_pois
-      WHERE country_code IS NOT NULL
-      GROUP BY country_code
-      ORDER BY count DESC
-    `);
-
-    // Get recent successful imports
-    const recentImports = await this.pool.query(`
-      SELECT
-        import_type,
-        region_name,
-        source_file,
-        completed_at,
-        records_imported
-      FROM imports
-      WHERE status = 'completed'
-      ORDER BY completed_at DESC
-      LIMIT 10
-    `);
-
-    // Get enrichment stats from mappings table
-    const enrichmentStats = await this.pool.query(`
-      SELECT COUNT(*) as total_enriched
-      FROM osm_google_mappings
-      WHERE google_place_id IS NOT NULL AND mapping_status = 'active'
-    `);
-
-    const mappingStats = await this.pool.query(`
-      SELECT mapping_status, COUNT(*) as count
-      FROM osm_google_mappings
-      GROUP BY mapping_status
-    `);
+    const [countries, cities, pois, hotels, regions, poisByType, poisByCountry, recentImports, enrichmentStats, mappingStats] = await Promise.all([
+      this.pool.query('SELECT COUNT(*) FROM geonames_countries'),
+      this.pool.query('SELECT COUNT(*) FROM geonames_cities'),
+      this.pool.query('SELECT COUNT(*) FROM osm_pois'),
+      this.pool.query("SELECT COUNT(*) FROM osm_pois WHERE poi_type = 'hotel'"),
+      this.pool.query('SELECT COUNT(*) FROM regions'),
+      this.pool.query(`SELECT poi_type, COUNT(*) as count FROM osm_pois GROUP BY poi_type ORDER BY count DESC`),
+      this.pool.query(`SELECT country_code, COUNT(*) as count FROM enriched_pois WHERE country_code IS NOT NULL GROUP BY country_code ORDER BY count DESC`),
+      this.pool.query(`SELECT import_type, region_name, source_file, completed_at, records_imported FROM imports WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 10`),
+      this.pool.query(`SELECT COUNT(*) as total_enriched FROM osm_google_mappings WHERE google_place_id IS NOT NULL AND mapping_status = 'active'`),
+      this.pool.query(`SELECT mapping_status, COUNT(*) as count FROM osm_google_mappings GROUP BY mapping_status`),
+    ]);
 
     const stats = {
       countries: parseInt(countries.rows[0].count),
@@ -1586,9 +1557,11 @@ export class TravelDatabase {
       SELECT
         u.id, u.google_id, u.email, u.name, u.picture_url,
         u.created_at, u.last_login_at,
-        t.id as token_id
+        t.id as token_id,
+        uc.key as config_key, uc.value as config_value
       FROM user_tokens t
       JOIN users u ON t.user_id = u.id
+      LEFT JOIN user_config uc ON uc.user_id = u.id
       WHERE t.token = $1
         AND t.revoked_at IS NULL
         AND (t.expires_at IS NULL OR t.expires_at > NOW())
@@ -1596,24 +1569,30 @@ export class TravelDatabase {
 
     if (result.rows.length === 0) return null;
 
-    const user = result.rows[0];
+    const firstRow = result.rows[0];
+    const user = {
+      id: firstRow.id,
+      google_id: firstRow.google_id,
+      email: firstRow.email,
+      name: firstRow.name,
+      picture_url: firstRow.picture_url,
+      created_at: firstRow.created_at,
+      last_login_at: firstRow.last_login_at,
+      config: {},
+    };
 
-    // Update last_used_at for the token
-    await this.pool.query(`
-      UPDATE user_tokens SET last_used_at = NOW() WHERE id = $1
-    `, [user.token_id]);
-
-    // Load user config
-    const configResult = await this.pool.query(`
-      SELECT key, value FROM user_config WHERE user_id = $1
-    `, [user.id]);
-
-    user.config = {};
-    for (const row of configResult.rows) {
-      user.config[row.key] = row.value;
+    // Aggregate config rows from the LEFT JOIN
+    for (const row of result.rows) {
+      if (row.config_key) {
+        user.config[row.config_key] = row.config_value;
+      }
     }
 
-    delete user.token_id; // Don't expose internal ID
+    // Update last_used_at for the token (fire-and-forget)
+    this.pool.query(`
+      UPDATE user_tokens SET last_used_at = NOW() WHERE id = $1
+    `, [firstRow.token_id]).catch(() => {});
+
     return user;
   }
 
@@ -1856,8 +1835,9 @@ export class TravelDatabase {
       paramIndex += 3;
     } else if (cityName && countryCode) {
       // City-based filter - first find the city, then filter by proximity
+      const escapedCity = cityName.replace(/[%_\\]/g, '\\$&');
       conditions.push(`e.city ILIKE $${paramIndex} AND e.country_code = $${paramIndex + 1}`);
-      params.push(`%${cityName}%`, countryCode);
+      params.push(`%${escapedCity}%`, countryCode);
       paramIndex += 2;
 
       if (state) {

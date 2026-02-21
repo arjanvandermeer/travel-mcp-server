@@ -1172,7 +1172,10 @@ export async function executeToolHandler(name, args, db, options = {}) {
     }
 
     default:
-      throw new Error(`Unknown tool: ${name}`);
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ error: `Unknown tool: ${name}` }, null, 2) }],
+        isError: true,
+      };
   }
 }
 

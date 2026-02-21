@@ -113,12 +113,12 @@ export class GooglePlacesClient {
 
     const endpoint = 'place_details';
 
+    const headers = { 'X-Goog-Api-Key': this.apiKey };
+    if (fieldMask) headers['X-Goog-FieldMask'] = fieldMask;
+
     const options = {
       method: 'GET',
-      headers: {
-        'X-Goog-Api-Key': this.apiKey,
-        'X-Goog-FieldMask': fieldMask,
-      },
+      headers,
     };
 
     // Track API call with metrics
@@ -398,7 +398,7 @@ export class GooglePlacesClient {
 
     // No confident match found
     if (process.env.DEBUG_MATCHING) {
-      console.log(`  No Google Places match found for: "${name}"`);
+      console.error(`  No Google Places match found for: "${name}"`);
     }
     return null;
   }
@@ -492,7 +492,7 @@ export class GooglePlacesClient {
 
       // Debug logging for matching
       if (process.env.DEBUG_MATCHING) {
-        console.log(`  Match score: "${targetName}" vs "${resultName}" = ${score.toFixed(3)}`);
+        console.error(`  Match score: "${targetName}" vs "${resultName}" = ${score.toFixed(3)}`);
       }
 
       if (score > bestScore) {
@@ -508,14 +508,14 @@ export class GooglePlacesClient {
     if (bestScore >= MIN_CONFIDENCE) {
       if (process.env.DEBUG_MATCHING) {
         const matchName = bestMatch.displayName?.text || bestMatch.displayName;
-        console.log(`  Best match: "${matchName}" with score ${bestScore.toFixed(3)}`);
+        console.error(`  Best match: "${matchName}" with score ${bestScore.toFixed(3)}`);
       }
       return bestMatch;
     }
 
     // No confident match found - return null instead of wrong match
     if (process.env.DEBUG_MATCHING) {
-      console.log(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
+      console.error(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
     }
     return null;
   }
@@ -604,15 +604,15 @@ export class GooglePlacesClient {
         weekday_text: details.currentOpeningHours.weekdayDescriptions,
       } : null,
 
-      // Photos (up to 10) with computed URLs
-      photos: details.photos ? details.photos.slice(0, 10).map(p => ({
+      // Photos (up to 10) — URLs resolved below via resolvePhotoUrl
+      photos: details.photos ? await Promise.all(details.photos.slice(0, 10).map(async p => ({
         name: p.name,
         widthPx: p.widthPx,
         heightPx: p.heightPx,
         authorAttributions: p.authorAttributions,
-        url: this.getPhotoUrl(p.name, 800, 600),
-        url_thumbnail: this.getPhotoUrl(p.name, 200, 150),
-      })) : null,
+        url: await this.resolvePhotoUrl(p.name, 800, 600),
+        url_thumbnail: await this.resolvePhotoUrl(p.name, 200, 150),
+      }))) : null,
 
       // Service options
       service_options: {
@@ -660,15 +660,22 @@ export class GooglePlacesClient {
   }
 
   /**
-   * Get photo URL from photo name (New API format)
+   * Resolve a photo name to a direct CDN URL (no API key exposed).
+   * Calls the Photo Media endpoint with skipHttpRedirect=true to get the photoUri.
    * Photo name format: "places/{place_id}/photos/{photo_id}"
    */
-  getPhotoUrl(photoName, maxWidthPx = 400, maxHeightPx = 400) {
+  async resolvePhotoUrl(photoName, maxWidthPx = 400, maxHeightPx = 400) {
     if (!this.enabled || !photoName) {
       return null;
     }
 
-    return `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=${maxWidthPx}&maxHeightPx=${maxHeightPx}&key=${this.apiKey}`;
+    const url = `https://places.googleapis.com/v1/${photoName}/media?maxWidthPx=${maxWidthPx}&maxHeightPx=${maxHeightPx}&skipHttpRedirect=true`;
+    try {
+      const result = await this.makeGetRequest(url, '');
+      return result.photoUri || null;
+    } catch {
+      return null;
+    }
   }
 }
 
