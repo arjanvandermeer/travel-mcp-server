@@ -370,7 +370,7 @@ export class TravelDatabase {
     // Add coordinate radius filter
     if (hasCoords) {
       const maxRadius = Math.min(radiusKm, 100);
-      queryText += ` AND ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $${params.length + 1} * 1000)`;
+      queryText += ` AND ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $${params.length + 1}::float8 * 1000)`;
       params.push(maxRadius);
     }
 
@@ -613,7 +613,7 @@ export class TravelDatabase {
           AND ST_DWithin(
             osm_location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
-            $5 * 1000
+            $5::float8 * 1000
           )
       `;
       queryParams = [name, searchLat, searchLon, `%${name}%`, searchRadius];
@@ -715,7 +715,7 @@ export class TravelDatabase {
         AND ST_DWithin(
           osm_location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
-          $3 * 1000
+          $3::float8 * 1000
         )
     `;
 

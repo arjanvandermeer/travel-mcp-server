@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f5;
+      color: #333;
+      line-height: 1.5;
+      padding: 16px;
+    }
+    .header {
+      margin-bottom: 12px;
+    }
+    .header h1 {
+      font-size: 18px;
+      color: #333;
+    }
+    .header .subtitle {
+      font-size: 13px;
+      color: #888;
+      margin-top: 2px;
+    }
+    .nearby-scroll {
+      display: flex;
+      gap: 12px;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      padding: 4px 0 12px;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+    }
+    .nearby-scroll::-webkit-scrollbar { display: none; }
+    .nearby-card {
+      flex: 0 0 150px;
+      scroll-snap-align: start;
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+      text-decoration: none;
+      color: inherit;
+      transition: transform 0.15s, box-shadow 0.15s;
+    }
+    .nearby-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+    .nearby-card:active {
+      transform: translateY(0);
+    }
+    .nearby-thumb {
+      width: 100%;
+      height: 100px;
+      object-fit: cover;
+      display: block;
+    }
+    .nearby-thumb-placeholder {
+      width: 100%;
+      height: 100px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 28px;
+    }
+    .nearby-info {
+      padding: 8px 10px 10px;
+    }
+    .nearby-name {
+      font-size: 13px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .nearby-rating {
+      font-size: 12px;
+      color: #f5a623;
+      margin-top: 2px;
+    }
+    .nearby-distance {
+      font-size: 11px;
+      color: #888;
+      margin-top: 2px;
+    }
+    .nearby-type {
+      font-size: 10px;
+      color: #667eea;
+      text-transform: capitalize;
+      margin-top: 2px;
+    }
+    .scroll-wrapper {
+      position: relative;
+    }
+    .scroll-arrow {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: white;
+      border: 1px solid #ddd;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+      font-size: 16px;
+      cursor: pointer;
+      z-index: 2;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #333;
+      transition: opacity 0.2s, background 0.15s;
+    }
+    .scroll-arrow:hover {
+      background: #f0f0f0;
+    }
+    .scroll-arrow.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+    .scroll-arrow-left {
+      left: -4px;
+    }
+    .scroll-arrow-right {
+      right: -4px;
+    }
+    .empty-state {
+      text-align: center;
+      padding: 32px 20px;
+      color: #888;
+    }
+    .empty-state h2 {
+      font-size: 16px;
+      margin-bottom: 4px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 id="title">{{title}}</h1>
+    {{#if source_name}}
+    <div class="subtitle">Near {{source_name}}</div>
+    {{/if}}
+  </div>
+
+  <div id="results-container">
+    {{#if results}}
+    <div class="scroll-wrapper">
+      <button class="scroll-arrow scroll-arrow-left hidden" id="scroll-left">&#8249;</button>
+      <div class="nearby-scroll" id="nearby-scroll">
+        {{#each results}}
+        <a class="nearby-card" href="{{preview_url}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
+          {{#if photo_url}}
+          <img class="nearby-thumb" src="{{photo_url}}" alt="" loading="lazy">
+          {{else}}
+          <div class="nearby-thumb-placeholder">
+            {{#ifEq poi_type "restaurant"}}&#127869;{{else}}{{#ifEq poi_type "cafe"}}&#9749;{{else}}{{#ifEq poi_type "hotel"}}&#127976;{{else}}&#128205;{{/ifEq}}{{/ifEq}}{{/ifEq}}
+          </div>
+          {{/if}}
+          <div class="nearby-info">
+            <div class="nearby-name">{{or name "Unknown"}}</div>
+            {{#if google_rating}}
+            <div class="nearby-rating">&#11088; {{google_rating}}</div>
+            {{/if}}
+            {{#if distance_km}}
+            <div class="nearby-distance">{{formatDistance distance_km}} km away</div>
+            {{/if}}
+            <div class="nearby-type">{{poi_type}}</div>
+          </div>
+        </a>
+        {{/each}}
+      </div>
+      <button class="scroll-arrow scroll-arrow-right" id="scroll-right">&#8250;</button>
+    </div>
+    {{else}}
+    <div class="empty-state">
+      <h2>No nearby places found</h2>
+      <p>Try expanding the search radius</p>
+    </div>
+    {{/if}}
+  </div>
+
+  <script>
+    function formatDistance(km) {
+      if (km == null) return '';
+      var num = parseFloat(km);
+      if (isNaN(num)) return km;
+      return num.toFixed(1);
+    }
+
+    function escapeHtml(text) {
+      var div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function getTypeEmoji(type) {
+      if (type === 'restaurant') return '&#127869;';
+      if (type === 'cafe') return '&#9749;';
+      if (type === 'hotel') return '&#127976;';
+      return '&#128205;';
+    }
+
+    function renderCard(poi) {
+      var name = poi.name || 'Unknown';
+      var photoUrl = poi.photo_url;
+      if (!photoUrl && poi.google_photos && poi.google_photos.length > 0) {
+        photoUrl = poi.google_photos[0].url;
+      }
+
+      var card = document.createElement('a');
+      card.className = 'nearby-card';
+      card.href = poi.resource_uri || '#';
+      card.setAttribute('data-osm-id', poi.osm_id);
+      card.setAttribute('data-resource-uri', poi.resource_uri || '');
+      card.setAttribute('data-preview-url', poi.preview_url || '');
+
+      var thumbHtml = photoUrl
+        ? '<img class="nearby-thumb" src="' + escapeHtml(photoUrl) + '" alt="" loading="lazy">'
+        : '<div class="nearby-thumb-placeholder">' + getTypeEmoji(poi.poi_type) + '</div>';
+
+      var ratingHtml = poi.google_rating
+        ? '<div class="nearby-rating">&#11088; ' + poi.google_rating + '</div>'
+        : '';
+
+      var distanceHtml = poi.distance_km
+        ? '<div class="nearby-distance">' + formatDistance(poi.distance_km) + ' km away</div>'
+        : '';
+
+      card.innerHTML =
+        thumbHtml +
+        '<div class="nearby-info">' +
+          '<div class="nearby-name">' + escapeHtml(name) + '</div>' +
+          ratingHtml +
+          distanceHtml +
+          '<div class="nearby-type">' + (poi.poi_type || '') + '</div>' +
+        '</div>';
+
+      return card;
+    }
+
+    function renderResults(data) {
+      var container = document.getElementById('results-container');
+      var title = document.getElementById('title');
+      var results = Array.isArray(data) ? data : (data.results || []);
+
+      if (data.title) {
+        title.textContent = data.title;
+      }
+
+      container.innerHTML = '';
+      if (results.length === 0) {
+        container.innerHTML = '<div class="empty-state"><h2>No nearby places found</h2><p>Try expanding the search radius</p></div>';
+        return;
+      }
+
+      var wrapper = document.createElement('div');
+      wrapper.className = 'scroll-wrapper';
+
+      var leftBtn = document.createElement('button');
+      leftBtn.className = 'scroll-arrow scroll-arrow-left hidden';
+      leftBtn.innerHTML = '&#8249;';
+
+      var scroll = document.createElement('div');
+      scroll.className = 'nearby-scroll';
+
+      results.forEach(function(poi) {
+        scroll.appendChild(renderCard(poi));
+      });
+
+      var rightBtn = document.createElement('button');
+      rightBtn.className = 'scroll-arrow scroll-arrow-right';
+      rightBtn.innerHTML = '&#8250;';
+
+      wrapper.appendChild(leftBtn);
+      wrapper.appendChild(scroll);
+      wrapper.appendChild(rightBtn);
+      container.appendChild(wrapper);
+      attachCardHandlers();
+      initScrollArrows(scroll);
+    }
+
+    function attachCardHandlers() {
+      document.querySelectorAll('.nearby-card').forEach(function(card) {
+        card.addEventListener('click', function(e) {
+          e.preventDefault();
+          var resourceUri = this.getAttribute('data-resource-uri');
+          var previewUrl = this.getAttribute('data-preview-url');
+          if (window.openai && window.openai.readResource) {
+            window.openai.readResource(resourceUri);
+          } else if (previewUrl) {
+            window.open(previewUrl, '_blank');
+          }
+        });
+      });
+    }
+
+    function initScrollArrows(scrollEl) {
+      if (!scrollEl) return;
+      var wrapper = scrollEl.closest('.scroll-wrapper');
+      if (!wrapper) return;
+      var leftBtn = wrapper.querySelector('.scroll-arrow-left');
+      var rightBtn = wrapper.querySelector('.scroll-arrow-right');
+      if (!leftBtn || !rightBtn) return;
+
+      function updateArrows() {
+        var atStart = scrollEl.scrollLeft <= 0;
+        var atEnd = scrollEl.scrollLeft + scrollEl.clientWidth >= scrollEl.scrollWidth - 1;
+        leftBtn.classList.toggle('hidden', atStart);
+        rightBtn.classList.toggle('hidden', atEnd);
+      }
+
+      leftBtn.addEventListener('click', function() {
+        scrollEl.scrollBy({ left: -324, behavior: 'smooth' });
+      });
+      rightBtn.addEventListener('click', function() {
+        scrollEl.scrollBy({ left: 324, behavior: 'smooth' });
+      });
+
+      scrollEl.addEventListener('scroll', updateArrows);
+      updateArrows();
+    }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      if (window.openai && window.openai.toolOutput) {
+        renderResults(window.openai.toolOutput);
+      } else {
+        attachCardHandlers();
+      }
+      initScrollArrows(document.getElementById('nearby-scroll'));
+    });
+  </script>
+</body>
+</html>

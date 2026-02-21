@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import Handlebars from 'handlebars';
 import { render } from '../../src/templates/index.js';
-import { renderPOIPreview, isOpenNow } from '../../src/tools-config.js';
+import { renderPOIPreview, renderNearbyWidget, isOpenNow, getNearbyTypes, getNearbyTitle, accommodationTypes, foodTypes } from '../../src/tools-config.js';
 
 // Compile inline Handlebars templates (helpers are registered by the index.js import above)
 const compileInline = (src) => Handlebars.compile(src);
@@ -451,6 +451,175 @@ describe('isOpenNow', () => {
     };
     const result = isOpenNow(hours, testOffset);
     assert.strictEqual(result.isOpen, true);
+  });
+});
+
+// =============================================================================
+// getNearbyTypes
+// =============================================================================
+
+describe('getNearbyTypes', () => {
+  it('should return food types for hotel', () => {
+    const types = getNearbyTypes('hotel');
+    assert.deepStrictEqual(types, foodTypes);
+  });
+
+  it('should return food types for all accommodation types', () => {
+    for (const t of accommodationTypes) {
+      assert.deepStrictEqual(getNearbyTypes(t), foodTypes, `${t} should map to foodTypes`);
+    }
+  });
+
+  it('should return accommodation types for restaurant', () => {
+    const types = getNearbyTypes('restaurant');
+    assert.deepStrictEqual(types, accommodationTypes);
+  });
+
+  it('should return accommodation types for all food types', () => {
+    for (const t of foodTypes) {
+      assert.deepStrictEqual(getNearbyTypes(t), accommodationTypes, `${t} should map to accommodationTypes`);
+    }
+  });
+
+  it('should return combined types for unknown poi_type', () => {
+    const types = getNearbyTypes('museum');
+    assert.ok(types.includes('restaurant'), 'Should include restaurants');
+    assert.ok(types.includes('hotel'), 'Should include hotels');
+    assert.strictEqual(types.length, foodTypes.length + accommodationTypes.length);
+  });
+});
+
+// =============================================================================
+// getNearbyTitle
+// =============================================================================
+
+describe('getNearbyTitle', () => {
+  it('should return restaurants title for food types', () => {
+    assert.strictEqual(getNearbyTitle(foodTypes), 'Nearby Restaurants & Cafes');
+  });
+
+  it('should return hotels title for accommodation types', () => {
+    assert.strictEqual(getNearbyTitle(accommodationTypes), 'Nearby Hotels');
+  });
+
+  it('should return generic title for mixed types', () => {
+    assert.strictEqual(getNearbyTitle([...foodTypes, ...accommodationTypes]), 'Nearby Places');
+  });
+});
+
+// =============================================================================
+// renderNearbyWidget
+// =============================================================================
+
+describe('renderNearbyWidget', () => {
+  it('should render with nearby results', () => {
+    const source = makePOI({ poi_type: 'hotel', osm_name: 'Grand Hotel' });
+    const nearby = [
+      { osm_id: 999, name: 'Thai Kitchen', poi_type: 'restaurant', google_rating: 4.5, distance_km: 0.3, preview_url: '/preview/poi/999' },
+    ];
+    const html = renderNearbyWidget(source, nearby, render);
+
+    assert.ok(html.includes('Thai Kitchen'), 'Should contain nearby POI name');
+    assert.ok(html.includes('0.3'), 'Should contain distance');
+    assert.ok(html.includes('restaurant'), 'Should contain poi type');
+  });
+
+  it('should render empty state when no nearby results', () => {
+    const source = makePOI({ poi_type: 'hotel' });
+    const html = renderNearbyWidget(source, [], render);
+
+    assert.ok(html.includes('No nearby places found'), 'Should show empty state');
+  });
+
+  it('should set correct title for hotel source', () => {
+    const source = makePOI({ poi_type: 'hotel' });
+    const html = renderNearbyWidget(source, [], render);
+
+    assert.ok(html.includes('Nearby Restaurants'), 'Should show restaurants title for hotel');
+  });
+
+  it('should set correct title for restaurant source', () => {
+    const source = makePOI({ poi_type: 'restaurant' });
+    const html = renderNearbyWidget(source, [], render);
+
+    assert.ok(html.includes('Nearby Hotels'), 'Should show hotels title for restaurant');
+  });
+
+  it('should show source name in subtitle', () => {
+    const source = makePOI({ poi_type: 'hotel', osm_name: 'Grand Hotel' });
+    const html = renderNearbyWidget(source, [], render);
+
+    assert.ok(html.includes('Near Grand Hotel'), 'Should show source name');
+  });
+
+  it('should render scroll arrows when there are results', () => {
+    const source = makePOI({ poi_type: 'hotel', osm_name: 'Grand Hotel' });
+    const nearby = [
+      { osm_id: 999, name: 'Thai Kitchen', poi_type: 'restaurant', google_rating: 4.5, distance_km: 0.3, preview_url: '/preview/poi/999' },
+    ];
+    const html = renderNearbyWidget(source, nearby, render);
+
+    assert.ok(html.includes('scroll-wrapper'), 'Should have scroll wrapper');
+    assert.ok(html.includes('scroll-arrow-left'), 'Should have left arrow');
+    assert.ok(html.includes('scroll-arrow-right'), 'Should have right arrow');
+  });
+
+  it('should not render scroll arrows for empty results', () => {
+    const source = makePOI({ poi_type: 'hotel' });
+    const html = renderNearbyWidget(source, [], render);
+
+    // Style and script blocks contain class names as strings; check only the HTML between them
+    const htmlBody = html.split('</style>')[1]?.split('<script>')[0] || '';
+    assert.ok(!htmlBody.includes('scroll-wrapper'), 'Should not have scroll wrapper div');
+    assert.ok(!htmlBody.includes('scroll-arrow'), 'Should not have scroll arrow buttons');
+  });
+});
+
+// =============================================================================
+// renderPOIPreview nearby section
+// =============================================================================
+
+describe('renderPOIPreview nearby section', () => {
+  it('should not show nearby section when nearbyPois is null', () => {
+    const poi = makePOI();
+    const html = renderPOIPreview(poi, render);
+    const body = getBody(html);
+
+    assert.ok(!body.includes('nearby-section'), 'Should not render nearby section');
+  });
+
+  it('should show nearby section when nearbyPois provided', () => {
+    const poi = makePOI();
+    const nearby = [
+      { osm_id: 888, name: 'Cafe Latte', poi_type: 'cafe', distance_km: 0.5, preview_url: '/preview/poi/888' },
+    ];
+    const html = renderPOIPreview(poi, render, nearby, 'Nearby Restaurants & Cafes');
+    const body = getBody(html);
+
+    assert.ok(body.includes('nearby-section'), 'Should render nearby section');
+    assert.ok(body.includes('Cafe Latte'), 'Should contain nearby POI name');
+    assert.ok(body.includes('Nearby Restaurants'), 'Should contain section title');
+  });
+
+  it('should not show nearby section when nearbyPois is empty array', () => {
+    const poi = makePOI();
+    const html = renderPOIPreview(poi, render, [], 'Nearby Places');
+    const body = getBody(html);
+
+    assert.ok(!body.includes('nearby-section'), 'Should not render nearby section for empty array');
+  });
+
+  it('should render card with rating and distance', () => {
+    const poi = makePOI();
+    const nearby = [
+      { osm_id: 777, name: 'Spice Garden', poi_type: 'restaurant', google_rating: 4.2, distance_km: 0.8, preview_url: '/preview/poi/777' },
+    ];
+    const html = renderPOIPreview(poi, render, nearby, 'Nearby Restaurants & Cafes');
+    const body = getBody(html);
+
+    assert.ok(body.includes('Spice Garden'), 'Should show name');
+    assert.ok(body.includes('4.2'), 'Should show rating');
+    assert.ok(body.includes('0.8'), 'Should show distance');
   });
 });
 

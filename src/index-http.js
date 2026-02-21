@@ -19,7 +19,7 @@ import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSche
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
-import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, renderPOIPreview, promptsConfig, getPromptMessages } from './tools-config.js';
+import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, renderPOIPreview, renderNearbyWidget, getNearbyTypes, fetchNearbyForPOI, promptsConfig, getPromptMessages } from './tools-config.js';
 import { versionInfo, getVersionString } from './version.js';
 import http from 'http';
 import crypto from 'crypto';
@@ -438,12 +438,56 @@ async function main() {
         if (user) {
           [poi] = await db.addFavoriteStatus([poi], user.id);
         }
-        const html = renderPOIPreview(poi, render);
+        const { nearbyPois, nearbyTitle } = await fetchNearbyForPOI(poi, db, user?.id);
+        const html = renderPOIPreview(poi, render, nearbyPois, nearbyTitle);
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(html);
       } catch (err) {
         console.error('Error rendering random POI:', err);
         telemetry.captureException(err, { context: 'preview_random_poi' });
+        res.writeHead(500, { 'Content-Type': 'text/html' });
+        res.end(`<h1>Error</h1><pre>${err.message}</pre>`);
+      }
+      return;
+    }
+
+    // Nearby POIs preview endpoint
+    const nearbyMatch = pathname.match(/^\/preview\/poi\/(\d+)\/nearby$/);
+    if (nearbyMatch) {
+      try {
+        const osmId = parseInt(nearbyMatch[1], 10);
+        const sourcePoi = await db.getPOIDetails(osmId);
+        if (!sourcePoi) {
+          res.writeHead(404, { 'Content-Type': 'text/html' });
+          res.end(`<h1>POI not found</h1><p>OSM ID: ${osmId}</p>`);
+          return;
+        }
+
+        const url = new URL(req.url, `http://${req.headers.host}`);
+        const typesParam = url.searchParams.get('types');
+        const radiusParam = parseFloat(url.searchParams.get('radius')) || 1.5;
+        const limitParam = parseInt(url.searchParams.get('limit'), 10) || 5;
+
+        const resultTypes = typesParam
+          ? typesParam.split(',').map(t => t.trim())
+          : getNearbyTypes(sourcePoi.poi_type);
+
+        const nearbyPois = await db.searchPOIsNearCoordinates(
+          sourcePoi.osm_latitude,
+          sourcePoi.osm_longitude,
+          Math.min(radiusParam, 10),
+          resultTypes,
+          Math.min(limitParam, 20),
+          null,
+          [sourcePoi.osm_id],
+        );
+
+        const html = renderNearbyWidget(sourcePoi, nearbyPois, render);
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(html);
+      } catch (err) {
+        console.error('Error rendering nearby POIs:', err);
+        telemetry.captureException(err, { context: 'preview_nearby_pois' });
         res.writeHead(500, { 'Content-Type': 'text/html' });
         res.end(`<h1>Error</h1><pre>${err.message}</pre>`);
       }
@@ -464,7 +508,8 @@ async function main() {
         if (user) {
           [poi] = await db.addFavoriteStatus([poi], user.id);
         }
-        const html = renderPOIPreview(poi, render);
+        const { nearbyPois: poiNearby, nearbyTitle: poiNearbyTitle } = await fetchNearbyForPOI(poi, db, user?.id);
+        const html = renderPOIPreview(poi, render, poiNearby, poiNearbyTitle);
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(html);
       } catch (err) {

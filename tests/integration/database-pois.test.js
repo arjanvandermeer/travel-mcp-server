@@ -241,6 +241,89 @@ describe('TravelDatabase POI Search Functions', () => {
       );
       assert.ok(searchCall, 'Should pass limit to query');
     });
+
+    it('should exclude specified OSM IDs', async () => {
+      mockPool.setResponse('enriched_pois', dbResult([samplePOIs[1]]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const results = await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, null, 50, null, [12345]
+      );
+
+      assert.ok(Array.isArray(results));
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('enriched_pois') &&
+        c.sql.includes('osm_id != ALL')
+      );
+      assert.ok(searchCall, 'Should include osm_id != ALL clause');
+      assert.ok(searchCall.params.some(p => Array.isArray(p) && p.includes(12345)),
+        'Should pass excludeOsmIds array as parameter');
+    });
+
+    it('should not include exclude clause when excludeOsmIds is null', async () => {
+      mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+
+      db = new TravelDatabase({ pool: mockPool });
+      await db.searchPOIsNearCoordinates(13.75, 100.5, 10);
+
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('enriched_pois') &&
+        c.sql.includes('ST_DWithin')
+      );
+      assert.ok(searchCall, 'Should have ST_DWithin query');
+      assert.ok(!searchCall.sql.includes('osm_id != ALL'),
+        'Should NOT include exclude clause when param is null');
+    });
+
+    it('should handle fractional radius (non-integer km)', async () => {
+      mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const results = await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 1.5, null, 5
+      );
+
+      assert.ok(Array.isArray(results));
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('enriched_pois') &&
+        c.sql.includes('ST_DWithin')
+      );
+      assert.ok(searchCall, 'Should have ST_DWithin query');
+      assert.ok(searchCall.params.includes(1.5),
+        'Should pass fractional radius as parameter');
+      assert.ok(searchCall.sql.includes('::float8'),
+        'Should cast radius to float8 to handle non-integer values');
+    });
+
+    it('should pass both typeFilter and excludeOsmIds together', async () => {
+      mockPool.setResponse('enriched_pois', dbResult([samplePOIs[1]]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const results = await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 1.5, ['restaurant', 'cafe'], 5, null, [12345]
+      );
+
+      assert.ok(Array.isArray(results));
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('enriched_pois') &&
+        c.sql.includes('ST_DWithin')
+      );
+      assert.ok(searchCall.sql.includes('poi_type = ANY'),
+        'Should include type filter');
+      assert.ok(searchCall.sql.includes('osm_id != ALL'),
+        'Should include exclude clause');
+      // Verify parameter ordering: [lat, lon, radius, typeFilter, excludeOsmIds, limit]
+      assert.strictEqual(searchCall.params[0], 13.75, 'First param should be latitude');
+      assert.strictEqual(searchCall.params[1], 100.5, 'Second param should be longitude');
+      assert.strictEqual(searchCall.params[2], 1.5, 'Third param should be radius');
+      assert.deepStrictEqual(searchCall.params[3], ['restaurant', 'cafe'], 'Fourth param should be type filter');
+      assert.deepStrictEqual(searchCall.params[4], [12345], 'Fifth param should be excludeOsmIds');
+      assert.strictEqual(searchCall.params[5], 5, 'Sixth param should be limit');
+    });
   });
 
   describe('getPOIDetails', () => {

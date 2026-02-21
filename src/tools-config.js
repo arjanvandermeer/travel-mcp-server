@@ -12,6 +12,47 @@ import * as telemetry from './telemetry.js';
 export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
 export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
 
+// Default mapping: POI type → what types to show as "nearby"
+const nearbyTypeMap = new Map([
+  ...accommodationTypes.map(t => [t, foodTypes]),
+  ...foodTypes.map(t => [t, accommodationTypes]),
+]);
+
+/**
+ * Get the nearby result types for a given POI type.
+ * Hotels/accommodation → restaurants/food; restaurants/food → hotels/accommodation; other → both.
+ */
+export function getNearbyTypes(poiType) {
+  return nearbyTypeMap.get(poiType) || [...foodTypes, ...accommodationTypes];
+}
+
+/**
+ * Determine section title based on which types are being shown nearby.
+ */
+export function getNearbyTitle(resultTypes) {
+  const isFood = resultTypes.some(t => foodTypes.includes(t));
+  const isAccom = resultTypes.some(t => accommodationTypes.includes(t));
+  if (isFood && !isAccom) return 'Nearby Restaurants & Cafes';
+  if (isAccom && !isFood) return 'Nearby Hotels';
+  return 'Nearby Places';
+}
+
+/**
+ * Fetch nearby POIs for a given source POI.
+ * Returns { nearbyPois, nearbyTitle } or { nearbyPois: null, nearbyTitle: null } if coords missing.
+ */
+export async function fetchNearbyForPOI(poi, db, userId = null) {
+  if (!poi.osm_latitude || !poi.osm_longitude) {
+    return { nearbyPois: null, nearbyTitle: null };
+  }
+  const types = getNearbyTypes(poi.poi_type);
+  const nearbyPois = await db.searchPOIsNearCoordinates(
+    poi.osm_latitude, poi.osm_longitude,
+    1.5, types, 10, userId, [poi.osm_id],
+  );
+  return { nearbyPois, nearbyTitle: getNearbyTitle(types) };
+}
+
 // =============================================================================
 // MCP Prompts Configuration
 // =============================================================================
@@ -503,6 +544,47 @@ const baseToolsConfig = [
     },
   },
   {
+    name: 'get_nearby_pois',
+    description: 'Get POIs near a given POI. For hotels/accommodation returns nearby restaurants by default; for restaurants/food returns nearby hotels. Override with result_types parameter.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_id: { type: 'number', description: 'The OSM ID of the source POI to find nearby places for' },
+        result_types: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Override which POI types to return (e.g., ["restaurant", "cafe"]). If omitted, defaults based on source POI type.',
+        },
+        radius_km: { type: 'number', description: 'Search radius in km (default: 1.5, max: 10)' },
+        limit: { type: 'number', description: 'Max results (default: 10, max: 20)' },
+      },
+      required: ['osm_id'],
+    },
+  },
+  {
+    name: 'get_nearby_pois_ui',
+    description: 'Get nearby POIs with interactive UI. Same as get_nearby_pois but renders as horizontal scrollable cards.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_id: { type: 'number', description: 'The OSM ID of the source POI' },
+        result_types: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Override which POI types to show nearby',
+        },
+        radius_km: { type: 'number', description: 'Search radius in km (default: 1.5, max: 10)' },
+        limit: { type: 'number', description: 'Max results (default: 10, max: 20)' },
+      },
+      required: ['osm_id'],
+    },
+    _meta: {
+      'openai/outputTemplate': 'ui://widget/nearby-pois.html',
+      'openai/toolInvocation/invoking': 'Finding nearby places...',
+      'openai/toolInvocation/invoked': 'Nearby places ready.',
+    },
+  },
+  {
     name: 'get_stats',
     description: 'Get database statistics including counts of countries, cities, POIs by type, and coverage by region',
     inputSchema: {
@@ -698,6 +780,20 @@ export function getResourcesConfig(widgetDomain) {
         uriTemplate: 'ui://widget/search-results.html',
         name: 'Search Results Widget',
         description: 'Interactive list of search results. Renders tool output as clickable cards.',
+        mimeType: 'text/html+skybridge',
+        _meta: {
+          'openai/widgetDomain': widgetDomain,
+          'openai/widgetCSP': {
+            connect_domains: [],
+            resource_domains: [],
+            frame_domains: [],
+          },
+        },
+      },
+      {
+        uriTemplate: 'ui://widget/nearby-pois.html',
+        name: 'Nearby POIs Widget',
+        description: 'Horizontal scrollable cards showing nearby points of interest.',
         mimeType: 'text/html+skybridge',
         _meta: {
           'openai/widgetDomain': widgetDomain,
@@ -907,12 +1003,73 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
       // UI version returns structuredContent with pre-rendered HTML for widget display
       if (name === 'get_poi_details_ui') {
+        const { nearbyPois: detailNearby, nearbyTitle: detailNearbyTitle } = await fetchNearbyForPOI(poi, db, options.user?.id);
         return {
           content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }],
-          structuredContent: { ...poi, _html: renderPOIPreview(poi, render) },
+          structuredContent: { ...poi, _html: renderPOIPreview(poi, render, detailNearby, detailNearbyTitle) },
         };
       }
       return { content: [{ type: 'text', text: JSON.stringify(poi, null, 2) }] };
+    }
+
+    case 'get_nearby_pois':
+    case 'get_nearby_pois_ui': {
+      if (!args.osm_id) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'osm_id is required' }, null, 2) }],
+          isError: true,
+        };
+      }
+
+      const sourcePoi = await db.getPOIDetails(args.osm_id, null, options.user?.id);
+      if (!sourcePoi) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'POI not found', osm_id: args.osm_id }, null, 2) }],
+          isError: true,
+        };
+      }
+
+      const resultTypes = args.result_types || getNearbyTypes(sourcePoi.poi_type);
+      const radiusKm = Math.min(args.radius_km || 1.5, 10);
+      const nearbyLimit = Math.min(args.limit || 10, 20);
+
+      const nearbyPois = await db.searchPOIsNearCoordinates(
+        sourcePoi.osm_latitude,
+        sourcePoi.osm_longitude,
+        radiusKm,
+        resultTypes,
+        nearbyLimit,
+        options.user?.id,
+        [sourcePoi.osm_id],
+      );
+
+      triggerBackgroundEnrichment(nearbyPois, db);
+
+      if (name === 'get_nearby_pois_ui') {
+        const html = renderNearbyWidget(sourcePoi, nearbyPois, render);
+        return {
+          content: [{ type: 'text', text: JSON.stringify(nearbyPois, null, 2) }],
+          structuredContent: {
+            source: { osm_id: sourcePoi.osm_id, name: sourcePoi.osm_name || sourcePoi.google_name },
+            results: nearbyPois,
+            count: nearbyPois.length,
+            _html: html,
+          },
+        };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            source: { osm_id: sourcePoi.osm_id, name: sourcePoi.osm_name, poi_type: sourcePoi.poi_type },
+            nearby: nearbyPois,
+            count: nearbyPois.length,
+            radius_km: radiusKm,
+            result_types: resultTypes,
+          }, null, 2),
+        }],
+      };
     }
 
     case 'get_stats': {
@@ -1082,7 +1239,7 @@ export function isOpenNow(openingHours, utcOffsetMinutes) {
   return { isOpen: false, label: 'Closed' };
 }
 
-export function renderPOIPreview(poi, render) {
+export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title = null) {
   const opening_hours_list = poi.google_opening_hours?.weekdayDescriptions || null;
   const photo_url = poi.google_photos?.[0]?.url || null;
   const photo_urls = poi.google_photos?.map(p => p.url).filter(Boolean) || null;
@@ -1244,6 +1401,22 @@ export function renderPOIPreview(poi, render) {
     accessibility_list,
     reviews_list,
     open_status,
+    nearby_pois,
+    nearby_title,
+  });
+}
+
+/**
+ * Render the nearby POIs widget (standalone page).
+ */
+export function renderNearbyWidget(sourcePoi, nearbyPois, render) {
+  const resultTypes = getNearbyTypes(sourcePoi.poi_type || sourcePoi.osm_poi_type);
+  return render('nearby-pois', {
+    title: getNearbyTitle(resultTypes),
+    source_name: sourcePoi.google_name || sourcePoi.osm_name || sourcePoi.name || null,
+    source_osm_id: sourcePoi.osm_id,
+    results: nearbyPois,
+    count: nearbyPois.length,
   });
 }
 
@@ -1398,6 +1571,18 @@ export async function handleReadResource(uri, db, render) {
     };
   }
 
+  // URI: ui://widget/nearby-pois.html
+  if (uri === 'ui://widget/nearby-pois.html') {
+    const html = render('nearby-pois', {
+      title: 'Nearby Places',
+      results: [],
+      count: 0,
+    });
+    return {
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+    };
+  }
+
   // POI detail page by ID: ui://{host}/poi/{osm_id}
   // Format: ui://mcp.arjanvandermeer.com/poi/1313852747
   // Used when user clicks a search result - the host part is dynamic
@@ -1417,8 +1602,9 @@ export async function handleReadResource(uri, db, render) {
       };
     }
 
+    const { nearbyPois: resNearby, nearbyTitle: resNearbyTitle } = await fetchNearbyForPOI(poi, db);
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render) }],
+      contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render, resNearby, resNearbyTitle) }],
     };
   }
 
