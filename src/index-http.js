@@ -495,9 +495,13 @@ async function main() {
       if (pathname === '/' || !path.extname(pathname)) {
         filePath = path.join(WEB_DIR, 'index.html');
       } else {
-        // Prevent directory traversal
-        const safePath = path.normalize(pathname).replace(/^(\.\.[/\\])+/, '');
-        filePath = path.join(WEB_DIR, safePath);
+        // Prevent directory traversal: resolve full path and verify it's within WEB_DIR
+        filePath = path.resolve(WEB_DIR, pathname.slice(1));
+        if (!filePath.startsWith(WEB_DIR)) {
+          res.writeHead(403);
+          res.end('Forbidden');
+          return;
+        }
       }
 
       // Check if file exists

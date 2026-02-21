@@ -3,37 +3,17 @@
  * Tests /auth/login, /auth/callback, /auth/logout, /auth/me
  */
 
-import { describe, it, beforeEach, afterEach, mock } from 'node:test';
+import { describe, it, beforeEach, afterEach, after, mock } from 'node:test';
 import assert from 'node:assert';
-import { EventEmitter } from 'node:events';
 import { ApiRouter } from '../../src/api-router.js';
 import { registerAuthRoutes } from '../../src/api/auth.js';
+import { fakeReq, fakeRes } from '../mocks/http-helpers.js';
+import { Sentry } from '../../src/telemetry.js';
 
-function fakeReq(method, url, { headers = {} } = {}) {
-  const req = new EventEmitter();
-  req.method = method;
-  req.url = url;
-  req.headers = headers;
-  process.nextTick(() => req.emit('end'));
-  return req;
-}
-
-function fakeRes() {
-  return {
-    statusCode: null,
-    headers: {},
-    body: '',
-    headersSent: false,
-    writeHead(status, headers = {}) {
-      this.statusCode = status;
-      Object.assign(this.headers, headers);
-      this.headersSent = true;
-    },
-    end(data) { this.body = data || ''; },
-    setHeader(k, v) { this.headers[k] = v; },
-    json() { return JSON.parse(this.body); },
-  };
-}
+// Clean up Sentry handles so the test process can exit
+after(async () => {
+  await Sentry.close(1000);
+});
 
 function createAuthMockDb(overrides = {}) {
   return {

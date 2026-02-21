@@ -5,13 +5,13 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
-import { EventEmitter } from 'node:events';
 import { ApiRouter, sendJson } from '../../src/api-router.js';
 import { registerCountryRoutes } from '../../src/api/countries.js';
 import { registerSearchRoutes } from '../../src/api/search.js';
 import { registerAutocompleteRoutes } from '../../src/api/autocomplete.js';
 import { registerPOIRoutes } from '../../src/api/poi.js';
 import { registerFavoritesRoutes } from '../../src/api/favorites.js';
+import { fakeReq, fakePostReq, fakeRes } from '../mocks/http-helpers.js';
 
 // Mock database with all methods the API handlers need
 function createApiMockDb(overrides = {}) {
@@ -44,44 +44,6 @@ function createApiMockDb(overrides = {}) {
     addFavorite: async (userId, osmId, notes) => osmId === 123,
     removeFavorite: async (userId, osmId) => osmId === 123,
     ...overrides,
-  };
-}
-
-function fakeReq(method, url, { headers = {} } = {}) {
-  const req = new EventEmitter();
-  req.method = method;
-  req.url = url;
-  req.headers = headers;
-  process.nextTick(() => req.emit('end'));
-  return req;
-}
-
-function fakePostReq(method, url, body, { headers = {} } = {}) {
-  const req = new EventEmitter();
-  req.method = method;
-  req.url = url;
-  req.headers = { 'content-type': 'application/json', ...headers };
-  process.nextTick(() => {
-    req.emit('data', JSON.stringify(body));
-    req.emit('end');
-  });
-  return req;
-}
-
-function fakeRes() {
-  return {
-    statusCode: null,
-    headers: {},
-    body: '',
-    headersSent: false,
-    writeHead(status, headers = {}) {
-      this.statusCode = status;
-      Object.assign(this.headers, headers);
-      this.headersSent = true;
-    },
-    end(data) { this.body = data || ''; },
-    setHeader(k, v) { this.headers[k] = v; },
-    json() { return JSON.parse(this.body); },
   };
 }
 
@@ -284,7 +246,7 @@ describe('Favorites API', () => {
     const res = fakeRes();
     await router.handle(req, res, { db, user: mockUser });
 
-    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.statusCode, 201);
     const data = res.json();
     assert.strictEqual(data.success, true);
   });

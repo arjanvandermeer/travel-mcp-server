@@ -178,6 +178,18 @@ describe('autocompleteSearch', () => {
     const limitParam = calls[0].params[calls[0].params.length - 1];
     assert.strictEqual(limitParam, 10);
   });
+
+  it('should escape ILIKE wildcard characters in query', async () => {
+    const { db, pool } = createTestDb({
+      'osm_pois': dbResult([]),
+    });
+
+    await db.autocompleteSearch('100%_match\\test');
+
+    const calls = pool.getCalls();
+    assert.strictEqual(calls[0].params[0], '%100\\%\\_match\\\\test%',
+      'Should escape %, _, and \\ in user query');
+  });
 });
 
 // =============================================================================

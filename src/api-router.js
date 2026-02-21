@@ -25,7 +25,7 @@ export class ApiRouter {
       return '([^/]+)';
     });
     const regex = new RegExp(`^${regexStr}$`);
-    this.routes.push({ method: method.toUpperCase(), regex, paramNames, handler });
+    this.routes.push({ method: method.toUpperCase(), pattern, regex, paramNames, handler });
   }
 
   get(pattern, handler) { this.add('GET', pattern, handler); }
@@ -60,9 +60,13 @@ export class ApiRouter {
         });
       } catch (err) {
         console.error(`[API] Error in ${method} ${pathname}:`, err.message);
-        telemetry.captureException(err, { context: 'api_route', method, pathname });
+        telemetry.captureException(err, { context: 'api_route', method, route: route.pattern });
         if (!res.headersSent) {
-          sendJson(res, 500, { error: 'Internal server error' });
+          if (err.message === 'Request body too large') {
+            sendJson(res, 413, { error: 'Request body too large' });
+          } else {
+            sendJson(res, 500, { error: 'Internal server error' });
+          }
         }
       }
       return true;
@@ -81,12 +85,23 @@ export function sendJson(res, status, data) {
 }
 
 /**
- * Parse JSON request body
+ * Parse JSON request body (max 1MB)
  */
+const MAX_BODY_SIZE = 1024 * 1024; // 1MB
+
 export function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
-    req.on('data', chunk => { body += chunk; });
+    let size = 0;
+    req.on('data', chunk => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) {
+        req.destroy();
+        reject(new Error('Request body too large'));
+        return;
+      }
+      body += chunk;
+    });
     req.on('end', () => {
       if (!body) return resolve({});
       try {

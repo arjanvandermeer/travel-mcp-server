@@ -14,6 +14,7 @@ import * as telemetry from '../telemetry.js';
 const pendingAuth = new Map();
 
 // Clean up old pending auth entries every 5 minutes
+// unref() allows Node.js to exit cleanly when no other work remains
 setInterval(() => {
   const maxAge = 10 * 60 * 1000; // 10 minutes
   const now = Date.now();
@@ -22,7 +23,7 @@ setInterval(() => {
       pendingAuth.delete(state);
     }
   }
-}, 5 * 60 * 1000);
+}, 5 * 60 * 1000).unref();
 
 /**
  * Generate PKCE code_verifier and code_challenge (S256)

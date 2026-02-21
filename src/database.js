@@ -1922,9 +1922,15 @@ export class TravelDatabase {
   /**
    * List countries that have both cities AND POIs in the database.
    * Used by the country dropdown on the web frontend.
+   * Cached for 1 hour since this data only changes on import.
    * @returns {Array<{code: string, name: string, continent: string}>}
    */
   async listCountriesWithData() {
+    const now = Date.now();
+    if (this._countriesCache && this._countriesCacheExpiry > now) {
+      return this._countriesCache;
+    }
+
     const result = await this.pool.query(`
       SELECT DISTINCT co.iso_alpha2 as code, co.country as name, co.continent
       FROM geonames_countries co
@@ -1934,6 +1940,9 @@ export class TravelDatabase {
                     WHERE c2.country_code = co.iso_alpha2)
       ORDER BY co.country
     `);
+
+    this._countriesCache = result.rows;
+    this._countriesCacheExpiry = now + 60 * 60 * 1000; // 1 hour
     return result.rows;
   }
 
@@ -1970,8 +1979,9 @@ export class TravelDatabase {
     const conditions = ['p.name IS NOT NULL'];
     const params = [];
 
-    // Name search condition
-    params.push(`%${query}%`);
+    // Name search condition (escape ILIKE wildcards in user input)
+    const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
+    params.push(`%${escapedQuery}%`);
     conditions.push(`(p.name ILIKE $${params.length} OR g.display_name ILIKE $${params.length})`);
 
     if (countryCode) {

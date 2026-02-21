@@ -6,14 +6,14 @@ import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { EventEmitter } from 'node:events';
 import { ApiRouter, sendJson, parseBody, parseCookies } from '../../src/api-router.js';
+import { fakeReq, fakeRes } from '../mocks/http-helpers.js';
 
-// Helper: create a fake request object
-function fakeReq(method, url, { headers = {}, body = '' } = {}) {
+// Variant of fakeReq that supports a raw string body (for parseBody tests)
+function fakeReqWithBody(method, url, { headers = {}, body = '' } = {}) {
   const req = new EventEmitter();
   req.method = method;
   req.url = url;
   req.headers = headers;
-  // Simulate body streaming
   if (body) {
     process.nextTick(() => {
       req.emit('data', body);
@@ -23,26 +23,6 @@ function fakeReq(method, url, { headers = {}, body = '' } = {}) {
     process.nextTick(() => req.emit('end'));
   }
   return req;
-}
-
-// Helper: create a fake response object
-function fakeRes() {
-  const res = {
-    statusCode: null,
-    headers: {},
-    body: '',
-    headersSent: false,
-    writeHead(status, headers = {}) {
-      this.statusCode = status;
-      Object.assign(this.headers, headers);
-      this.headersSent = true;
-    },
-    end(data) {
-      this.body = data || '';
-    },
-    setHeader(k, v) { this.headers[k] = v; },
-  };
-  return res;
 }
 
 describe('ApiRouter', () => {
@@ -169,19 +149,40 @@ describe('parseCookies', () => {
 
 describe('parseBody', () => {
   it('should parse JSON body', async () => {
-    const req = fakeReq('POST', '/test', { body: '{"osm_id": 123}' });
+    const req = fakeReqWithBody('POST', '/test', { body: '{"osm_id": 123}' });
     const body = await parseBody(req);
     assert.deepStrictEqual(body, { osm_id: 123 });
   });
 
   it('should return empty object for empty body', async () => {
-    const req = fakeReq('POST', '/test');
+    const req = fakeReqWithBody('POST', '/test');
     const body = await parseBody(req);
     assert.deepStrictEqual(body, {});
   });
 
   it('should reject invalid JSON', async () => {
-    const req = fakeReq('POST', '/test', { body: 'not json' });
+    const req = fakeReqWithBody('POST', '/test', { body: 'not json' });
     await assert.rejects(() => parseBody(req), { message: 'Invalid JSON body' });
+  });
+
+  it('should reject body exceeding 1MB', async () => {
+    // Create a request that emits a body larger than 1MB in chunks
+    const req = new EventEmitter();
+    req.method = 'POST';
+    req.url = '/test';
+    req.headers = {};
+    req.destroy = () => {};
+
+    const chunk = 'x'.repeat(256 * 1024); // 256KB per chunk
+    process.nextTick(() => {
+      req.emit('data', chunk); // 256KB
+      req.emit('data', chunk); // 512KB
+      req.emit('data', chunk); // 768KB
+      req.emit('data', chunk); // 1024KB
+      req.emit('data', chunk); // 1280KB — over the limit
+      req.emit('end');
+    });
+
+    await assert.rejects(() => parseBody(req), { message: 'Request body too large' });
   });
 });

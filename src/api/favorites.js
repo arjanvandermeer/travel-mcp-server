@@ -36,7 +36,7 @@ export function registerFavoritesRoutes(router) {
       return sendJson(res, 404, { error: 'POI not found' });
     }
 
-    sendJson(res, 200, { success: true });
+    sendJson(res, 201, { success: true });
   });
 
   router.delete('/api/v1/favorites/:osm_id', async (req, res, { db, params, user }) => {

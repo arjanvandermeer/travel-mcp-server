@@ -7,8 +7,12 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
+import Handlebars from 'handlebars';
 import { render } from '../../src/templates/index.js';
 import { renderPOIPreview, isOpenNow } from '../../src/tools-config.js';
+
+// Compile inline Handlebars templates (helpers are registered by the index.js import above)
+const compileInline = (src) => Handlebars.compile(src);
 
 // =============================================================================
 // formatDate Helper
@@ -190,6 +194,34 @@ describe('poiName Handlebars helper', () => {
     const html = renderPOIPreview(poi, render);
 
     assert.ok(html.includes('Backup Name'), 'Should fall back to osm_name when parsed text is empty');
+  });
+});
+
+// =============================================================================
+// formatDistance Helper
+// =============================================================================
+
+describe('formatDistance Handlebars helper', () => {
+  const tpl = compileInline('{{formatDistance val}}');
+
+  it('should format distance to 1 decimal place', () => {
+    assert.strictEqual(tpl({ val: 12.3456 }), '12.3');
+  });
+
+  it('should return empty string for null', () => {
+    assert.strictEqual(tpl({ val: null }), '');
+  });
+
+  it('should return empty string for undefined', () => {
+    assert.strictEqual(tpl({}), '');
+  });
+
+  it('should handle string numbers', () => {
+    assert.strictEqual(tpl({ val: '5.678' }), '5.7');
+  });
+
+  it('should return non-numeric strings as-is', () => {
+    assert.strictEqual(tpl({ val: 'abc' }), 'abc');
   });
 });
 
