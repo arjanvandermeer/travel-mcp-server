@@ -832,7 +832,7 @@ export function getResourcesConfig(widgetDomain) {
  * ChatGPT uses structuredContent with the tool's _meta.ui.resourceUri template
  * to render interactive search results that users can click.
  */
-function buildSearchResponse(pois) {
+export function buildSearchResponse(pois) {
   return {
     // Text content for model narration (summarizes results)
     content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }],
