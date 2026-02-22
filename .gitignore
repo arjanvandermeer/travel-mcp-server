@@ -11,6 +11,9 @@ data/*.gz
 data/*.pbf
 data/*.downloading
 
+# Coverage
+coverage/
+
 # Logs
 *.log
 npm-debug.log*

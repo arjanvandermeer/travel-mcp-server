@@ -376,22 +376,22 @@ Already implemented:
 - [ ] Add route planning capabilities
 - [ ] Wikidata enrichment (images, descriptions, etc.)
 
-### Testing Infrastructure — COMPLETED 2026-02-06, Coverage Push 2026-02-21
+### ~~Testing Infrastructure~~ COMPLETED 2026-02-22
 
-**Current State** (2026-02-21): 329 tests passing (85 suites), **77.16% line coverage**
+**Current State** (2026-02-22): 483 tests passing (97 suites), **84.24% line coverage** (c8)
 
 | File | Lines | Branches | Functions |
 |------|-------|----------|-----------|
 | src/lib/arg-parsers.js | 100% | 100% | 100% |
 | src/lib/osm-mappings.js | 100% | 96.72% | 100% |
-| src/api-router.js | 100% | 100% | 100% |
-| src/api/*.js | 88-100% | 77-100% | 66-100% |
-| src/templates/index.js | 92.36% | 77.14% | 81.82% |
-| src/version.js | 85.71% | 58.33% | 83.33% |
-| src/database.js | 83.93% | 75.21% | 81.43% |
-| **src/google-places.js** | **65.69%** | 67.53% | 87.10% |
-| **src/tools-config.js** | **58.33%** | 63.16% | 69.23% |
-| **src/telemetry.js** | **42.79%** | 45.45% | 22.22% |
+| src/api-router.js | 99.23% | 97.05% | 100% |
+| src/api/*.js | 88-100% | 77-100% | 100% |
+| src/tools-config.js | 96.34% | 84.25% | 100% |
+| src/templates/index.js | 92.35% | 77.14% | 100% |
+| src/version.js | 85.71% | 58.33% | 80% |
+| src/google-places.js | 83.87% | 85.71% | 88.23% |
+| src/database.js | 72.81% | 82.14% | 78.18% |
+| src/telemetry.js | 60.41% | 69.56% | 79.31% |
 
 Completed:
 - [x] Node.js built-in test runner (`node --test`) - no external framework needed
@@ -401,47 +401,24 @@ Completed:
 - [x] Integration tests for TravelDatabase with mock pool injection
 - [x] Test coverage reporting (`npm run test:coverage`)
 - [x] CI/CD integration - tests run before deployment in GitHub Actions
+- [x] **80% line coverage target reached** (84.24% via c8)
+- [x] Pure function tests: getPromptMessages, getToolsConfig, getResourcesConfig, buildSearchResponse
+- [x] Telemetry tests: all guard clauses, getConfig, flush, timeAsync, metrics wrappers
+- [x] Tool handler tests: all executeToolHandler cases + handleReadResource with mocked DB
+- [x] Google Places tests: levenshteinDistance, calculateNameSimilarity, findBestNameMatch, searchNearby, searchText, getPlaceDetails, findMatchingPlace, enrichPOI
 
-#### Phase 8: Reach 80% Line Coverage (from 77.16%)
-
-Need ~3% more line coverage. Prioritized by effort-to-coverage ratio:
-
-**Tier 1 — Pure functions, no mocking needed (easiest, ~219 lines in tools-config.js):**
-- [ ] Test `getPromptMessages()` — 5 prompt cases + default, pure string templating (~103 lines)
-- [ ] Test `getResourcesConfig()` — static resource definitions with widget domain (~85 lines)
-- [ ] Test `getToolsConfig()` — dynamic CSP/domain injection for UI tools (~20 lines)
-- [ ] Test `buildSearchResponse()` — POI array formatting for UI rendering (~11 lines)
-
-**Tier 2 — Simple mocks needed (~91 lines in telemetry.js):**
-- [ ] Test guard clauses: `isEnabled()`, `captureException()`, `captureMessage()`, `setTag()`, `setUser()`, `addBreadcrumb()` (~33 lines, mock Sentry)
-- [ ] Test `getConfig()` and `flush()` (~14 lines)
-- [ ] Test `getEnvConfig()` — reads process.env (~11 lines)
-- [ ] Test metrics wrappers: `incrementCounter()`, `recordDistribution()`, `recordGauge()`, `recordSet()` (~44 lines)
-
-**Tier 3 — Medium complexity (~135 lines in tools-config.js):**
-- [ ] Test tool handlers: `search_cities`, `search_hotels`, `search_restaurants`, `search_pois` (input validation + DB mock)
-- [ ] Test `get_stats` and `whoami` handlers
-- [ ] Test `triggerBackgroundEnrichment()` (async fire-and-forget)
-
-**Tier 4 — Complex, high coverage payoff:**
-- [ ] Test `get_poi_details` / `get_nearby_pois` handlers (~99 lines, multiple code paths)
-- [ ] Test `handleReadResource()` — 5 URI patterns (~183 lines, requires DB + render mocks)
-- [ ] Test `enrichPOI()` in google-places.js (~133 lines, complex data transformation)
-- [ ] Test `searchText()` and `findMatchingPlace()` fallback logic (~54 lines)
-- [ ] Test error handling in `makeRequest`/`makeGetRequest` (~22 lines)
-- [ ] Add favorites handler tests (add/remove/list, auth required)
-
-**Stretch — 90%+ coverage:**
-- [ ] Test `initTelemetry()` / `initSentry()` (~86 lines, complex initialization)
-- [ ] Test `startTransaction()` / `withTransaction()` / `timeAsync()` (~66 lines)
-- [ ] Expand `renderPOIPreview()` branch coverage (partially covered, many conditional paths)
+Remaining (stretch goals for 90%+):
+- [ ] Test `initTelemetry()` / `initSentry()` with enabled telemetry (~86 lines)
+- [ ] Test `startTransaction()` / `withTransaction()` with active Sentry spans (~66 lines)
+- [ ] Expand `renderPOIPreview()` branch coverage (many conditional paths)
+- [ ] Add database.js coverage for search/enrichment functions (~550 uncovered lines)
 - [ ] Add coverage threshold enforcement to CI (fail if < 80%)
 
-**Strategy**: Tier 1 alone (pure functions) should push from 77% to ~80%. Tier 2 adds safety margin. Tier 3+ for robust long-term coverage.
+**Note**: Use `npx c8 node --test` for reliable coverage measurement. Node's built-in `--experimental-test-coverage` is non-deterministic and gives inconsistent results.
 
 **Documentation**: See [doc/unit-testing.md](doc/unit-testing.md)
 
-**Impact**: Medium - quality assurance, prevents regressions
+**Impact**: Completed - quality assurance, prevents regressions
 
 ### Documentation
 - [ ] Add API documentation for all MCP tools
