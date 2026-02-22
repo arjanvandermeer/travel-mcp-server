@@ -23,7 +23,7 @@ const __dirname = dirname(__filename);
 
 const DATA_DIR = join(__dirname, '..', 'data');
 const PG_CONNECTION = process.env.DATABASE_URL ||
-  'postgresql://traveluser:travelpass@localhost:5432/travel';
+  'postgresql://<user>:<password>@localhost:5432/travel';
 
 const GEONAMES_URLS = {
   countries: 'https://download.geonames.org/export/dump/countryInfo.txt',

@@ -36,7 +36,7 @@ import { parseRefreshArgs } from './lib/arg-parsers.js';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
+const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 
 // Parse command line arguments (uses extracted pure function)
 function parseArgs() {

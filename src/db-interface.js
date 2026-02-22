@@ -13,7 +13,7 @@ import pg from 'pg';
 import TravelDatabase from './database.js';
 
 const CONNECTION_STRING = process.env.DATABASE_URL ||
-  'postgresql://traveluser:travelpass@localhost:5432/travel';
+  'postgresql://<user>:<password>@localhost:5432/travel';
 
 /**
  * Create a database instance with optional pool injection

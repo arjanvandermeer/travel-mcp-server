@@ -8,7 +8,7 @@ import dotenv from 'dotenv';
 dotenv.config();
 
 const CONNECTION_STRING = process.env.DATABASE_URL ||
-  'postgresql://traveluser:travelpass@localhost:5432/travel';
+  'postgresql://<user>:<password>@localhost:5432/travel';
 
 async function cleanup() {
   const pool = new pg.Pool({ connectionString: CONNECTION_STRING });

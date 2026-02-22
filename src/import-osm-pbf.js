@@ -31,7 +31,7 @@ import { matchPOIType, extractPOIData, shouldFilterPOI } from './lib/osm-mapping
 import { parseImportArgs } from './lib/arg-parsers.js';
 import { linkPOIsToCities } from './link-pois-to-cities.js';
 
-const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
+const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 
 // POI_MAPPINGS is now imported from './lib/osm-mappings.js'
 

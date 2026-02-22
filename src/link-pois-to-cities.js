@@ -20,7 +20,7 @@
 import pg from 'pg';
 
 const PG_CONNECTION = process.env.DATABASE_URL ||
-  'postgresql://traveluser:travelpass@localhost:5432/travel';
+  'postgresql://<user>:<password>@localhost:5432/travel';
 
 const DEFAULT_BATCH_SIZE = 10000;
 

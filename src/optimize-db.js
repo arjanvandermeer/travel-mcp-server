@@ -31,7 +31,7 @@ import pg from 'pg';
 import * as telemetry from './telemetry.js';
 import { parseOptimizeArgs } from './lib/arg-parsers.js';
 
-const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
+const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 
 // Tables to optimize (ordered by typical size/importance)
 const TABLES_TO_OPTIMIZE = [

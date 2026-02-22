@@ -26,7 +26,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 // Database connection string from environment or default
-const CONNECTION_STRING = process.env.DATABASE_URL || 'postgresql://traveluser:travelpass@localhost:5432/travel';
+const CONNECTION_STRING = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 
 async function initializeDatabase() {
   const client = new pg.Client({ connectionString: CONNECTION_STRING });
