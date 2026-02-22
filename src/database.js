@@ -1930,9 +1930,9 @@ export class TravelDatabase {
       SELECT co.iso_alpha2 as code, co.country as name, co.continent
       FROM geonames_countries co
       WHERE EXISTS (
-        SELECT 1 FROM osm_pois p
-        JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+        SELECT 1 FROM geonames_cities c
         WHERE c.country_code = co.iso_alpha2
+        AND EXISTS (SELECT 1 FROM osm_pois p WHERE p.nearest_city_id = c.geoname_id)
       )
       ORDER BY co.country
     `);

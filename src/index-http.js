@@ -703,6 +703,11 @@ async function main() {
     console.error(`Web API: /api/v1/*`);
     console.error(`Web auth: /auth/*`);
     console.error(`Web frontend: / (serves web/ directory)`);
+
+    // Warm expensive caches in background (countries query is slow on cold DB)
+    db.listCountriesWithData()
+      .then(rows => console.error(`Cache warm-up: ${rows.length} countries loaded`))
+      .catch(err => console.error('Cache warm-up failed (will retry on first request):', err.message));
   });
 }
 
