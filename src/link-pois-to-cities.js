@@ -38,15 +38,13 @@ async function linkPOIsToCities(pool, options = {}) {
 
   // --force: reset nearest_city_id so all POIs get re-linked
   if (force) {
-    const resetConditions = [];
+    const resetConditions = ['nearest_city_id IS NOT NULL'];
     const resetParams = [];
     if (sourceRegion) {
       resetParams.push(sourceRegion);
       resetConditions.push(`source_region = $${resetParams.length}`);
     }
-    const resetWhere = resetConditions.length > 0
-      ? `WHERE ${resetConditions.join(' AND ')}`
-      : '';
+    const resetWhere = `WHERE ${resetConditions.join(' AND ')}`;
     const resetResult = await pool.query(
       `UPDATE osm_pois SET nearest_city_id = NULL ${resetWhere}`, resetParams
     );
