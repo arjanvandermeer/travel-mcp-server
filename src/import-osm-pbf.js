@@ -448,7 +448,7 @@ async function importOSM(input, poiType = 'all') {
       if (recordsImported > 0) {
         try {
           console.log('\nLinking imported POIs to nearest cities...');
-          await linkPOIsToCities(pool, regionName);
+          await linkPOIsToCities(pool, { sourceRegion: regionName });
         } catch (linkError) {
           console.warn('Warning: City linking failed (non-fatal):', linkError.message);
         }
