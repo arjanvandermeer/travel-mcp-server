@@ -75,43 +75,57 @@ async function linkPOIsToCities(pool, options = {}) {
   console.log(`  Linking ${totalUnlinked.toLocaleString()} POIs in batches of ${batchSize.toLocaleString()}...`);
   const startTime = Date.now();
   let totalLinked = 0;
+  let cursor = 0; // Track progress by osm_id to avoid re-processing orphans
+  let totalProcessed = 0;
 
   while (true) {
-    const batchParams = [batchSize];
-    const batchConditions = ['nearest_city_id IS NULL'];
+    // 1. Fetch next batch of unlinked POI IDs in deterministic order
+    const fetchParams = [cursor, batchSize];
+    const fetchConditions = ['nearest_city_id IS NULL', `osm_id > $1`];
     if (sourceRegion) {
-      batchParams.push(sourceRegion);
-      batchConditions.push(`source_region = $${batchParams.length}`);
+      fetchParams.push(sourceRegion);
+      fetchConditions.push(`source_region = $${fetchParams.length}`);
     }
-    const batchWhere = batchConditions.join(' AND ');
+    const fetchWhere = fetchConditions.join(' AND ');
 
+    const batch = await pool.query(
+      `SELECT osm_id FROM osm_pois WHERE ${fetchWhere} ORDER BY osm_id LIMIT $2`,
+      fetchParams
+    );
+
+    if (batch.rows.length === 0) break;
+
+    const osmIds = batch.rows.map(r => r.osm_id);
+    cursor = osmIds[osmIds.length - 1];
+    totalProcessed += osmIds.length;
+
+    // 2. Link this batch to nearest cities using KNN spatial index
     const result = await pool.query(`
       UPDATE osm_pois p
       SET nearest_city_id = sub.geoname_id
       FROM (
-        SELECT p2.osm_id,
-          (SELECT c.geoname_id
-           FROM geonames_cities c
-           WHERE ST_DWithin(p2.location::geography, c.location::geography, 50000)
-           ORDER BY ST_Distance(p2.location::geography, c.location::geography)
-           LIMIT 1
-          ) AS geoname_id
+        SELECT p2.osm_id, nearest.geoname_id
         FROM osm_pois p2
-        WHERE ${batchWhere}
-        LIMIT $1
+        CROSS JOIN LATERAL (
+          SELECT c.geoname_id
+          FROM geonames_cities c
+          WHERE ST_DWithin(c.location::geography, p2.location::geography, 50000)
+          ORDER BY c.location::geography <-> p2.location::geography
+          LIMIT 1
+        ) nearest
+        WHERE p2.osm_id = ANY($1::bigint[])
       ) sub
       WHERE p.osm_id = sub.osm_id
-    `, batchParams);
+    `, [osmIds]);
 
     const linked = result.rowCount;
     totalLinked += linked;
+    const orphans = osmIds.length - linked;
 
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-    const pct = ((totalLinked / totalUnlinked) * 100).toFixed(1);
-    const rate = totalLinked > 0 ? (totalLinked / ((Date.now() - startTime) / 1000)).toFixed(0) : 0;
-    console.log(`  ${totalLinked.toLocaleString()} / ${totalUnlinked.toLocaleString()} (${pct}%) — ${elapsed}s elapsed, ${rate} POIs/s`);
-
-    if (linked < batchSize) break;
+    const pct = ((totalProcessed / totalUnlinked) * 100).toFixed(1);
+    const rate = totalProcessed > 0 ? (totalProcessed / ((Date.now() - startTime) / 1000)).toFixed(0) : 0;
+    console.log(`  ${totalProcessed.toLocaleString()} / ${totalUnlinked.toLocaleString()} (${pct}%) — ${elapsed}s elapsed, ${rate} POIs/s${orphans > 0 ? `, ${orphans} no city` : ''}`);
   }
 
   const duration = ((Date.now() - startTime) / 1000).toFixed(1);
