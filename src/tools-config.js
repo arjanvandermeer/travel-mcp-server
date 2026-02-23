@@ -880,6 +880,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
       if (!hasCountry && !hasCoords) {
         return {
+          isError: true,
           content: [{
             type: 'text',
             text: JSON.stringify({
@@ -975,6 +976,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
     case 'get_poi_details_ui': {
       if (!args.osm_id && !args.google_place_id) {
         return {
+          isError: true,
           content: [
             {
               type: 'text',
@@ -988,6 +990,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
       if (!poi) {
         return {
+          isError: true,
           content: [
             {
               type: 'text',
@@ -1164,7 +1167,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         longitude: args.longitude,
         radiusKm: args.radius_km,
         poiTypes: args.poi_types,
-        limit: args.limit,
+        limit: Math.min(args.limit || 100, 100),
       });
       return {
         content: [{ type: 'text', text: JSON.stringify({ count: favorites.length, favorites }, null, 2) }],

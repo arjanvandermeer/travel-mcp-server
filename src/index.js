@@ -107,7 +107,15 @@ server.setRequestHandler(ListResourcesRequestSchema, async () => {
 server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
   const { uri } = request.params;
   log('INFO', `ReadResource request received: ${uri}`);
-  return handleReadResource(uri, db, render);
+  try {
+    return await handleReadResource(uri, db, render);
+  } catch (error) {
+    log('ERROR', `ReadResource failed: ${uri}`, { error: error.message });
+    telemetry.captureException(error, { resource: uri });
+    return {
+      contents: [{ uri, mimeType: 'text/plain', text: `Error: ${error.message}` }],
+    };
+  }
 });
 
 // List available prompts

@@ -64,7 +64,7 @@ describe('Nearby POIs Feature', () => {
 
   describe('fetchNearbyForPOI', () => {
     it('should return nearby POIs for a hotel', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(nearbyResults));
+      mockPool.setResponse('ST_DWithin', dbResult(nearbyResults));
       db = new TravelDatabase({ pool: mockPool });
 
       const { nearbyPois, nearbyTitle } = await fetchNearbyForPOI(hotelPOI, db);
@@ -78,7 +78,7 @@ describe('Nearby POIs Feature', () => {
     });
 
     it('should return nearby hotels for a restaurant', async () => {
-      mockPool.setResponse('enriched_pois', dbResult([hotelPOI]));
+      mockPool.setResponse('ST_DWithin', dbResult([hotelPOI]));
       db = new TravelDatabase({ pool: mockPool });
 
       const { nearbyPois, nearbyTitle } = await fetchNearbyForPOI(restaurantPOI, db);
@@ -98,7 +98,7 @@ describe('Nearby POIs Feature', () => {
     });
 
     it('should exclude the source POI from results', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(nearbyResults));
+      mockPool.setResponse('ST_DWithin', dbResult(nearbyResults));
       db = new TravelDatabase({ pool: mockPool });
 
       await fetchNearbyForPOI(hotelPOI, db);
@@ -115,7 +115,7 @@ describe('Nearby POIs Feature', () => {
     });
 
     it('should use 1.5km radius and limit of 10', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(nearbyResults));
+      mockPool.setResponse('ST_DWithin', dbResult(nearbyResults));
       db = new TravelDatabase({ pool: mockPool });
 
       await fetchNearbyForPOI(hotelPOI, db);
@@ -127,7 +127,7 @@ describe('Nearby POIs Feature', () => {
     });
 
     it('should pass userId when provided', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(nearbyResults));
+      mockPool.setResponse('ST_DWithin', dbResult(nearbyResults));
       mockPool.setResponse('user_favorites', emptyResult());
       db = new TravelDatabase({ pool: mockPool });
 
@@ -168,7 +168,7 @@ describe('Nearby POIs Feature', () => {
     });
 
     it('should return error when POI not found', async () => {
-      mockPool.setResponse('enriched_pois', emptyResult());
+      mockPool.setResponse('ST_DWithin', emptyResult());
       db = new TravelDatabase({ pool: mockPool });
 
       const result = await executeToolHandler('get_nearby_pois', { osm_id: 99999 }, db);

@@ -303,7 +303,15 @@ function createMCPServer(userRef = { current: null }) {
   // Read resource content (MCP Apps)
   server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
     const { uri } = request.params;
-    return handleReadResource(uri, db, render);
+    try {
+      return await handleReadResource(uri, db, render);
+    } catch (error) {
+      console.error(`ReadResource failed: ${uri}`, error.message);
+      telemetry.captureException(error, { resource: uri });
+      return {
+        contents: [{ uri, mimeType: 'text/plain', text: `Error: ${error.message}` }],
+      };
+    }
   });
 
   // List available prompts
@@ -446,7 +454,7 @@ async function main() {
         console.error('Error rendering random POI:', err);
         telemetry.captureException(err, { context: 'preview_random_poi' });
         res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end(`<h1>Error</h1><pre>${err.message}</pre>`);
+        res.end('<h1>Internal Server Error</h1>');
       }
       return;
     }
@@ -489,7 +497,7 @@ async function main() {
         console.error('Error rendering nearby POIs:', err);
         telemetry.captureException(err, { context: 'preview_nearby_pois' });
         res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end(`<h1>Error</h1><pre>${err.message}</pre>`);
+        res.end('<h1>Internal Server Error</h1>');
       }
       return;
     }
@@ -516,7 +524,7 @@ async function main() {
         console.error('Error rendering POI:', err);
         telemetry.captureException(err, { context: 'preview_poi', osmId: parseInt(poiPreviewMatch[1], 10) });
         res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end(`<h1>Error</h1><pre>${err.message}</pre>`);
+        res.end('<h1>Internal Server Error</h1>');
       }
       return;
     }

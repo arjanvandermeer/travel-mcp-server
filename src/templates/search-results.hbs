@@ -193,28 +193,28 @@
       var name = poi.name || poi.osm_name || 'Unknown';
       var rating = '';
       if (poi.google_rating) {
-        rating = '<span class="rating">&#11088; ' + poi.google_rating;
+        rating = '<span class="rating">&#11088; ' + escapeHtml(String(poi.google_rating));
         if (poi.google_review_count) {
-          rating += ' (' + poi.google_review_count + ')';
+          rating += ' (' + escapeHtml(String(poi.google_review_count)) + ')';
         }
         rating += '</span>';
       } else if (poi.osm_stars) {
-        rating = '<span class="rating">' + poi.osm_stars + ' stars</span>';
+        rating = '<span class="rating">' + escapeHtml(String(poi.osm_stars)) + ' stars</span>';
       }
 
       var distance = '';
       if (poi.distance_km) {
-        distance = '<span class="distance">' + formatDistance(poi.distance_km) + ' km</span>';
+        distance = '<span class="distance">' + escapeHtml(formatDistance(poi.distance_km)) + ' km</span>';
       }
 
       var address = '';
       if (poi.osm_city || poi.osm_country_code) {
-        address = '<div class="card-address">' + (poi.osm_city || '') + (poi.osm_country_code ? ', ' + poi.osm_country_code : '') + '</div>';
+        address = '<div class="card-address">' + escapeHtml(poi.osm_city || '') + (poi.osm_country_code ? ', ' + escapeHtml(poi.osm_country_code) : '') + '</div>';
       }
 
       var cuisine = '';
       if (poi.osm_cuisine) {
-        cuisine = '<div class="card-cuisine">' + poi.osm_cuisine + '</div>';
+        cuisine = '<div class="card-cuisine">' + escapeHtml(poi.osm_cuisine) + '</div>';
       }
 
       // Get photo URL from google_photos array if available
@@ -237,7 +237,7 @@
         '<div class="card-content">' +
           '<div class="card-header">' +
             '<span class="card-title">' + escapeHtml(name) + '</span>' +
-            '<span class="card-type">' + (poi.poi_type || '') + '</span>' +
+            '<span class="card-type">' + escapeHtml(poi.poi_type || '') + '</span>' +
           '</div>' +
           (rating || distance ? '<div class="card-meta">' + rating + distance + '</div>' : '') +
           address +

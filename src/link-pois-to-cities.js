@@ -1,10 +1,11 @@
 #!/usr/bin/env node
 
 /**
- * Link POIs to their nearest cities
+ * Link POIs to their nearest cities (same-country only)
  *
  * Updates the nearest_city_id field on osm_pois by finding the closest
- * geonames_cities entry within 50km. Processes in batches for resumability.
+ * geonames_cities entry within 50km, restricted to cities in the same
+ * country as the POI's source region. Processes in batches for resumability.
  *
  * Can be run standalone or called as a post-import step.
  *
@@ -25,7 +26,55 @@ const PG_CONNECTION = process.env.DATABASE_URL ||
 const DEFAULT_BATCH_SIZE = 10000;
 
 /**
- * Link unlinked POIs to their nearest city, in batches.
+ * Derive region → country mapping automatically from spatial data.
+ * Samples 50 POIs per source_region, finds the nearest city for each,
+ * and uses the most common country as that region's country.
+ *
+ * This is self-maintaining — no hardcoded mapping to update when
+ * new regions are imported.
+ *
+ * @param {pg.Pool} pool
+ * @returns {Object} Mapping of source_region → country_code
+ */
+async function deriveRegionCountries(pool) {
+  const result = await pool.query(`
+    WITH sampled AS (
+      SELECT source_region, location
+      FROM (
+        SELECT source_region, location,
+               ROW_NUMBER() OVER (PARTITION BY source_region ORDER BY random()) as rn
+        FROM osm_pois
+        WHERE source_region IS NOT NULL AND location IS NOT NULL
+      ) t
+      WHERE rn <= 50
+    )
+    SELECT s.source_region,
+           mode() WITHIN GROUP (ORDER BY nearest.country_code) as country_code
+    FROM sampled s
+    CROSS JOIN LATERAL (
+      SELECT c.country_code
+      FROM geonames_cities c
+      ORDER BY c.location <-> s.location
+      LIMIT 1
+    ) nearest
+    GROUP BY s.source_region
+  `);
+
+  const mapping = {};
+  for (const row of result.rows) {
+    mapping[row.source_region] = row.country_code;
+  }
+
+  console.log(`  Derived ${Object.keys(mapping).length} region→country mappings:`);
+  for (const [region, country] of Object.entries(mapping)) {
+    console.log(`    ${region} → ${country}`);
+  }
+
+  return mapping;
+}
+
+/**
+ * Link unlinked POIs to their nearest same-country city, in batches.
  * @param {pg.Pool} pool - Database pool to use
  * @param {object} [options]
  * @param {string} [options.sourceRegion] - Only link POIs from this source_region
@@ -70,6 +119,10 @@ async function linkPOIsToCities(pool, options = {}) {
     return 0;
   }
 
+  // Derive region→country mapping from spatial data (self-maintaining, no hardcoded values)
+  const regionCountryMap = await deriveRegionCountries(pool);
+  const regionMapJson = JSON.stringify(regionCountryMap);
+
   console.log(`  Linking ${totalUnlinked.toLocaleString()} POIs in batches of ${batchSize.toLocaleString()}...`);
   const startTime = Date.now();
   let totalLinked = 0;
@@ -97,24 +150,32 @@ async function linkPOIsToCities(pool, options = {}) {
     cursor = osmIds[osmIds.length - 1];
     totalProcessed += osmIds.length;
 
-    // 2. Link this batch to nearest cities using KNN spatial index
+    // 2. Link this batch to nearest same-country cities using KNN spatial index
+    //    region_map is derived from spatial sampling (no hardcoded values)
+    //    LEFT JOIN: POIs with unknown source_region get unrestricted linking
     const result = await pool.query(`
+      WITH region_map AS (
+        SELECT key as source_region, value as country_code
+        FROM jsonb_each_text($2::jsonb)
+      )
       UPDATE osm_pois p
       SET nearest_city_id = sub.geoname_id
       FROM (
         SELECT p2.osm_id, nearest.geoname_id
         FROM osm_pois p2
+        LEFT JOIN region_map rm ON p2.source_region = rm.source_region
         CROSS JOIN LATERAL (
           SELECT c.geoname_id
           FROM geonames_cities c
           WHERE ST_DWithin(c.location::geography, p2.location::geography, 50000)
+            AND (rm.country_code IS NULL OR c.country_code = rm.country_code)
           ORDER BY c.location::geography <-> p2.location::geography
           LIMIT 1
         ) nearest
         WHERE p2.osm_id = ANY($1::bigint[])
       ) sub
       WHERE p.osm_id = sub.osm_id
-    `, [osmIds]);
+    `, [osmIds, regionMapJson]);
 
     const linked = result.rowCount;
     totalLinked += linked;
@@ -148,6 +209,7 @@ async function main() {
     if (sourceRegion) console.log(`  Region filter: ${sourceRegion}`);
     if (force) console.log('  Mode: --force (re-linking all POIs)');
     console.log(`  Batch size: ${batchSize.toLocaleString()}`);
+    console.log('  Country restriction: auto-derived from spatial data');
 
     // Show current stats
     const totalPOIs = await pool.query('SELECT COUNT(*) FROM osm_pois');
@@ -162,7 +224,7 @@ async function main() {
     const stillUnlinked = await pool.query('SELECT COUNT(*) FROM osm_pois WHERE nearest_city_id IS NULL');
     console.log(`\nFinal statistics:`);
     console.log(`  Linked POIs: ${parseInt(newLinked.rows[0].count, 10).toLocaleString()}`);
-    console.log(`  Unlinked POIs: ${parseInt(stillUnlinked.rows[0].count, 10).toLocaleString()} (no city within 50km)`);
+    console.log(`  Unlinked POIs: ${parseInt(stillUnlinked.rows[0].count, 10).toLocaleString()} (no same-country city within 50km)`);
 
     if (linked > 0) {
       console.log('\nSample linked POIs:');
@@ -190,4 +252,4 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   main();
 }
 
-export { linkPOIsToCities };
+export { linkPOIsToCities, deriveRegionCountries };

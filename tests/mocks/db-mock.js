@@ -205,7 +205,10 @@ export function createMockDatabase(responses = {}, options = {}) {
  * @returns {Object} Mock database that throws on query
  */
 export function createFailingDatabase(error = new Error('Database connection failed')) {
-  return createMockDatabase({}, { throwOnUnmatched: false });
+  const pool = createMockDatabase({}, { throwOnUnmatched: false });
+  // Override query to always throw the provided error
+  pool.query = async () => { throw error; };
+  return pool;
 }
 
 /**

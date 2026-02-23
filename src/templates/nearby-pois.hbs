@@ -225,11 +225,11 @@
         : '<div class="nearby-thumb-placeholder">' + getTypeEmoji(poi.poi_type) + '</div>';
 
       var ratingHtml = poi.google_rating
-        ? '<div class="nearby-rating">&#11088; ' + poi.google_rating + '</div>'
+        ? '<div class="nearby-rating">&#11088; ' + escapeHtml(String(poi.google_rating)) + '</div>'
         : '';
 
       var distanceHtml = poi.distance_km
-        ? '<div class="nearby-distance">' + formatDistance(poi.distance_km) + ' km away</div>'
+        ? '<div class="nearby-distance">' + escapeHtml(formatDistance(poi.distance_km)) + ' km away</div>'
         : '';
 
       card.innerHTML =
@@ -238,7 +238,7 @@
           '<div class="nearby-name">' + (poi.is_favorite ? '<span class="nearby-fav">&#9829;</span> ' : '') + escapeHtml(name) + '</div>' +
           ratingHtml +
           distanceHtml +
-          '<div class="nearby-type">' + (poi.poi_type || '') + '</div>' +
+          '<div class="nearby-type">' + escapeHtml(poi.poi_type || '') + '</div>' +
         '</div>';
 
       return card;

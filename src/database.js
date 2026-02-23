@@ -93,7 +93,10 @@ export class TravelDatabase {
    */
   constructor(options = {}) {
     // Allow pool injection for testing, otherwise create default pool
-    this.pool = options.pool || new pg.Pool({ connectionString: CONNECTION_STRING });
+    this.pool = options.pool || new pg.Pool({
+      connectionString: CONNECTION_STRING,
+      statement_timeout: 30000, // Kill queries after 30s (before Cloudflare's 60s timeout)
+    });
     this.googlePlaces = null; // Initialize later with config
     this.googlePlacesReady = this.initGooglePlaces(); // Store promise
 
@@ -384,7 +387,7 @@ export class TravelDatabase {
     // Add query filter if provided
     if (hasQuery) {
       queryText += ` AND (c.name ILIKE $${params.length + 1} OR c.ascii_name ILIKE $${params.length + 1})`;
-      params.push(`%${query}%`);
+      params.push(`%${query.replace(/[%_\\]/g, '\\$&')}%`);
     }
 
     // Add coordinate radius filter
@@ -445,7 +448,65 @@ export class TravelDatabase {
   }
 
   // =========================================================================
-  // POI Search (uses enriched_pois view)
+  // Google Data Enrichment Helper
+  // =========================================================================
+
+  /**
+   * Enrich POI results with Google Places data (2-phase pattern).
+   * Phase 1 queries osm_pois directly (fast, uses indexes).
+   * This Phase 2 helper looks up Google data only for the matching results.
+   *
+   * @param {Array} rows - POI rows from Phase 1 (must have osm_id)
+   * @returns {Array} Same rows with Google fields merged in
+   */
+  async enrichWithGoogleData(rows) {
+    if (!rows || rows.length === 0) return rows;
+
+    const osmIds = rows.map(r => r.osm_id).filter(Boolean);
+    if (osmIds.length === 0) return rows;
+
+    const googleResult = await this.pool.query(`
+      SELECT m.osm_id,
+        g.google_place_id, g.name as google_name,
+        g.rating as google_rating, g.user_rating_count as google_review_count,
+        g.price_level as google_price_level, g.business_status as google_business_status,
+        g.short_formatted_address as google_short_address,
+        g.national_phone as google_phone, g.website_uri as google_website,
+        g.google_maps_uri as google_maps_url,
+        g.opening_hours as google_opening_hours, g.photos as google_photos
+      FROM osm_google_mappings m
+      JOIN google_places g ON m.google_place_id = g.google_place_id
+      WHERE m.osm_id = ANY($1) AND m.mapping_status = 'active'
+    `, [osmIds]);
+
+    const googleMap = new Map();
+    for (const g of googleResult.rows) {
+      googleMap.set(g.osm_id, g);
+    }
+
+    return rows.map(row => {
+      const g = googleMap.get(row.osm_id);
+      if (!g) return row;
+      return {
+        ...row,
+        name: g.google_name || row.name, // Prefer Google name
+        google_place_id: g.google_place_id,
+        google_rating: g.google_rating,
+        google_review_count: g.google_review_count,
+        google_price_level: g.google_price_level,
+        google_business_status: g.google_business_status,
+        google_short_address: g.google_short_address,
+        google_phone: g.google_phone,
+        google_website: g.google_website,
+        google_maps_url: g.google_maps_url,
+        google_opening_hours: g.google_opening_hours,
+        google_photos: g.google_photos,
+      };
+    });
+  }
+
+  // =========================================================================
+  // POI Search (queries osm_pois directly, enriches with Google data)
   // =========================================================================
   //
   // SUPPORTED PARAMETER COMBINATIONS:
@@ -502,49 +563,40 @@ export class TravelDatabase {
     if (hasName && !hasCity && !hasCoords) {
       query = `
         SELECT
-          osm_id,
-          poi_type,
-          COALESCE(google_name, osm_name) as name,
-          osm_latitude as latitude,
-          osm_longitude as longitude,
-          city,
-          country_code,
-          google_place_id,
-          google_rating,
-          google_review_count,
-          google_price_level,
-          google_business_status,
-          google_short_address,
-          google_phone,
-          google_website,
-          google_maps_url,
-          google_opening_hours,
-          google_photos,
-          osm_stars,
-          osm_cuisine,
-          osm_brand,
+          p.osm_id,
+          p.poi_type,
+          p.name,
+          p.latitude,
+          p.longitude,
+          c.name as city,
+          c.country_code,
+          p.stars as osm_stars,
+          p.cuisine as osm_cuisine,
+          p.tags->>'brand' as osm_brand,
           GREATEST(
-            similarity(COALESCE(google_name, osm_name), $1),
-            COALESCE(similarity(osm_brand, $1), 0)
+            similarity(p.name, $1),
+            COALESCE(similarity(p.tags->>'brand', $1), 0)
           ) as name_similarity
-        FROM enriched_pois
-        WHERE osm_name IS NOT NULL
-          AND (osm_name ILIKE $2 OR google_name ILIKE $2 OR osm_brand ILIKE $2)
+        FROM osm_pois p
+        LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+        WHERE p.name IS NOT NULL
+          AND (p.name ILIKE $2 OR p.tags->>'brand' ILIKE $2)
       `;
-      queryParams = [name, `%${name}%`];
+      const escapedName = name.replace(/[%_\\]/g, '\\$&');
+      queryParams = [name, `%${escapedName}%`];
 
       // Filter by country if provided
       if (countryCode) {
-        query += ` AND country_code = $${queryParams.length + 1}`;
+        query += ` AND c.country_code = $${queryParams.length + 1}`;
         queryParams.push(countryCode.toUpperCase());
       }
 
       if (typeFilter) {
-        query += ` AND poi_type = ANY($${queryParams.length + 1})`;
+        query += ` AND p.poi_type = ANY($${queryParams.length + 1})`;
         queryParams.push(typeFilter);
       }
 
-      query += ` ORDER BY name_similarity DESC, google_rating DESC NULLS LAST LIMIT $${queryParams.length + 1}`;
+      query += ` ORDER BY name_similarity DESC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
     }
     // Case 2: Location only (city or coordinates)
@@ -598,48 +650,39 @@ export class TravelDatabase {
       // Combined query: name filter + distance filter
       query = `
         SELECT
-          osm_id,
-          poi_type,
-          COALESCE(google_name, osm_name) as name,
-          osm_latitude as latitude,
-          osm_longitude as longitude,
-          city,
-          country_code,
-          google_place_id,
-          google_rating,
-          google_review_count,
-          google_price_level,
-          google_business_status,
-          google_short_address,
-          google_phone,
-          google_website,
-          google_maps_url,
-          google_opening_hours,
-          google_photos,
-          osm_stars,
-          osm_cuisine,
-          osm_brand,
+          p.osm_id,
+          p.poi_type,
+          p.name,
+          p.latitude,
+          p.longitude,
+          c.name as city,
+          c.country_code,
+          p.stars as osm_stars,
+          p.cuisine as osm_cuisine,
+          p.tags->>'brand' as osm_brand,
           GREATEST(
-            similarity(COALESCE(google_name, osm_name), $1),
-            COALESCE(similarity(osm_brand, $1), 0)
+            similarity(p.name, $1),
+            COALESCE(similarity(p.tags->>'brand', $1), 0)
           ) as name_similarity,
           ST_Distance(
-            osm_location::geography,
+            p.location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
           ) / 1000.0 as distance_km
-        FROM enriched_pois
-        WHERE osm_name IS NOT NULL
-          AND (osm_name ILIKE $4 OR google_name ILIKE $4 OR osm_brand ILIKE $4)
+        FROM osm_pois p
+        LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+        WHERE p.name IS NOT NULL
+          AND (p.name ILIKE $4 OR p.tags->>'brand' ILIKE $4)
           AND ST_DWithin(
-            osm_location::geography,
+            p.location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
             $5::float8 * 1000
           )
       `;
-      queryParams = [name, searchLat, searchLon, `%${name}%`, searchRadius];
+      const escapedName3 = name.replace(/[%_\\]/g, '\\$&');
+      queryParams = [name, searchLat, searchLon, `%${escapedName3}%`, searchRadius];
 
       if (typeFilter) {
-        query += ` AND poi_type = ANY($${queryParams.length + 1})`;
+        query += ` AND p.poi_type = ANY($${queryParams.length + 1})`;
         queryParams.push(typeFilter);
       }
 
@@ -651,8 +694,9 @@ export class TravelDatabase {
     }
 
     const result = await this.pool.query(query, queryParams);
+    const enriched = await this.enrichWithGoogleData(result.rows);
     const baseUrl = await this.getServerBaseUrl();
-    const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
+    const withUris = addResourceUris(removeNullFields(enriched), baseUrl);
     const withPhotos = await this.addPhotoUrls(withUris);
     return this.addFavoriteStatus(withPhotos, userId);
   }
@@ -706,34 +750,24 @@ export class TravelDatabase {
 
     let query = `
       SELECT
-        osm_id,
-        poi_type,
-        COALESCE(google_name, osm_name) as name,
-        osm_latitude as latitude,
-        osm_longitude as longitude,
-        city,
-        country_code,
-        google_place_id,
-        google_rating,
-        google_review_count,
-        google_price_level,
-        google_business_status,
-        google_short_address,
-        google_phone,
-        google_website,
-        google_maps_url,
-        google_opening_hours,
-        google_photos,
-        osm_stars,
-        osm_cuisine,
+        p.osm_id,
+        p.poi_type,
+        p.name,
+        p.latitude,
+        p.longitude,
+        c.name as city,
+        c.country_code,
+        p.stars as osm_stars,
+        p.cuisine as osm_cuisine,
         ST_Distance(
-          osm_location::geography,
+          p.location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
         ) / 1000.0 as distance_km
-      FROM enriched_pois
-      WHERE osm_name IS NOT NULL
+      FROM osm_pois p
+      LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+      WHERE p.name IS NOT NULL
         AND ST_DWithin(
-          osm_location::geography,
+          p.location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
           $3::float8 * 1000
         )
@@ -742,12 +776,12 @@ export class TravelDatabase {
     const params = [latitude, longitude, radiusKm];
 
     if (typeFilter) {
-      query += ` AND poi_type = ANY($${params.length + 1})`;
+      query += ` AND p.poi_type = ANY($${params.length + 1})`;
       params.push(typeFilter);
     }
 
     if (excludeOsmIds && excludeOsmIds.length > 0) {
-      query += ` AND osm_id != ALL($${params.length + 1})`;
+      query += ` AND p.osm_id != ALL($${params.length + 1})`;
       params.push(excludeOsmIds);
     }
 
@@ -755,8 +789,9 @@ export class TravelDatabase {
     params.push(limit);
 
     const result = await this.pool.query(query, params);
+    const enriched = await this.enrichWithGoogleData(result.rows);
     const baseUrl = await this.getServerBaseUrl();
-    const withUris = addResourceUris(removeNullFields(result.rows), baseUrl);
+    const withUris = addResourceUris(removeNullFields(enriched), baseUrl);
     const withPhotos = await this.addPhotoUrls(withUris);
     return this.addFavoriteStatus(withPhotos, userId);
   }
@@ -905,9 +940,9 @@ export class TravelDatabase {
    */
   async getRandomPOI() {
     const result = await this.pool.query(`
-      SELECT osm_id
-      FROM enriched_pois
-      WHERE google_place_id IS NOT NULL
+      SELECT m.osm_id
+      FROM osm_google_mappings m
+      WHERE m.mapping_status = 'active'
       ORDER BY RANDOM()
       LIMIT 1
     `);
@@ -1530,7 +1565,7 @@ export class TravelDatabase {
       this.pool.query("SELECT COUNT(*) FROM osm_pois WHERE poi_type = 'hotel'"),
       this.pool.query('SELECT COUNT(*) FROM regions'),
       this.pool.query(`SELECT poi_type, COUNT(*) as count FROM osm_pois GROUP BY poi_type ORDER BY count DESC`),
-      this.pool.query(`SELECT country_code, COUNT(*) as count FROM enriched_pois WHERE country_code IS NOT NULL GROUP BY country_code ORDER BY count DESC`),
+      this.pool.query(`SELECT c.country_code, COUNT(*) as count FROM osm_pois p JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id GROUP BY c.country_code ORDER BY count DESC`),
       this.pool.query(`SELECT import_type, region_name, source_file, completed_at, records_imported FROM imports WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 10`),
       this.pool.query(`SELECT COUNT(*) as total_enriched FROM osm_google_mappings WHERE google_place_id IS NOT NULL AND mapping_status = 'active'`),
       this.pool.query(`SELECT mapping_status, COUNT(*) as count FROM osm_google_mappings GROUP BY mapping_status`),

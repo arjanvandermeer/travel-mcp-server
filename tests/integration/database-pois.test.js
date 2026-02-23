@@ -54,21 +54,21 @@ describe('TravelDatabase POI Search Functions', () => {
   describe('searchPOIs', () => {
     describe('Case 1: Name search only', () => {
       it('should search POIs by name only', async () => {
-        mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+        mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({ name: 'Grand Hotel' });
 
         assert.ok(Array.isArray(results));
-        assert.ok(mockPool.wasCalled('enriched_pois'));
+        assert.ok(mockPool.wasCalled('osm_pois'));
         // Should have called with ILIKE pattern
         const calls = mockPool.getCalls();
-        const searchCall = calls.find(c => c.sql.includes('enriched_pois') && c.params?.includes('%Grand Hotel%'));
+        const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.params?.includes('%Grand Hotel%'));
         assert.ok(searchCall, 'Should search with ILIKE pattern');
       });
 
       it('should filter by country code when provided', async () => {
-        mockPool.setResponse('enriched_pois', dbResult([samplePOIs[0]]));
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({ name: 'Grand Hotel', countryCode: 'TH' });
@@ -83,7 +83,7 @@ describe('TravelDatabase POI Search Functions', () => {
       });
 
       it('should filter by POI type when provided', async () => {
-        mockPool.setResponse('enriched_pois', dbResult([samplePOIs[0]]));
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({ name: 'Grand', poiType: 'hotel' });
@@ -95,7 +95,7 @@ describe('TravelDatabase POI Search Functions', () => {
       });
 
       it('should support multiple POI types', async () => {
-        mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+        mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({
@@ -118,7 +118,7 @@ describe('TravelDatabase POI Search Functions', () => {
           population: 8000000,
         }]));
         // Mock POI search near coordinates
-        mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+        mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({
@@ -130,7 +130,7 @@ describe('TravelDatabase POI Search Functions', () => {
       });
 
       it('should search by coordinates', async () => {
-        mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+        mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({
@@ -165,7 +165,7 @@ describe('TravelDatabase POI Search Functions', () => {
           longitude: 100.5,
           population: 8000000,
         }]));
-        mockPool.setResponse('enriched_pois', dbResult([samplePOIs[0]]));
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({
@@ -178,7 +178,7 @@ describe('TravelDatabase POI Search Functions', () => {
       });
 
       it('should search by name and coordinates', async () => {
-        mockPool.setResponse('enriched_pois', dbResult([samplePOIs[0]]));
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
 
         db = new TravelDatabase({ pool: mockPool });
         const results = await db.searchPOIs({
@@ -206,7 +206,7 @@ describe('TravelDatabase POI Search Functions', () => {
 
   describe('searchPOIsNearCoordinates', () => {
     it('should search POIs near coordinates', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+      mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
       db = new TravelDatabase({ pool: mockPool });
       const results = await db.searchPOIsNearCoordinates(13.75, 100.5, 10);
@@ -216,7 +216,7 @@ describe('TravelDatabase POI Search Functions', () => {
     });
 
     it('should filter by type', async () => {
-      mockPool.setResponse('enriched_pois', dbResult([samplePOIs[0]]));
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
 
       db = new TravelDatabase({ pool: mockPool });
       const results = await db.searchPOIsNearCoordinates(
@@ -227,7 +227,7 @@ describe('TravelDatabase POI Search Functions', () => {
     });
 
     it('should respect limit parameter', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+      mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
       db = new TravelDatabase({ pool: mockPool });
       const results = await db.searchPOIsNearCoordinates(
@@ -236,14 +236,14 @@ describe('TravelDatabase POI Search Functions', () => {
 
       const calls = mockPool.getCalls();
       const searchCall = calls.find(c =>
-        c.sql.includes('enriched_pois') &&
+        c.sql.includes('osm_pois') &&
         c.params?.includes(5)
       );
       assert.ok(searchCall, 'Should pass limit to query');
     });
 
     it('should exclude specified OSM IDs', async () => {
-      mockPool.setResponse('enriched_pois', dbResult([samplePOIs[1]]));
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
 
       db = new TravelDatabase({ pool: mockPool });
       const results = await db.searchPOIsNearCoordinates(
@@ -253,7 +253,7 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(Array.isArray(results));
       const calls = mockPool.getCalls();
       const searchCall = calls.find(c =>
-        c.sql.includes('enriched_pois') &&
+        c.sql.includes('osm_pois') &&
         c.sql.includes('osm_id != ALL')
       );
       assert.ok(searchCall, 'Should include osm_id != ALL clause');
@@ -262,14 +262,14 @@ describe('TravelDatabase POI Search Functions', () => {
     });
 
     it('should not include exclude clause when excludeOsmIds is null', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+      mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
       db = new TravelDatabase({ pool: mockPool });
       await db.searchPOIsNearCoordinates(13.75, 100.5, 10);
 
       const calls = mockPool.getCalls();
       const searchCall = calls.find(c =>
-        c.sql.includes('enriched_pois') &&
+        c.sql.includes('osm_pois') &&
         c.sql.includes('ST_DWithin')
       );
       assert.ok(searchCall, 'Should have ST_DWithin query');
@@ -278,7 +278,7 @@ describe('TravelDatabase POI Search Functions', () => {
     });
 
     it('should handle fractional radius (non-integer km)', async () => {
-      mockPool.setResponse('enriched_pois', dbResult(samplePOIs));
+      mockPool.setResponse('osm_pois', dbResult(samplePOIs));
 
       db = new TravelDatabase({ pool: mockPool });
       const results = await db.searchPOIsNearCoordinates(
@@ -288,7 +288,7 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(Array.isArray(results));
       const calls = mockPool.getCalls();
       const searchCall = calls.find(c =>
-        c.sql.includes('enriched_pois') &&
+        c.sql.includes('osm_pois') &&
         c.sql.includes('ST_DWithin')
       );
       assert.ok(searchCall, 'Should have ST_DWithin query');
@@ -299,7 +299,7 @@ describe('TravelDatabase POI Search Functions', () => {
     });
 
     it('should pass both typeFilter and excludeOsmIds together', async () => {
-      mockPool.setResponse('enriched_pois', dbResult([samplePOIs[1]]));
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
 
       db = new TravelDatabase({ pool: mockPool });
       const results = await db.searchPOIsNearCoordinates(
@@ -309,7 +309,7 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(Array.isArray(results));
       const calls = mockPool.getCalls();
       const searchCall = calls.find(c =>
-        c.sql.includes('enriched_pois') &&
+        c.sql.includes('osm_pois') &&
         c.sql.includes('ST_DWithin')
       );
       assert.ok(searchCall.sql.includes('poi_type = ANY'),
@@ -719,8 +719,8 @@ describe('TravelDatabase POI Search Functions', () => {
     };
 
     it('should return random POI with Google enrichment', async () => {
-      // Mock finding an enriched POI
-      mockPool.setResponse('enriched_pois', dbResult([{ osm_id: 12345 }]));
+      // Mock finding an enriched POI (now queries osm_google_mappings directly)
+      mockPool.setResponse('osm_google_mappings', dbResult([{ osm_id: 12345 }]));
       // Mock getPOIDetails call
       mockPool.setResponse('WHERE osm_id', dbResult([samplePOIDetail]));
 
@@ -732,8 +732,8 @@ describe('TravelDatabase POI Search Functions', () => {
     });
 
     it('should fallback to non-enriched POI if no enriched ones exist', async () => {
-      // First query returns empty (no enriched POIs)
-      mockPool.setResponse('google_place_id IS NOT NULL', emptyResult());
+      // First query returns empty (no enriched POIs via osm_google_mappings)
+      mockPool.setResponse('mapping_status', emptyResult());
       // Fallback query finds a non-enriched POI
       mockPool.setResponse('osm_pois', dbResult([{ osm_id: 99999 }]));
       // getPOIDetails for that POI
@@ -748,7 +748,7 @@ describe('TravelDatabase POI Search Functions', () => {
     });
 
     it('should return null when no POIs exist', async () => {
-      mockPool.setResponse('enriched_pois', emptyResult());
+      mockPool.setResponse('osm_google_mappings', emptyResult());
       mockPool.setResponse('osm_pois', emptyResult());
 
       db = new TravelDatabase({ pool: mockPool });
