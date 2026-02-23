@@ -804,23 +804,24 @@ async function insertBatch(pool, pois) {
 
     const insertQuery = `
       INSERT INTO osm_pois (
-        osm_id, osm_type, poi_type, name,
+        osm_id, osm_type, poi_type, name, name_en,
         location, latitude, longitude,
         address, phone, email, website, opening_hours,
         cuisine, wheelchair,
         stars, rooms, beds,
         source_region, tags, imported_at
       ) VALUES (
-        $1, $2, $3, $4,
-        ST_SetSRID(ST_MakePoint($6, $5), 4326), $5, $6,
-        $7, $8, $9, $10, $11,
-        $12, $13,
-        $14, $15, $16,
-        $17, $18, CURRENT_TIMESTAMP
+        $1, $2, $3, $4, $5,
+        ST_SetSRID(ST_MakePoint($7, $6), 4326), $6, $7,
+        $8, $9, $10, $11, $12,
+        $13, $14,
+        $15, $16, $17,
+        $18, $19, CURRENT_TIMESTAMP
       )
       ON CONFLICT (osm_id) DO UPDATE SET
         poi_type = EXCLUDED.poi_type,
         name = EXCLUDED.name,
+        name_en = EXCLUDED.name_en,
         location = EXCLUDED.location,
         latitude = EXCLUDED.latitude,
         longitude = EXCLUDED.longitude,
@@ -846,6 +847,7 @@ async function insertBatch(pool, pois) {
           poi.osm_type,
           poi.poi_type,
           poi.name,
+          poi.name_en,
           poi.latitude,
           poi.longitude,
           poi.address,

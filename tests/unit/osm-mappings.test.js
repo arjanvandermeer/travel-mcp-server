@@ -367,6 +367,36 @@ describe('extractPOIData', () => {
     const poi = extractPOIData(baseItem, 'hotel', 'thailand');
     assert.deepStrictEqual(poi.osm_tags, baseItem.tags);
   });
+
+  it('should return null name_en for English names', () => {
+    const poi = extractPOIData(baseItem, 'hotel', 'thailand');
+    assert.strictEqual(poi.name_en, null);
+  });
+
+  it('should include name_en field for Thai names', () => {
+    const item = {
+      id: 99999,
+      type: 'node',
+      lat: 7.88,
+      lon: 98.38,
+      tags: { name: 'ภูเก็ต', tourism: 'attraction' },
+    };
+    const poi = extractPOIData(item, 'attraction', 'thailand');
+    assert.ok('name_en' in poi);
+    assert.ok(poi.name_en);
+  });
+
+  it('should use tags name:en if available', () => {
+    const item = {
+      id: 88888,
+      type: 'node',
+      lat: 13.75,
+      lon: 100.50,
+      tags: { name: 'วัดพระแก้ว', 'name:en': 'Temple of the Emerald Buddha', tourism: 'attraction' },
+    };
+    const poi = extractPOIData(item, 'attraction', 'thailand');
+    assert.strictEqual(poi.name_en, 'Temple of the Emerald Buddha');
+  });
 });
 
 describe('shouldFilterPOI', () => {

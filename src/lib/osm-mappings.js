@@ -7,6 +7,8 @@
  * @module lib/osm-mappings
  */
 
+import { getEnglishName } from './transliterate-thai.js';
+
 /**
  * POI type mappings: OSM tag pattern -> our normalized poi_type
  *
@@ -250,6 +252,7 @@ export function extractPOIData(item, poiType, regionName) {
     osm_type: item.type || 'node',
     poi_type: poiType,
     name: truncate(tags.name, 500),
+    name_en: truncate(getEnglishName(tags.name, tags), 500),
     latitude: item.lat,
     longitude: item.lon,
     address: buildAddress(tags),

@@ -336,10 +336,16 @@ export class GooglePlacesClient {
       return null;
     }
 
-    const { name, latitude, longitude, poi_type } = poi;
+    const { name, name_en, latitude, longitude, poi_type } = poi;
 
     if (!name || !latitude || !longitude) {
       return null;
+    }
+
+    // For matching, try both original name and English transliteration
+    const matchNames = [name];
+    if (name_en && name_en !== name) {
+      matchNames.push(name_en);
     }
 
     // Map POI types to Google Place types (New API format)
@@ -365,8 +371,8 @@ export class GooglePlacesClient {
     const nearbyResults = await this.searchNearby(latitude, longitude, name, googleType, 100);
 
     if (nearbyResults.length > 0) {
-      // Find best match based on name similarity
-      const bestMatch = this.findBestNameMatch(name, nearbyResults);
+      // Find best match based on name similarity (try all name variants)
+      const bestMatch = this.findBestNameMatchMulti(matchNames, nearbyResults);
       if (bestMatch) {
         return {
           place_id: bestMatch.id,
@@ -378,13 +384,14 @@ export class GooglePlacesClient {
       }
     }
 
-    // Fallback to text search
-    const textQuery = `${name}, ${latitude}, ${longitude}`;
+    // Fallback to text search (use English name if available for better Google results)
+    const searchName = name_en || name;
+    const textQuery = `${searchName}, ${latitude}, ${longitude}`;
     const textResults = await this.searchText(textQuery, latitude, longitude);
 
     if (textResults.length > 0) {
       // Also validate text search results with name matching
-      const textMatch = this.findBestNameMatch(name, textResults);
+      const textMatch = this.findBestNameMatchMulti(matchNames, textResults);
       if (textMatch) {
         return {
           place_id: textMatch.id,
@@ -514,6 +521,45 @@ export class GooglePlacesClient {
     }
 
     // No confident match found - return null instead of wrong match
+    if (process.env.DEBUG_MATCHING) {
+      console.error(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
+    }
+    return null;
+  }
+
+  /**
+   * Try matching with multiple name variants (e.g. Thai + English transliteration)
+   * Returns the best match across all name variants
+   */
+  findBestNameMatchMulti(names, results) {
+    let bestMatch = null;
+    let bestScore = 0;
+
+    for (const name of names) {
+      for (const result of results) {
+        const resultName = result.displayName?.text || result.displayName || '';
+        const score = this.calculateNameSimilarity(name, resultName);
+
+        if (process.env.DEBUG_MATCHING) {
+          console.error(`  Match score: "${name}" vs "${resultName}" = ${score.toFixed(3)}`);
+        }
+
+        if (score > bestScore) {
+          bestScore = score;
+          bestMatch = result;
+        }
+      }
+    }
+
+    const MIN_CONFIDENCE = 0.4;
+    if (bestScore >= MIN_CONFIDENCE) {
+      if (process.env.DEBUG_MATCHING) {
+        const matchName = bestMatch.displayName?.text || bestMatch.displayName;
+        console.error(`  Best match: "${matchName}" with score ${bestScore.toFixed(3)}`);
+      }
+      return bestMatch;
+    }
+
     if (process.env.DEBUG_MATCHING) {
       console.error(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
     }

@@ -303,6 +303,7 @@ CREATE TABLE osm_pois (
     osm_type VARCHAR(10) NOT NULL,              -- 'node', 'way', 'relation'
     poi_type VARCHAR(50) NOT NULL,              -- 'hotel', 'restaurant', 'attraction', 'monument', etc.
     name VARCHAR(500),
+    name_en VARCHAR(500),                       -- English transliteration (for Thai etc.)
     location geometry(Point, 4326) NOT NULL,    -- PostGIS point
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
@@ -342,6 +343,7 @@ CREATE INDEX idx_osm_pois_nearest_city_id ON osm_pois(nearest_city_id) WHERE nea
 
 -- Trigram index for fuzzy name search
 CREATE INDEX idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);
+CREATE INDEX idx_osm_pois_name_en_trgm ON osm_pois USING GIN(name_en gin_trgm_ops);
 
 -- Enable trigram extension for fuzzy name search
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
@@ -360,6 +362,7 @@ SELECT
 
     -- OSM data (prefixed with osm_)
     p.name as osm_name,
+    p.name_en as osm_name_en,
     p.latitude as osm_latitude,
     p.longitude as osm_longitude,
     p.location as osm_location,
@@ -532,9 +535,12 @@ BEGIN
         p.name,
         p.latitude,
         p.longitude,
-        similarity(p.name, search_query) AS similarity_score
+        GREATEST(
+            similarity(p.name, search_query),
+            COALESCE(similarity(p.name_en, search_query), 0)
+        ) AS similarity_score
     FROM osm_pois p
-    WHERE p.name % search_query  -- Fuzzy match using trigrams
+    WHERE p.name % search_query OR p.name_en % search_query
     ORDER BY similarity_score DESC, p.name
     LIMIT result_limit;
 END;

@@ -575,12 +575,13 @@ export class TravelDatabase {
           p.tags->>'brand' as osm_brand,
           GREATEST(
             similarity(p.name, $1),
+            COALESCE(similarity(p.name_en, $1), 0),
             COALESCE(similarity(p.tags->>'brand', $1), 0)
           ) as name_similarity
         FROM osm_pois p
         LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
         WHERE p.name IS NOT NULL
-          AND (p.name ILIKE $2 OR p.tags->>'brand' ILIKE $2)
+          AND (p.name ILIKE $2 OR p.name_en ILIKE $2 OR p.tags->>'brand' ILIKE $2)
       `;
       const escapedName = name.replace(/[%_\\]/g, '\\$&');
       queryParams = [name, `%${escapedName}%`];
@@ -662,6 +663,7 @@ export class TravelDatabase {
           p.tags->>'brand' as osm_brand,
           GREATEST(
             similarity(p.name, $1),
+            COALESCE(similarity(p.name_en, $1), 0),
             COALESCE(similarity(p.tags->>'brand', $1), 0)
           ) as name_similarity,
           ST_Distance(
@@ -671,7 +673,7 @@ export class TravelDatabase {
         FROM osm_pois p
         LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
         WHERE p.name IS NOT NULL
-          AND (p.name ILIKE $4 OR p.tags->>'brand' ILIKE $4)
+          AND (p.name ILIKE $4 OR p.name_en ILIKE $4 OR p.tags->>'brand' ILIKE $4)
           AND ST_DWithin(
             p.location::geography,
             ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
@@ -1096,6 +1098,7 @@ export class TravelDatabase {
           osm_id,
           poi_type,
           name,
+          name_en,
           latitude,
           longitude
         FROM osm_pois
@@ -2013,7 +2016,7 @@ export class TravelDatabase {
     // Name search condition (escape ILIKE wildcards in user input)
     const escapedQuery = query.replace(/[%_\\]/g, '\\$&');
     params.push(`%${escapedQuery}%`);
-    conditions.push(`(p.name ILIKE $${params.length} OR g.name ILIKE $${params.length})`);
+    conditions.push(`(p.name ILIKE $${params.length} OR p.name_en ILIKE $${params.length} OR g.name ILIKE $${params.length})`);
 
     if (countryCode) {
       params.push(countryCode.toUpperCase());
