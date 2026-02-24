@@ -389,10 +389,51 @@ Alpine.store('auth', {
     },
   });
 
+// ─── Discover Store (homepage featured section) ───
+Alpine.store('discover', {
+  loading: false,
+  country: null,
+  city: null,
+  hotels: [],
+  error: null,
+
+  async load() {
+    this.loading = true;
+    this.error = null;
+    try {
+      const data = await apiGet('/api/v1/homepage');
+      this.country = data.country;
+      this.city = data.city;
+      this.hotels = data.hotels || [];
+    } catch (err) {
+      console.error('Discover load failed:', err);
+      this.error = 'Could not load featured places';
+    }
+    this.loading = false;
+  },
+
+  async toggleFavorite(poi) {
+    const auth = Alpine.store('auth');
+    if (!auth.authenticated) { auth.login(); return; }
+    try {
+      if (poi.is_favorite) {
+        await apiDelete(`/api/v1/favorites/${poi.osm_id}`);
+        poi.is_favorite = false;
+      } else {
+        await apiPost('/api/v1/favorites', { osm_id: poi.osm_id });
+        poi.is_favorite = true;
+      }
+    } catch (err) {
+      console.error('Favorite toggle failed:', err);
+    }
+  },
+});
+
 // Bootstrap
 Alpine.store('auth').check();
 Alpine.store('search').loadCountries();
 Alpine.store('route').init();
+Alpine.store('discover').load();
 
 // Make Alpine available globally for devtools, then start
 window.Alpine = Alpine;

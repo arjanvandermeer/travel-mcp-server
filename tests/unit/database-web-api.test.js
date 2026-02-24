@@ -394,3 +394,186 @@ describe('setUserConfig', () => {
     assert.deepStrictEqual(calls[0].params, [1, 'theme', 'dark']);
   });
 });
+
+// =============================================================================
+// Homepage Discover Methods
+// =============================================================================
+
+describe('getTopCitiesWithHotels', () => {
+  it('should return cities ordered by population', async () => {
+    const { db } = createTestDb({
+      'geonames_cities': dbResult([
+        { geoname_id: 1, name: 'Bangkok', country_code: 'TH', population: 8280925, latitude: 13.75, longitude: 100.50 },
+        { geoname_id: 2, name: 'Chiang Mai', country_code: 'TH', population: 127240, latitude: 18.79, longitude: 98.98 },
+      ]),
+    });
+
+    const result = await db.getTopCitiesWithHotels('TH', ['hotel'], 5);
+
+    assert.strictEqual(result.length, 2);
+    assert.strictEqual(result[0].name, 'Bangkok');
+    assert.strictEqual(result[1].name, 'Chiang Mai');
+  });
+
+  it('should pass country code uppercased and poi types as params', async () => {
+    const { db, pool } = createTestDb({
+      'geonames_cities': dbResult([]),
+    });
+
+    await db.getTopCitiesWithHotels('th', ['hotel', 'hostel'], 3);
+
+    const calls = pool.getCalls();
+    assert.strictEqual(calls[0].params[0], 'TH');
+    assert.deepStrictEqual(calls[0].params[1], ['hotel', 'hostel']);
+    assert.strictEqual(calls[0].params[2], 3);
+  });
+
+  it('should return empty array when no cities have hotels', async () => {
+    const { db } = createTestDb({
+      'geonames_cities': emptyResult(),
+    });
+
+    const result = await db.getTopCitiesWithHotels('XX', ['hotel']);
+
+    assert.deepStrictEqual(result, []);
+  });
+});
+
+describe('getHomepageDiscover', () => {
+  /**
+   * Create a TravelDatabase with stubbed methods for homepage discover testing.
+   * Stubs high-level methods to avoid complex multi-query mock orchestration.
+   */
+  function createDiscoverTestDb(overrides = {}) {
+    const pool = createMockDatabase();
+    const db = new TravelDatabase();
+    db.pool = pool;
+
+    db.listCountriesWithData = overrides.listCountriesWithData ||
+      (async () => [
+        { code: 'TH', name: 'Thailand', continent: 'AS' },
+        { code: 'JP', name: 'Japan', continent: 'AS' },
+      ]);
+
+    db.getTopCitiesWithHotels = overrides.getTopCitiesWithHotels ||
+      (async () => [
+        { geoname_id: 1, name: 'Bangkok', country_code: 'TH', population: 8280925, latitude: 13.75, longitude: 100.50 },
+      ]);
+
+    db.searchPOIsNearCoordinates = overrides.searchPOIsNearCoordinates ||
+      (async () => [
+        { osm_id: 'n1', name: 'Grand Palace Hotel', poi_type: 'hotel', city: 'Bangkok', country_code: 'TH' },
+        { osm_id: 'n2', name: 'Sukhumvit Inn', poi_type: 'hotel', city: 'Bangkok', country_code: 'TH' },
+      ]);
+
+    db.addFavoriteStatus = overrides.addFavoriteStatus ||
+      (async (pois, userId) => {
+        if (!userId) return pois;
+        return pois.map(p => ({ ...p, is_favorite: false }));
+      });
+
+    // Clear cache between tests
+    db._homepageCache = new Map();
+
+    return db;
+  }
+
+  it('should return country, city, and hotels', async () => {
+    const db = createDiscoverTestDb();
+
+    const result = await db.getHomepageDiscover(['hotel']);
+
+    assert.ok(result, 'Should return a result');
+    assert.ok(result.country.code, 'Country should have code');
+    assert.ok(result.country.name, 'Country should have name');
+    assert.ok(result.city.name, 'City should have name');
+    assert.ok(result.hotels.length > 0, 'Should have at least one hotel');
+  });
+
+  it('should return null when no countries have data', async () => {
+    const db = createDiscoverTestDb({
+      listCountriesWithData: async () => [],
+    });
+
+    const result = await db.getHomepageDiscover(['hotel']);
+
+    assert.strictEqual(result, null);
+  });
+
+  it('should return null when country has no cities with hotels', async () => {
+    const db = createDiscoverTestDb({
+      getTopCitiesWithHotels: async () => [],
+    });
+
+    const result = await db.getHomepageDiscover(['hotel']);
+
+    assert.strictEqual(result, null);
+  });
+
+  it('should apply favorite status when userId is provided', async () => {
+    let favCalled = false;
+    const db = createDiscoverTestDb({
+      addFavoriteStatus: async (pois, userId) => {
+        if (userId) favCalled = true;
+        return pois.map(p => ({ ...p, is_favorite: true }));
+      },
+    });
+
+    const result = await db.getHomepageDiscover(['hotel'], 42);
+
+    assert.ok(favCalled, 'Should call addFavoriteStatus with userId');
+    assert.ok(result.hotels[0].is_favorite, 'Hotels should have favorite status');
+  });
+
+  it('should cache results per country', async () => {
+    let searchCallCount = 0;
+    const db = createDiscoverTestDb({
+      listCountriesWithData: async () => [
+        { code: 'TH', name: 'Thailand', continent: 'AS' },
+      ],
+      searchPOIsNearCoordinates: async () => {
+        searchCallCount++;
+        return [{ osm_id: 'n1', name: 'Hotel', poi_type: 'hotel' }];
+      },
+    });
+
+    await db.getHomepageDiscover(['hotel']);
+    await db.getHomepageDiscover(['hotel']);
+
+    assert.strictEqual(searchCallCount, 1, 'Second call should use cache');
+  });
+
+  it('should pass accommodation types to searchPOIsNearCoordinates', async () => {
+    let receivedTypes;
+    const db = createDiscoverTestDb({
+      listCountriesWithData: async () => [{ code: 'TH', name: 'Thailand', continent: 'AS' }],
+      searchPOIsNearCoordinates: async (lat, lon, radius, types) => {
+        receivedTypes = types;
+        return [];
+      },
+    });
+
+    await db.getHomepageDiscover(['hotel', 'hostel', 'resort']);
+
+    assert.deepStrictEqual(receivedTypes, ['hotel', 'hostel', 'resort']);
+  });
+
+  it('should use population-based radius for city', async () => {
+    let receivedRadius;
+    const db = createDiscoverTestDb({
+      listCountriesWithData: async () => [{ code: 'TH', name: 'Thailand', continent: 'AS' }],
+      getTopCitiesWithHotels: async () => [
+        { geoname_id: 1, name: 'Bangkok', country_code: 'TH', population: 8280925, latitude: 13.75, longitude: 100.50 },
+      ],
+      searchPOIsNearCoordinates: async (lat, lon, radius) => {
+        receivedRadius = radius;
+        return [];
+      },
+    });
+
+    await db.getHomepageDiscover(['hotel']);
+
+    // Bangkok 8.2M → getRadiusForPopulation returns 30
+    assert.strictEqual(receivedRadius, 30);
+  });
+});

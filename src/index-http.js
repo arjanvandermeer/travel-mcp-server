@@ -34,6 +34,7 @@ import { registerAutocompleteRoutes } from './api/autocomplete.js';
 import { registerPOIRoutes } from './api/poi.js';
 import { registerFavoritesRoutes } from './api/favorites.js';
 import { registerAuthRoutes } from './api/auth.js';
+import { registerHomepageRoutes } from './api/homepage.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -360,6 +361,7 @@ async function main() {
   registerPOIRoutes(apiRouter);
   registerFavoritesRoutes(apiRouter);
   registerAuthRoutes(apiRouter);
+  registerHomepageRoutes(apiRouter);
 
   // Static file MIME types
   const MIME_TYPES = {

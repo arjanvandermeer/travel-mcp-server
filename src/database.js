@@ -1981,6 +1981,82 @@ export class TravelDatabase {
   }
 
   /**
+   * Get the top cities in a country that have accommodation POIs.
+   * Used by the homepage discover feature.
+   * @param {string} countryCode - ISO alpha2 country code
+   * @param {string[]} poiTypes - POI types to check for (e.g., accommodation types)
+   * @param {number} [limit=5] - Max cities to return
+   * @returns {Array<{geoname_id: number, name: string, country_code: string, population: number, latitude: number, longitude: number}>}
+   */
+  async getTopCitiesWithHotels(countryCode, poiTypes, limit = 5) {
+    const result = await this.pool.query(`
+      SELECT c.geoname_id, c.name, c.country_code, c.population,
+             ST_Y(c.location) AS latitude, ST_X(c.location) AS longitude
+      FROM geonames_cities c
+      WHERE c.country_code = $1
+        AND EXISTS (
+          SELECT 1 FROM osm_pois p
+          WHERE p.nearest_city_id = c.geoname_id
+            AND p.poi_type = ANY($2)
+        )
+      ORDER BY c.population DESC NULLS LAST
+      LIMIT $3
+    `, [countryCode.toUpperCase(), poiTypes, limit]);
+    return result.rows;
+  }
+
+  /**
+   * Get homepage discover data: random country, top city, 5 hotels.
+   * Caches per-country results for 15 minutes (without favorite status).
+   * @param {string[]} accommodationTypes - POI types to include
+   * @param {number|null} [userId=null] - User ID for favorite status
+   * @returns {Promise<{country: object, city: object, hotels: Array}|null>}
+   */
+  async getHomepageDiscover(accommodationTypes, userId = null) {
+    const countries = await this.listCountriesWithData();
+    if (!countries || countries.length === 0) return null;
+
+    const country = countries[Math.floor(Math.random() * countries.length)];
+
+    // Check per-country cache
+    if (!this._homepageCache) this._homepageCache = new Map();
+    const now = Date.now();
+    const cached = this._homepageCache.get(country.code);
+    if (cached && cached.expiry > now) {
+      const hotels = userId
+        ? await this.addFavoriteStatus([...cached.data.hotels], userId)
+        : cached.data.hotels;
+      return { ...cached.data, hotels };
+    }
+
+    const cities = await this.getTopCitiesWithHotels(country.code, accommodationTypes, 5);
+    if (cities.length === 0) {
+      // This country has no cities with hotels — evict and skip
+      return null;
+    }
+
+    const city = cities[Math.floor(Math.random() * cities.length)];
+    const radius = this.getRadiusForPopulation(city.population || 100000);
+    // Fetch hotels without userId so cache is user-independent
+    const hotels = await this.searchPOIsNearCoordinates(
+      city.latitude, city.longitude, radius, accommodationTypes, 5, null
+    );
+
+    const payload = {
+      country: { code: country.code, name: country.name },
+      city: { name: city.name, population: city.population },
+      hotels,
+    };
+
+    this._homepageCache.set(country.code, { data: payload, expiry: now + 15 * 60 * 1000 });
+
+    if (userId) {
+      return { ...payload, hotels: await this.addFavoriteStatus([...hotels], userId) };
+    }
+    return payload;
+  }
+
+  /**
    * List states/provinces for a country.
    * Used by the state dropdown on the web frontend.
    * @param {string} countryCode - ISO alpha2 country code

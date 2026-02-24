@@ -46,6 +46,55 @@
     <!-- ─── SEARCH PAGE ─── -->
     <div x-show="$store.route.page === 'search'">
 
+      <!-- ─── DISCOVER SECTION ─── -->
+      <div class="discover-section"
+           x-show="$store.discover.hotels.length > 0 || $store.discover.loading">
+
+        <div class="discover-header">
+          <h2 class="discover-title">
+            Discover:
+            <span x-text="$store.discover.city?.name"></span><span x-show="$store.discover.country?.name">,
+            <span x-text="$store.discover.country?.name"></span></span>
+          </h2>
+          <button class="discover-refresh" @click="$store.discover.load()"
+                  :disabled="$store.discover.loading"
+                  title="Show another destination">&#x21BB;</button>
+        </div>
+
+        <div x-show="$store.discover.loading" class="empty-state">
+          <div class="loading-spinner"></div>
+        </div>
+
+        <div class="results-list" x-show="!$store.discover.loading">
+          <template x-for="poi in $store.discover.hotels" :key="poi.osm_id">
+            <div class="result-card" @click="window.location.hash = '#/poi/' + poi.osm_id">
+              <img x-show="poi.photo_url || (poi.google_photos && poi.google_photos[0])"
+                :src="poi.photo_url || (poi.google_photos && poi.google_photos[0]?.url)"
+                class="card-thumb" alt="">
+              <div class="card-content">
+                <div class="card-header">
+                  <span class="card-title" x-text="poi.name || poi.osm_name || 'Unknown'"></span>
+                  <span class="card-type" x-text="poi.poi_type"></span>
+                </div>
+                <div class="card-meta" x-show="poi.google_rating || poi.distance_km">
+                  <span class="card-rating" x-show="poi.google_rating"
+                    x-text="'\u2B50 ' + poi.google_rating + (poi.google_review_count ? ' (' + poi.google_review_count + ')' : '')"></span>
+                  <span class="card-distance" x-show="poi.distance_km"
+                    x-text="parseFloat(poi.distance_km).toFixed(1) + ' km'"></span>
+                </div>
+                <div class="card-address" x-show="poi.city || poi.country_code"
+                  x-text="(poi.city || '') + (poi.country_code ? ', ' + poi.country_code : '')"></div>
+              </div>
+              <div class="card-actions" x-show="$store.auth.authenticated" @click.stop>
+                <button class="btn-fav" :class="{ active: poi.is_favorite }"
+                  @click="$store.discover.toggleFavorite(poi)"
+                  x-text="poi.is_favorite ? '\u2665' : '\u2661'"></button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
       <div class="search-panel">
         <h2>Explore Places</h2>
 
