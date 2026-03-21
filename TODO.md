@@ -442,6 +442,7 @@ These are small improvements that can be done quickly but provide immediate valu
 - [x] ~~Create tools-config.js and eliminate duplication~~ (DONE - see "Eliminate Tool Definition Duplication")
 - [ ] Add input validation for coordinates and limits (20 minutes)
 - [ ] Improve error messages in tool handlers (15 minutes)
+- [ ] Replace deprecated `url.parse()` with WHATWG `URL` API (Node.js DEP0169 warning in tests)
 - [ ] Add .nvmrc or .node-version file for consistent Node version (2 minutes)
 
 **Impact**: Quick productivity and quality improvements

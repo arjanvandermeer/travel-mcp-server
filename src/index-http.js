@@ -100,12 +100,13 @@ async function getUserFromRequest(req) {
       // Telemetry: successful DB auth
       telemetry.incrementCounter('auth.success', 1, { method: 'database' });
       telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'database', status: 'success' }, unit: 'millisecond' });
-      telemetry.setUser({ id: dbUser.id.toString() });
+      telemetry.setUser({ id: dbUser.id.toString(), email: dbUser.email, username: dbUser.name });
       telemetry.setTag('user.id', dbUser.id.toString());
       telemetry.setTag('auth.method', 'database');
       telemetry.captureMessage(`Auth success: user ${dbUser.id}`, 'info', {
         method: 'database',
         userId: dbUser.id,
+        email: dbUser.email,
         duration: authDuration,
       });
 
@@ -147,13 +148,14 @@ async function getUserFromRequest(req) {
           // Telemetry: successful OAuth auth
           telemetry.incrementCounter('auth.success', 1, { method: 'oauth' });
           telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'oauth', status: 'success' }, unit: 'millisecond' });
-          telemetry.setUser({ id: user.id.toString() });
+          telemetry.setUser({ id: user.id.toString(), email: user.email, username: user.name });
           telemetry.setTag('user.id', user.id.toString());
           telemetry.setTag('auth.method', 'oauth');
           telemetry.setTag('user.oauth', 'true');
           telemetry.captureMessage(`Auth success: user ${user.id}`, 'info', {
             method: 'oauth',
             userId: user.id,
+            email: user.email,
             duration: authDuration,
             introspectDuration,
           });
