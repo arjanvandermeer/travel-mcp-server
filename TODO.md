@@ -10,7 +10,7 @@ All optimizations applied. Results:
 - Applied SSD-optimized settings (random_page_cost=1.1, effective_io_concurrency=200, work_mem=16MB)
 
 ### ~~Add ChatGPT Support (StreamableHTTP Transport)~~ COMPLETED
-StreamableHTTP transport implemented at `/mcp`. Live at https://mcp.arjanvandermeer.com/mcp
+StreamableHTTP transport implemented at `/mcp`. Live at https://travel.arjanvandermeer.com/mcp
 
 ### ~~CRITICAL: Eliminate Tool Definition Duplication~~ COMPLETED
 Tools now defined in `src/tools-config.js` as single source of truth. Both `index.js` and `index-http.js` import from this file.

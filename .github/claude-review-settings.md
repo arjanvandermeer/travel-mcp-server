@@ -17,7 +17,7 @@ IMPORTANT: These review rules are the authoritative source for code review stand
 - **Authentication**: OAuth 2.1 with PKCE via a Cloudflare Worker (`cloudflare-oauth-worker/`). Google as identity provider. Token validation via introspection endpoint. Do NOT suggest JWT validation, Passport.js, or other auth libraries
 - **MCP Protocol**: `@modelcontextprotocol/sdk`. Two transports: stdio (`src/index.js`) and HTTP/SSE (`src/index-http.js`). Both import tool definitions from `src/tools-config.js`
 - **External APIs**: Google Places API (New) with daily rate limits tracked in database. Responses cached in `google_places` table (default 7 days). Do NOT suggest alternative geocoding/places APIs
-- **Deployment**: ECS Fargate (single container), RDS PostgreSQL, CI/CD via GitHub Actions. DNS via Cloudflare
+- **Deployment**: EC2 t3.small (Node.js + PostgreSQL on same instance), manual deploy via SSH + git pull. DNS via Cloudflare
 - **Configuration**: Runtime config stored in `app_config` database table (not env vars). Env vars only for secrets (`SENTRY_DSN`, `DATABASE_URL`) and bootstrap values. Do NOT suggest config files, YAML, or config management tools
 
 ## Review Checklist
@@ -72,7 +72,7 @@ IMPORTANT: These review rules are the authoritative source for code review stand
 - Flag N+1 query patterns: loops that execute a database query per iteration instead of batching
 - All search results must be bounded (max 100 results is enforced server-side — new queries must respect this)
 - Google Places API calls are expensive and rate-limited (daily limit tracked in `google_api_usage` table). New code must not bypass the daily limit check or make redundant API calls
-- In-memory caches (`Map` objects) must have bounded size or TTL expiration. Unbounded Maps that grow with each request will leak memory on a long-running Fargate container
+- In-memory caches (`Map` objects) must have bounded size or TTL expiration. Unbounded Maps that grow with each request will leak memory on a long-running server process
 - Import scripts must use batch processing (5000-10000 records per batch) and show progress
 
 ### 8. Concurrency
@@ -92,7 +92,7 @@ IMPORTANT: These review rules are the authoritative source for code review stand
 ### 10. Documentation Sync
 - If a tool's parameters or behavior changes, the tool description in the `toolsConfig` array MUST be updated — this is the user-facing API documentation for MCP clients
 - Changes to database schema must be reflected in `data/schema.sql`
-- New environment variables or `app_config` keys must be added to `.env.example` or `.env.aws.example`
+- New environment variables or `app_config` keys must be added to `.env.example`
 
 ## Review Output
 

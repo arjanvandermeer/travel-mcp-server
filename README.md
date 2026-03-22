@@ -7,6 +7,7 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 - **Point-of-interest search** — explore museums, attractions, cafes, and more across the globe
 - **Personal favorites** — bookmark and retrieve your preferred hotels and restaurants
 - **Rich detail views** — access comprehensive POI information as structured JSON or rendered HTML pages ([MCP resource templates](src/templates/))
+- **[Ollama Agent](doc/ollama-agent.md)** — local AI travel assistant using a small language model (Qwen 3.5 via Ollama) with tool-calling against the MCP server or REST API
 
 **All code is written by me (and Claude) in my own time and has no affiliation with my employer or colleagues.**
 

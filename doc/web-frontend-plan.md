@@ -416,7 +416,7 @@ GET /auth/login
   ▼
 302 → https://travel-mcp-oauth.workers.dev/authorize
         ?client_id=<dynamic_client_id>
-        &redirect_uri=https://mcp.arjanvandermeer.com/auth/callback
+        &redirect_uri=https://travel.arjanvandermeer.com/auth/callback
         &response_type=code
         &code_challenge=<sha256_hash>
         &code_challenge_method=S256
@@ -754,7 +754,7 @@ The existing Docker container runs `index-http.js`. The `web/` directory is incl
 
 These were open questions during planning. All have been resolved through implementation:
 
-1. **Domain**: Website lives at `mcp.arjanvandermeer.com/` (same as MCP). The root URL serves the SPA; `/mcp` continues to serve the MCP protocol. No separate subdomain needed.
+1. **Domain**: Website lives at `travel.arjanvandermeer.com/` (same as MCP). The root URL serves the SPA; `/mcp` continues to serve the MCP protocol. No separate subdomain needed.
 2. **POI detail**: **iframe** approach was chosen. The `#/poi/:osm_id` page loads `/preview/poi/:osm_id` in an iframe, reusing all existing Handlebars template logic without duplication.
 3. **Alpine.js vs htmx**: **Alpine.js** was chosen. All frontend state management uses Alpine stores (`auth`, `search`, `route`, `favorites`). Components are inline via Alpine directives in `index.html`.
 4. **Search results enrichment**: Search results show **only what's already in the DB** — no on-demand Google Places enrichment. This keeps the API fast and avoids API costs for browsing.

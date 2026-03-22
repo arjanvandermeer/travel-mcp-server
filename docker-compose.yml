@@ -38,3 +38,5 @@ services:
 
 volumes:
   pgdata:
+    external: true
+    name: hotel-mcp-server_pgdata

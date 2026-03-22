@@ -723,7 +723,7 @@ export const toolsConfig = baseToolsConfig;
  *
  * The ui:// protocol resources include the server host in the URI:
  *   ui://{host}/poi/{osm_id}
- *   Example: ui://mcp.arjanvandermeer.com/poi/1313852747
+ *   Example: ui://travel.arjanvandermeer.com/poi/1313852747
  *
  * This allows MCP clients to:
  * 1. Recognize these as displayable content (not raw data)
@@ -732,7 +732,7 @@ export const toolsConfig = baseToolsConfig;
 
 /**
  * Get resources configuration with dynamic widget domain
- * @param {string} widgetDomain - Full URL from server_base_url config (e.g., "https://mcp.arjanvandermeer.com")
+ * @param {string} widgetDomain - Full URL from server_base_url config (e.g., "https://travel.arjanvandermeer.com")
  * @returns {object} - MCP resources configuration
  */
 export function getResourcesConfig(widgetDomain) {
@@ -1590,7 +1590,7 @@ export async function handleReadResource(uri, db, render) {
   }
 
   // POI detail page by ID: ui://{host}/poi/{osm_id}
-  // Format: ui://mcp.arjanvandermeer.com/poi/1313852747
+  // Format: ui://travel.arjanvandermeer.com/poi/1313852747
   // Used when user clicks a search result - the host part is dynamic
   const poiMatch = uri.match(/^ui:\/\/[^/]+\/poi\/(\d+)$/);
   if (poiMatch) {

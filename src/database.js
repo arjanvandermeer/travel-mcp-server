@@ -36,14 +36,14 @@ function removeNullFields(obj) {
  *
  * 1. resource_uri (ui:// protocol) - MCP resource identifier
  *    Format: ui://{host}/poi/{osm_id}
- *    Example: ui://mcp.arjanvandermeer.com/poi/1313852747
+ *    Example: ui://travel.arjanvandermeer.com/poi/1313852747
  *    Purpose: MCP clients can request this URI to get the rich POI detail page
  *    via the ReadResource method. The ui:// protocol indicates this is a
  *    user-interface resource (rendered HTML for display).
  *
  * 2. preview_url (https:// protocol) - Direct browser link
  *    Format: {baseUrl}/preview/poi/{osm_id}
- *    Example: https://mcp.arjanvandermeer.com/preview/poi/1313852747
+ *    Example: https://travel.arjanvandermeer.com/preview/poi/1313852747
  *    Purpose: Direct HTTP URL that users can click to open the POI preview
  *    in their browser. Served by the HTTP server's /preview endpoint.
  *
