@@ -144,6 +144,10 @@ async function main() {
     client.release();
 
     // Determine which tables to optimize
+    if (options.table && !TABLES_TO_OPTIMIZE.includes(options.table)) {
+      console.error(`Error: Unknown table '${options.table}'. Allowed tables: ${TABLES_TO_OPTIMIZE.join(', ')}`);
+      process.exit(1);
+    }
     const tables = options.table
       ? [options.table]
       : TABLES_TO_OPTIMIZE;

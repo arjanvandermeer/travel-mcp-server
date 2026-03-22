@@ -291,20 +291,25 @@ export class TravelDatabase {
       sendDev: process.env.SENTRY_SEND_DEV === 'true',
     };
 
-    // Try to get database config
+    // Try to get database config (single query instead of 5 separate ones)
     try {
-      const dbSentryDsn = await this.getConfig('sentry_dsn');
-      const dbEnabled = await this.getConfig('telemetry_enabled');
-      const dbSampleRate = await this.getConfig('telemetry_sample_rate');
-      const dbEnvironment = await this.getConfig('telemetry_environment');
-      const dbSendDev = await this.getConfig('sentry_send_dev');
+      const result = await this.pool.query(
+        `SELECT key, value FROM app_config WHERE key IN ('sentry_dsn', 'telemetry_enabled', 'telemetry_sample_rate', 'telemetry_environment', 'sentry_send_dev')`
+      );
+      const dbConfig = new Map(result.rows.map(r => [r.key, r.value]));
 
       // Override with database values if present
+      const dbSentryDsn = dbConfig.get('sentry_dsn');
+      const dbEnabled = dbConfig.get('telemetry_enabled');
+      const dbSampleRate = dbConfig.get('telemetry_sample_rate');
+      const dbEnvironment = dbConfig.get('telemetry_environment');
+      const dbSendDev = dbConfig.get('sentry_send_dev');
+
       if (dbSentryDsn) config.sentryDsn = dbSentryDsn;
-      if (dbEnabled !== null) config.enabled = dbEnabled !== 'false';
+      if (dbEnabled !== undefined) config.enabled = dbEnabled !== 'false';
       if (dbSampleRate) config.sampleRate = parseFloat(dbSampleRate);
       if (dbEnvironment) config.environment = dbEnvironment;
-      if (dbSendDev !== null) config.sendDev = dbSendDev === 'true';
+      if (dbSendDev !== undefined) config.sendDev = dbSendDev === 'true';
     } catch (_error) {
       // Database config is optional, continue with env vars
     }
@@ -539,9 +544,10 @@ export class TravelDatabase {
       poiType = null,
       poiTypes = null,  // New: array of types
       name = null,
-      limit = 50,
+      limit: rawLimit = 50,
       userId = null,    // For including favorite status in results
     } = params;
+    const limit = Math.min(rawLimit, 100);
 
     // Debug logging
     const typeDesc = poiTypes ? poiTypes.join(',') : poiType || 'all';
@@ -745,7 +751,8 @@ export class TravelDatabase {
     });
   }
 
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, limit = 50, userId = null, excludeOsmIds = null) {
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = 50, userId = null, excludeOsmIds = null) {
+    const limit = Math.min(rawLimit, 100);
     // Debug logging
     const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
     console.error(`[searchPOIsNearCoordinates] lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, types=${typeDesc}, limit=${limit}`);
@@ -1463,10 +1470,10 @@ export class TravelDatabase {
     // Limit to top results to control API costs
     const idsToEnrich = osmIds.slice(0, 10);
 
-    // Enrich in background (fire-and-forget)
+    // Enrich in batches to control concurrency
     for (let i = 0; i < idsToEnrich.length; i += maxConcurrent) {
       const batch = idsToEnrich.slice(i, i + maxConcurrent);
-      Promise.all(batch.map(osmId => this.enrichOSMPOI(osmId).catch(err => {
+      await Promise.all(batch.map(osmId => this.enrichOSMPOI(osmId).catch(err => {
         console.error(`Background enrichment error for OSM ${osmId}:`, err.message);
         telemetry.captureException(err, { context: 'batch_enrichment', osmId });
       })));
@@ -1484,20 +1491,18 @@ export class TravelDatabase {
       sourceDate = null,
       regionName = null,
       metadata = null,
-      sourceType = 'osm'
     } = options;
 
     const result = await this.pool.query(`
-      INSERT INTO imports (
+      INSERT INTO import_log (
         import_type,
         source_file,
         source_url,
         source_date,
         region_name,
         metadata,
-        source_type,
         status
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'running')
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'running')
       RETURNING id
     `, [
       importType,
@@ -1506,7 +1511,6 @@ export class TravelDatabase {
       sourceDate,
       regionName,
       metadata ? JSON.stringify(metadata) : null,
-      sourceType
     ]);
 
     return result.rows[0].id;
@@ -1514,7 +1518,7 @@ export class TravelDatabase {
 
   async completeImport(importId, recordsImported) {
     await this.pool.query(`
-      UPDATE imports
+      UPDATE import_log
       SET status = 'completed',
           completed_at = CURRENT_TIMESTAMP,
           records_imported = $2
@@ -1524,7 +1528,7 @@ export class TravelDatabase {
 
   async failImport(importId, errorMessage) {
     await this.pool.query(`
-      UPDATE imports
+      UPDATE import_log
       SET status = 'failed',
           completed_at = CURRENT_TIMESTAMP,
           error_message = $2
@@ -1540,7 +1544,6 @@ export class TravelDatabase {
         source_file,
         source_url,
         source_date,
-        source_type,
         region_name,
         started_at,
         completed_at,
@@ -1548,10 +1551,10 @@ export class TravelDatabase {
         records_imported,
         error_message,
         metadata
-      FROM imports
+      FROM import_log
       ORDER BY started_at DESC
       LIMIT $1
-    `, [limit]);
+    `, [Math.min(limit, 100)]);
 
     return result.rows;
   }
@@ -1569,7 +1572,7 @@ export class TravelDatabase {
       this.pool.query('SELECT COUNT(*) FROM regions'),
       this.pool.query(`SELECT poi_type, COUNT(*) as count FROM osm_pois GROUP BY poi_type ORDER BY count DESC`),
       this.pool.query(`SELECT c.country_code, COUNT(*) as count FROM osm_pois p JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id GROUP BY c.country_code ORDER BY count DESC`),
-      this.pool.query(`SELECT import_type, region_name, source_file, completed_at, records_imported FROM imports WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 10`),
+      this.pool.query(`SELECT import_type, region_name, source_file, completed_at, records_imported FROM import_log WHERE status = 'completed' ORDER BY completed_at DESC LIMIT 10`),
       this.pool.query(`SELECT COUNT(*) as total_enriched FROM osm_google_mappings WHERE google_place_id IS NOT NULL AND mapping_status = 'active'`),
       this.pool.query(`SELECT mapping_status, COUNT(*) as count FROM osm_google_mappings GROUP BY mapping_status`),
     ]);
@@ -1762,6 +1765,7 @@ export class TravelDatabase {
       FROM user_tokens
       WHERE user_id = $1
       ORDER BY created_at DESC
+      LIMIT 100
     `, [userId]);
 
     return result.rows;
@@ -2048,6 +2052,14 @@ export class TravelDatabase {
       hotels,
     };
 
+    // Evict expired entries and cap cache size
+    for (const [key, val] of this._homepageCache) {
+      if (val.expiry <= now) this._homepageCache.delete(key);
+    }
+    if (this._homepageCache.size >= 50) {
+      const oldest = [...this._homepageCache.entries()].sort((a, b) => a[1].expiry - b[1].expiry)[0];
+      if (oldest) this._homepageCache.delete(oldest[0]);
+    }
     this._homepageCache.set(country.code, { data: payload, expiry: now + 15 * 60 * 1000 });
 
     if (userId) {

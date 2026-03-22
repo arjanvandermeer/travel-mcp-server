@@ -203,7 +203,7 @@ describe('TravelDatabase with Mock Pool', () => {
         { country_code: 'TH', count: '8000' },
         { country_code: 'FR', count: '6000' },
       ]));
-      mockPool.setResponse('FROM imports', emptyResult());
+      mockPool.setResponse('FROM import_log', emptyResult());
       mockPool.setResponse('FROM osm_google_mappings', dbResult([{ total_enriched: '1000' }]));
       mockPool.setResponse('GROUP BY mapping_status', dbResult([
         { mapping_status: 'active', count: '1000' },
@@ -221,8 +221,8 @@ describe('TravelDatabase with Mock Pool', () => {
 
   describe('startImport / completeImport / failImport', () => {
     it('should create and complete an import record', async () => {
-      mockPool.setResponse('INSERT INTO imports', dbResult([{ id: 123 }]));
-      mockPool.setResponse('UPDATE imports', insertResult(1));
+      mockPool.setResponse('INSERT INTO import_log', dbResult([{ id: 123 }]));
+      mockPool.setResponse('UPDATE import_log', insertResult(1));
 
       db = new TravelDatabase({ pool: mockPool });
 
@@ -233,12 +233,12 @@ describe('TravelDatabase with Mock Pool', () => {
       assert.strictEqual(importId, 123);
 
       await db.completeImport(importId, 5000);
-      assert.ok(mockPool.wasCalled('UPDATE imports'));
+      assert.ok(mockPool.wasCalled('UPDATE import_log'));
     });
 
     it('should record failed import', async () => {
-      mockPool.setResponse('INSERT INTO imports', dbResult([{ id: 456 }]));
-      mockPool.setResponse('UPDATE imports', insertResult(1));
+      mockPool.setResponse('INSERT INTO import_log', dbResult([{ id: 456 }]));
+      mockPool.setResponse('UPDATE import_log', insertResult(1));
 
       db = new TravelDatabase({ pool: mockPool });
 
@@ -246,7 +246,7 @@ describe('TravelDatabase with Mock Pool', () => {
       await db.failImport(importId, 'Network error');
 
       const lastCall = mockPool.getLastCall();
-      assert.ok(lastCall.sql.includes('UPDATE imports'));
+      assert.ok(lastCall.sql.includes('UPDATE import_log'));
     });
   });
 
@@ -269,7 +269,7 @@ describe('TravelDatabase with Mock Pool', () => {
         },
       ];
 
-      mockPool.setResponse('FROM imports', dbResult(mockImports));
+      mockPool.setResponse('FROM import_log', dbResult(mockImports));
 
       db = new TravelDatabase({ pool: mockPool });
       const history = await db.getImportHistory(20);

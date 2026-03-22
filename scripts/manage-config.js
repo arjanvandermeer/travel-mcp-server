@@ -9,7 +9,7 @@
  *   node manage-config.js list
  */
 
-import { TravelDatabase } from './src/database.js';
+import { TravelDatabase } from '../src/database.js';
 
 async function main() {
   const args = process.argv.slice(2);
@@ -35,7 +35,7 @@ async function main() {
     if (command === 'list') {
       const result = await db.pool.query(`
         SELECT key, value, description, updated_at
-        FROM config
+        FROM app_config
         ORDER BY key
       `);
 

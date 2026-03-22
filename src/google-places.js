@@ -26,9 +26,9 @@ export class GooglePlacesClient {
 
     if (!this.enabled) {
       if (!enabled) {
-        console.warn('⚠️  Google Places API is disabled via google_places_enabled config');
+        console.error('⚠️  Google Places API is disabled via google_places_enabled config');
       } else {
-        console.warn('⚠️  Google Places API key not configured');
+        console.error('⚠️  Google Places API key not configured');
       }
     }
   }

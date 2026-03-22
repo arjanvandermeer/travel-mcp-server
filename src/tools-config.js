@@ -255,7 +255,7 @@ This approach ensures accurate results by first resolving the landmark location,
             role: 'user',
             content: {
               type: 'text',
-              text: `Unknown prompt: ${name}. Available prompts: find_hotels_in_city, find_restaurants_nearby, find_attractions, explore_area`,
+              text: `Unknown prompt: ${name}. Available prompts: find_hotels_in_city, find_restaurants_nearby, find_attractions, explore_area, find_near_landmark`,
             },
           },
         ],
@@ -708,9 +708,6 @@ export function getToolsConfig(widgetDomain) {
     return tool;
   });
 }
-
-// For backwards compatibility, export static config (used by executeToolHandler)
-export const toolsConfig = baseToolsConfig;
 
 // Resource definitions
 /**
@@ -1182,12 +1179,6 @@ export async function executeToolHandler(name, args, db, options = {}) {
   }
 }
 
-/**
- * Render POI details HTML (shared logic for all POI rendering)
- * @param {object} poi - POI object from database
- * @param {function} render - Template render function
- * @returns {string} - Rendered HTML
- */
 /**
  * Determine if a POI is currently open based on Google Places opening hours periods
  * and the venue's UTC offset.

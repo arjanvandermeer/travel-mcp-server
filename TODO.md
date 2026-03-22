@@ -3,9 +3,8 @@
 ## High Priority
 
 ### CRITICAL: Fix Unhandled Promise in Background Enrichment
-- [ ] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` at database.js:719
-- [ ] Change to `await Promise.allSettled(enrichmentPromises)` to track errors
-- [ ] Add error logging for failed enrichments
+- [x] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` — added `await`
+- [x] Error logging was already in place via `.catch()` handler
 
 ### Fix Google Places Matching Algorithm
 - [ ] Improve name matching (Thai/non-Latin names mismatch, abbreviations, word order)
@@ -17,7 +16,8 @@
 - [ ] Add to CI pipeline (`.github/workflows/ci.yml`)
 
 ### Security: SQL Injection Audit
-- [ ] Audit all queries in `database.js` for proper parameterization
+- [x] Audit all queries in `database.js` for proper parameterization — all safe
+- [x] Fixed SQL injection in `optimize-db.js` — validate table names against allowlist
 - [ ] Review dynamic query building in `unifiedSearchPOIs()`, `searchCities()`
 
 ### OAuth 2.1 — Remaining Items
@@ -59,10 +59,13 @@
 
 ## Quick Wins
 
-- [ ] Fix Promise.all() await issue (5 min)
+- [x] Fix Promise.all() await issue
 - [ ] Extract constants to `src/config.js` (15 min)
 - [ ] Add input validation for coordinates and limits (20 min)
 - [ ] Replace `url.parse()` (10 min)
+
+### Frontend Website Redesign
+- [ ] Redesign the entire frontend website (web/)
 
 ## Ideas / Future Exploration
 

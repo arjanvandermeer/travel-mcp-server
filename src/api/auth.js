@@ -82,7 +82,11 @@ export function registerAuthRoutes(router) {
       const { verifier, challenge } = generatePKCE();
       const state = crypto.randomBytes(16).toString('hex');
 
-      // Store PKCE verifier for the callback
+      // Store PKCE verifier for the callback (cap size to prevent memory abuse)
+      if (pendingAuth.size >= 10000) {
+        sendJson(res, 503, { error: 'Too many pending login requests, try again later' });
+        return;
+      }
       pendingAuth.set(state, { verifier, createdAt: Date.now() });
 
       const serverBaseUrl = await db.getServerBaseUrl() || `http://localhost:${process.env.PORT || 3000}`;

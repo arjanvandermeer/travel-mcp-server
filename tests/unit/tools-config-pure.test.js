@@ -10,7 +10,6 @@ import {
   getToolsConfig,
   getResourcesConfig,
   buildSearchResponse,
-  toolsConfig,
 } from '../../src/tools-config.js';
 
 // =============================================================================

@@ -39,17 +39,25 @@ import { registerHomepageRoutes } from './api/homepage.js';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Obfuscate email for logging — masks the local part before @.
- * "arjanvdm@gmail.com" → "a******m@gmail.com"
+ * Obfuscate email for logging and telemetry — shows first+last of local part,
+ * first two + last two of domain.
+ * "arjanvdm@gmail.com" → "a...m@gm...om"
  */
 function obfuscateEmail(email) {
   if (!email || !email.includes('@')) return email;
   const [local, domain] = email.split('@');
-  if (local.length <= 2) return `${local[0]}*@${domain}`;
-  return `${local[0]}${'*'.repeat(local.length - 2)}${local[local.length - 1]}@${domain}`;
+  const localObf = local.length <= 2 ? `${local[0]}*` : `${local[0]}...${local[local.length - 1]}`;
+  const domainObf = domain.length <= 4 ? domain : `${domain.slice(0, 2)}...${domain.slice(-2)}`;
+  return `${localObf}@${domainObf}`;
 }
 
-const db = new TravelDatabase();
+let db;
+try {
+  db = new TravelDatabase();
+} catch (err) {
+  console.error('Failed to initialize database:', err.message);
+  process.exit(1);
+}
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
 
 // Store active sessions: sessionId -> { server, transport, user }
@@ -100,13 +108,12 @@ async function getUserFromRequest(req) {
       // Telemetry: successful DB auth
       telemetry.incrementCounter('auth.success', 1, { method: 'database' });
       telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'database', status: 'success' }, unit: 'millisecond' });
-      telemetry.setUser({ id: dbUser.id.toString(), email: dbUser.email, username: dbUser.name });
+      telemetry.setUser({ id: dbUser.id.toString(), email: obfuscateEmail(dbUser.email), username: dbUser.name });
       telemetry.setTag('user.id', dbUser.id.toString());
       telemetry.setTag('auth.method', 'database');
       telemetry.captureMessage(`Auth success: user ${dbUser.id}`, 'info', {
         method: 'database',
         userId: dbUser.id,
-        email: dbUser.email,
         duration: authDuration,
       });
 
@@ -148,14 +155,13 @@ async function getUserFromRequest(req) {
           // Telemetry: successful OAuth auth
           telemetry.incrementCounter('auth.success', 1, { method: 'oauth' });
           telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'oauth', status: 'success' }, unit: 'millisecond' });
-          telemetry.setUser({ id: user.id.toString(), email: user.email, username: user.name });
+          telemetry.setUser({ id: user.id.toString(), email: obfuscateEmail(user.email), username: user.name });
           telemetry.setTag('user.id', user.id.toString());
           telemetry.setTag('auth.method', 'oauth');
           telemetry.setTag('user.oauth', 'true');
           telemetry.captureMessage(`Auth success: user ${user.id}`, 'info', {
             method: 'oauth',
             userId: user.id,
-            email: user.email,
             duration: authDuration,
             introspectDuration,
           });
@@ -245,10 +251,6 @@ async function getUserFromRequest(req) {
   }
 }
 
-/**
- * Create a new MCP Server instance with all handlers configured
- * @param {object|null} user - Authenticated user or null for anonymous
- */
 /**
  * Create MCP server with mutable user reference
  * @param {Object} userRef - Object with 'current' property holding the user (can be updated mid-session)
@@ -430,7 +432,7 @@ async function main() {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         resource: serverBaseUrl,
-        authorization_servers: [process.env.OAUTH_ISSUER || 'https://travel-mcp-oauth.cloudflare-com-91b.workers.dev'],
+        authorization_servers: [await db.getConfigCached('oauth_issuer') || process.env.OAUTH_ISSUER],
         scopes_supported: ['openid', 'profile', 'email'],
         bearer_methods_supported: ['header'],
       }));
@@ -591,6 +593,7 @@ async function main() {
         if (sessionId && sessions.has(sessionId)) {
           // Existing session - check if auth has changed
           const session = sessions.get(sessionId);
+          session.lastAccessedAt = Date.now();
           const newUser = await getUserFromRequest(req);
 
           // Update user if authentication changed (anonymous -> authenticated or different user)
@@ -626,7 +629,7 @@ async function main() {
           await server.connect(transport);
 
           // Store session with mutable user reference
-          sessions.set(newSessionId, { server, transport, createdAt: Date.now(), userRef });
+          sessions.set(newSessionId, { server, transport, createdAt: Date.now(), lastAccessedAt: Date.now(), userRef });
 
           if (sessionId) {
             console.error(`Session expired, created new: ${newSessionId} (total: ${sessions.size})${user ? ` [${obfuscateEmail(user.email)}]` : ''}`);
@@ -684,7 +687,7 @@ async function main() {
     const now = Date.now();
     let expiredCount = 0;
     for (const [sessionId, session] of sessions) {
-      if (now - session.createdAt > maxAge) {
+      if (now - (session.lastAccessedAt || session.createdAt) > maxAge) {
         const wasAuthenticated = !!session.userRef?.current;
         sessions.delete(sessionId);
         expiredCount++;
