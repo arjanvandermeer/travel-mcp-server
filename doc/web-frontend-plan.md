@@ -742,11 +742,9 @@ node src/index-http.js
 # MCP still works at http://localhost:3000/mcp
 ```
 
-### Production (ECS Fargate)
+### Production (EC2)
 
-The existing Docker container runs `index-http.js`. The `web/` directory is included in the Docker image via `COPY . .`. No additional infrastructure was needed — static files, API endpoints, and MCP protocol all run in the same process.
-
-**Future optimization**: Serve `web/` from CloudFront/S3 instead of Node.js for better caching and performance. The API and MCP endpoints stay on ECS.
+The Node.js server runs directly on an EC2 t3.small instance via systemd. The `web/` directory is served by `index-http.js`. Static files, API endpoints, and MCP protocol all run in the same process. SSL is handled by Cloudflare proxy.
 
 ---
 

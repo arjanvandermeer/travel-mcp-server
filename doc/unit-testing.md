@@ -105,8 +105,8 @@ We're implementing unit testing with dependency injection across the codebase. T
 
 ### Phase 7: CI Integration ✅ COMPLETE
 
-- [x] Add test step to `.github/workflows/deploy.yml`
-- [x] Configure test to block deploy on failure
+- [x] Add test step to `.github/workflows/ci.yml`
+- [x] Configure test to block merge on failure
 
 ### Phase 8: Coverage Improvement (Future)
 
@@ -257,14 +257,14 @@ This outputs a coverage summary showing:
 
 Coverage reports are generated to stdout. For CI integration, the coverage data can be parsed from the output.
 
-## CI/CD Integration
+## CI Integration
 
-Tests are integrated into `.github/workflows/deploy.yml`:
+Tests are integrated into `.github/workflows/ci.yml`:
 
 1. **Setup**: Node.js 24 with npm cache
 2. **Install**: `npm ci` for reproducible installs
-3. **Test**: `npm run test:unit` runs before Docker build
-4. **Block**: Failed tests prevent deployment
+3. **Test**: `npm test` runs on PRs and pushes to main
+4. **Block**: Failed tests prevent merge
 
 To add coverage reporting to CI, add this step after tests:
 ```yaml

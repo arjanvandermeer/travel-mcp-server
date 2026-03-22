@@ -117,7 +117,7 @@ Algorithm improvements still needed:
   - Base64-encoded secrets
 - [ ] Block the commit if any match is found (with clear error message)
 - [ ] Allow exceptions via `.credential-check-ignore` file for false positives
-- [ ] Add to CI pipeline as well (`.github/workflows/deploy.yml`)
+- [ ] Add to CI pipeline as well (`.github/workflows/ci.yml`)
 
 **Rationale**: The codebase had hardcoded DB credentials and Google API keys embedded in photo URLs that made it to production. A pre-commit hook prevents this from happening again.
 

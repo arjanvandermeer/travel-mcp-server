@@ -1,0 +1,22 @@
+name: Deploy to EC2
+
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/travel-mcp-server
+            git pull
+            npm ci --production
+            sudo systemctl restart travel-mcp-server
+            sleep 3
+            curl -sf http://localhost:3000/health || (echo "Health check failed!" && exit 1)
