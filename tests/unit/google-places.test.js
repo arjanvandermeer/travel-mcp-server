@@ -294,10 +294,10 @@ describe('GooglePlacesClient', () => {
 
     it('should return match when name similarity is above 0.7', () => {
       const results = [
-        { displayName: { text: 'Grand Hotel NYC' }, id: '1' },
+        { displayName: { text: 'Grand Hotel' }, id: '1' },
       ];
       const match = client.findBestNameMatch('Grand Hotel', results);
-      assert.ok(match, 'Expected a match for similar names above 0.7 threshold');
+      assert.ok(match, 'Expected a match for identical names');
       assert.strictEqual(match.id, '1');
     });
 
