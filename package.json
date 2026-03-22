@@ -29,7 +29,7 @@
     "lint:fix": "eslint src/ --fix",
     "agent": "node slm/ollama-agent.js",
     "test:agent": "node slm/test-ollama-agent.js",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "keywords": [
     "mcp",
