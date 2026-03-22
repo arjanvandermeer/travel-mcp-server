@@ -1,0 +1,53 @@
+npm test
+
+# Credential detection scan on staged files
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM | grep -v '\.md$' | grep -v 'package-lock\.json' | grep -v 'node_modules/')
+
+if [ -z "$STAGED_FILES" ]; then
+  exit 0
+fi
+
+FOUND=0
+
+for FILE in $STAGED_FILES; do
+  # Get staged content only
+  CONTENT=$(git show ":$FILE" 2>/dev/null) || continue
+
+  # AWS access keys
+  echo "$CONTENT" | grep -inE 'AKIA[0-9A-Z]{16}' | while IFS= read -r LINE; do
+    echo "CREDENTIAL DETECTED in $FILE: $LINE"
+    echo 1 > /tmp/.precommit_cred_found
+  done
+
+  # Hardcoded passwords (skip <placeholder> format)
+  echo "$CONTENT" | grep -inE 'password\s*[:=]\s*['"'"'"][^'"'"'"]+['"'"'"]' | grep -iv '<[a-z-]*>' | while IFS= read -r LINE; do
+    echo "CREDENTIAL DETECTED in $FILE: $LINE"
+    echo 1 > /tmp/.precommit_cred_found
+  done
+
+  # API keys (skip <placeholder> format)
+  echo "$CONTENT" | grep -inE 'api[_-]?key\s*[:=]\s*['"'"'"][^'"'"'"]+['"'"'"]' | grep -iv '<[a-z-]*>' | while IFS= read -r LINE; do
+    echo "CREDENTIAL DETECTED in $FILE: $LINE"
+    echo 1 > /tmp/.precommit_cred_found
+  done
+
+  # Bearer tokens
+  echo "$CONTENT" | grep -inE 'bearer\s+[a-zA-Z0-9._-]{20,}' | while IFS= read -r LINE; do
+    echo "CREDENTIAL DETECTED in $FILE: $LINE"
+    echo 1 > /tmp/.precommit_cred_found
+  done
+
+  # Private keys
+  echo "$CONTENT" | grep -inE '-----BEGIN (RSA |EC )?PRIVATE KEY-----' | while IFS= read -r LINE; do
+    echo "CREDENTIAL DETECTED in $FILE: $LINE"
+    echo 1 > /tmp/.precommit_cred_found
+  done
+done
+
+if [ -f /tmp/.precommit_cred_found ]; then
+  rm -f /tmp/.precommit_cred_found
+  echo ""
+  echo "Commit BLOCKED: credentials detected in staged files."
+  echo "Use <placeholder-name> format for non-real values."
+  exit 1
+fi

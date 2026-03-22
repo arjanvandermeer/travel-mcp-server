@@ -23,12 +23,28 @@ import { fileURLToPath } from 'url';
 // Debug logging - writes to file since stdio is used for MCP protocol
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOG_FILE = path.join(__dirname, '..', 'mcp-debug.log');
+const LOG_FILE_ROTATED = LOG_FILE + '.1';
+const LOG_MAX_BYTES = 10 * 1024 * 1024; // 10 MB
+
+function rotateLogIfNeeded() {
+  try {
+    const stats = fs.statSync(LOG_FILE);
+    if (stats.size >= LOG_MAX_BYTES) {
+      fs.renameSync(LOG_FILE, LOG_FILE_ROTATED);
+    }
+  } catch (err) {
+    if (err.code !== 'ENOENT') throw err;
+  }
+}
 
 function log(level, message, data = null) {
   const timestamp = new Date().toISOString();
   const logLine = data
     ? `[${timestamp}] [${level}] ${message}: ${JSON.stringify(data)}`
     : `[${timestamp}] [${level}] ${message}`;
+
+  // Rotate if over 10 MB
+  rotateLogIfNeeded();
 
   // Write to log file
   fs.appendFileSync(LOG_FILE, logLine + '\n');

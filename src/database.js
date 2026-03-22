@@ -2,6 +2,7 @@ import pg from 'pg';
 import { GooglePlacesClient } from './google-places.js';
 import * as telemetry from './telemetry.js';
 import dotenv from 'dotenv';
+import { CONFIG_CACHE_TTL_MS, DB_STATEMENT_TIMEOUT_MS, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, HOMEPAGE_CACHE_MAX_SIZE, HOMEPAGE_CACHE_TTL_MS, COUNTRIES_CACHE_TTL_MS, EARTH_RADIUS_METERS, GOOGLE_PLACES_DAILY_LIMIT_DEFAULT } from './config.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
@@ -84,7 +85,7 @@ function addResourceUris(pois, baseUrl) {
 
 export class TravelDatabase {
   // Config cache TTL in milliseconds (5 minutes)
-  static CONFIG_CACHE_TTL = 5 * 60 * 1000;
+  static CONFIG_CACHE_TTL = CONFIG_CACHE_TTL_MS;
 
   /**
    * Create a TravelDatabase instance
@@ -95,7 +96,7 @@ export class TravelDatabase {
     // Allow pool injection for testing, otherwise create default pool
     this.pool = options.pool || new pg.Pool({
       connectionString: CONNECTION_STRING,
-      statement_timeout: 30000, // Kill queries after 30s (before Cloudflare's 60s timeout)
+      statement_timeout: DB_STATEMENT_TIMEOUT_MS, // Kill queries before Cloudflare's 60s timeout
     });
     this.googlePlaces = null; // Initialize later with config
     this.googlePlacesReady = this.initGooglePlaces(); // Store promise
@@ -340,6 +341,18 @@ export class TravelDatabase {
   // City Search
   // =========================================================================
 
+  /**
+   * Search for cities by name, country, and/or proximity to coordinates.
+   * @param {Object} options - Search parameters
+   * @param {string|null} options.query - City name search query
+   * @param {string|null} options.countryCode - ISO country code filter
+   * @param {string|null} options.state - State/province filter
+   * @param {number|null} options.latitude - Center latitude for proximity search
+   * @param {number|null} options.longitude - Center longitude for proximity search
+   * @param {number} options.radiusKm - Search radius in km (default 50)
+   * @param {number} options.limit - Max results to return (default 10)
+   * @returns {Promise<Array<Object>>} Array of city objects with geoname_id, name, country_code, coordinates, and distance
+   */
   async searchCities(options) {
     const {
       query = null,
@@ -391,7 +404,7 @@ export class TravelDatabase {
 
     // Add query filter if provided
     if (hasQuery) {
-      queryText += ` AND (c.name ILIKE $${params.length + 1} OR c.ascii_name ILIKE $${params.length + 1})`;
+      queryText += ` AND (c.name ILIKE $${params.length + 1} OR c.ascii_name ILIKE $${params.length + 1} OR c.alternate_names ILIKE $${params.length + 1})`;
       params.push(`%${query.replace(/[%_\\]/g, '\\$&')}%`);
     }
 
@@ -420,7 +433,7 @@ export class TravelDatabase {
     } else {
       queryText += ` ORDER BY c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
     }
-    params.push(Math.min(limit, 100));
+    params.push(Math.min(limit, SEARCH_LIMIT_MAX));
 
     const result = await this.pool.query(queryText, params);
     return removeNullFields(result.rows);
@@ -533,6 +546,22 @@ export class TravelDatabase {
   //
   // =========================================================================
 
+  /**
+   * Search for POIs by name, city, coordinates, and/or type filters.
+   * @param {Object} params - Search parameters
+   * @param {string|null} params.cityName - City name to search within
+   * @param {string|null} params.countryCode - ISO country code filter
+   * @param {string|null} params.state - State/province filter
+   * @param {number|null} params.latitude - Center latitude for coordinate-based search
+   * @param {number|null} params.longitude - Center longitude for coordinate-based search
+   * @param {number|null} params.radius - Search radius in km
+   * @param {string|null} params.poiType - Single POI type filter
+   * @param {string[]|null} params.poiTypes - Array of POI type filters
+   * @param {string|null} params.name - POI name search query
+   * @param {number} params.limit - Max results (default SEARCH_LIMIT_DEFAULT, capped at SEARCH_LIMIT_MAX)
+   * @param {string|null} params.userId - User ID for including favorite status
+   * @returns {Promise<Array<Object>>} Array of POI objects with osm_id, name, coordinates, city, type, and optional favorite status
+   */
   async searchPOIs(params) {
     const {
       cityName = null,
@@ -544,10 +573,10 @@ export class TravelDatabase {
       poiType = null,
       poiTypes = null,  // New: array of types
       name = null,
-      limit: rawLimit = 50,
+      limit: rawLimit = SEARCH_LIMIT_DEFAULT,
       userId = null,    // For including favorite status in results
     } = params;
-    const limit = Math.min(rawLimit, 100);
+    const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
 
     // Debug logging
     const typeDesc = poiTypes ? poiTypes.join(',') : poiType || 'all';
@@ -751,8 +780,19 @@ export class TravelDatabase {
     });
   }
 
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = 50, userId = null, excludeOsmIds = null) {
-    const limit = Math.min(rawLimit, 100);
+  /**
+   * Search for POIs within a radius of given coordinates.
+   * @param {number} latitude - Center latitude
+   * @param {number} longitude - Center longitude
+   * @param {number} radiusKm - Search radius in kilometers
+   * @param {string|string[]|null} typeFilter - POI type(s) to filter by
+   * @param {number} rawLimit - Max results (capped at SEARCH_LIMIT_MAX)
+   * @param {string|null} userId - User ID for including favorite status
+   * @param {string[]|null} excludeOsmIds - OSM IDs to exclude from results
+   * @returns {Promise<Array<Object>>} Array of POI objects with distance_km included
+   */
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null) {
+    const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
     // Debug logging
     const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
     console.error(`[searchPOIsNearCoordinates] lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, types=${typeDesc}, limit=${limit}`);
@@ -827,6 +867,13 @@ export class TravelDatabase {
   // POI Details
   // =========================================================================
 
+  /**
+   * Get full details for a POI by OSM ID or Google Place ID, with enrichment status.
+   * @param {string|null} osmId - OpenStreetMap POI ID
+   * @param {string|null} googlePlaceId - Google Places ID
+   * @param {string|null} userId - User ID for including favorite status
+   * @returns {Promise<Object|null>} POI detail object with enrichment metadata, or null if not found
+   */
   async getPOIDetails(osmId = null, googlePlaceId = null, userId = null) {
     // Debug logging
     console.error(`[getPOIDetails] osmId=${osmId}, googlePlaceId=${googlePlaceId}, userId=${userId}`);
@@ -973,7 +1020,7 @@ export class TravelDatabase {
   // =========================================================================
 
   // Default daily limit (can be overridden in app_config with key 'google_api_daily_limit')
-  static DEFAULT_GOOGLE_API_DAILY_LIMIT = 100;
+  static DEFAULT_GOOGLE_API_DAILY_LIMIT = GOOGLE_PLACES_DAILY_LIMIT_DEFAULT;
 
   /**
    * Get today's date as YYYY-MM-DD string (UTC)
@@ -983,6 +1030,57 @@ export class TravelDatabase {
   }
 
   /**
+   * Atomically consume one unit of Google API quota for today.
+   * Uses INSERT...ON CONFLICT with a WHERE clause to avoid TOCTOU race conditions.
+   *
+   * @returns {Promise<{allowed: boolean, current: number, limit: number, remaining: number}>}
+   */
+  async consumeGoogleApiQuota() {
+    const dateKey = this.getTodayDateKey();
+    const limit = parseInt(await this.getConfigCached('google_api_daily_limit', String(TravelDatabase.DEFAULT_GOOGLE_API_DAILY_LIMIT)));
+
+    try {
+      const result = await this.pool.query(`
+        INSERT INTO google_api_usage (date_key, call_count, updated_at)
+        VALUES ($1, 1, CURRENT_TIMESTAMP)
+        ON CONFLICT (date_key) DO UPDATE SET
+          call_count = google_api_usage.call_count + 1,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE google_api_usage.call_count < $2
+        RETURNING call_count
+      `, [dateKey, limit]);
+
+      if (result.rows.length > 0) {
+        const current = parseInt(result.rows[0].call_count);
+        return { allowed: true, current, limit, remaining: Math.max(0, limit - current) };
+      }
+
+      // No row returned means the WHERE clause blocked the update (at limit)
+      // Fetch actual current count for the response
+      const countResult = await this.pool.query(
+        'SELECT call_count FROM google_api_usage WHERE date_key = $1',
+        [dateKey]
+      );
+      const current = countResult.rows.length > 0 ? parseInt(countResult.rows[0].call_count) : limit;
+      return { allowed: false, current, limit, remaining: 0 };
+    } catch (error) {
+      if (error.message.includes('relation "google_api_usage" does not exist')) {
+        // Table doesn't exist, create it and retry
+        await this.pool.query(`
+          CREATE TABLE IF NOT EXISTS google_api_usage (
+            date_key VARCHAR(10) PRIMARY KEY,
+            call_count INTEGER NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+          )
+        `);
+        return this.consumeGoogleApiQuota();
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * @deprecated Use consumeGoogleApiQuota() instead — this has a TOCTOU race condition
    * Check if we can make another Google API call today
    * Returns { allowed: boolean, current: number, limit: number }
    */
@@ -1012,6 +1110,7 @@ export class TravelDatabase {
   }
 
   /**
+   * @deprecated Use consumeGoogleApiQuota() instead — this has a TOCTOU race condition
    * Increment the Google API call counter for today
    * Creates the table and/or row if they don't exist
    */
@@ -1088,8 +1187,10 @@ export class TravelDatabase {
   // =========================================================================
 
   /**
-   * Enrich an OSM POI with Google Places data
-   * Creates/updates google_places entry and creates mapping
+   * Enrich an OSM POI with Google Places data, creating/updating the mapping.
+   * @param {string} osmId - OpenStreetMap POI ID to enrich
+   * @returns {Promise<void>} Resolves when enrichment completes or is skipped (cached/quota/not found)
+   * @throws {Error} If database queries fail
    */
   async enrichOSMPOI(osmId) {
     await this.ensureGooglePlacesReady();
@@ -1148,16 +1249,15 @@ export class TravelDatabase {
         }
       }
 
-      // Check rate limit before making API calls
-      const limitCheck = await this.checkGoogleApiLimit();
-      if (!limitCheck.allowed) {
-        console.error(`Google API daily limit reached (${limitCheck.current}/${limitCheck.limit}). Skipping enrichment for OSM ${osmId}`);
+      // Atomically consume quota before making API calls
+      const quota1 = await this.consumeGoogleApiQuota();
+      if (!quota1.allowed) {
+        console.error(`Google API daily limit reached (${quota1.current}/${quota1.limit}). Skipping enrichment for OSM ${osmId}`);
         return;
       }
 
       // Find matching Google Place
       const matchResult = await this.googlePlaces.findMatchingPlace(osmPOI);
-      await this.incrementGoogleApiCounter(); // Count the search API call
 
       if (!matchResult) {
         // Mark as not_found
@@ -1168,10 +1268,10 @@ export class TravelDatabase {
         return;
       }
 
-      // Check rate limit again before details call
-      const limitCheck2 = await this.checkGoogleApiLimit();
-      if (!limitCheck2.allowed) {
-        console.error(`Google API daily limit reached (${limitCheck2.current}/${limitCheck2.limit}). Skipping details for OSM ${osmId}`);
+      // Atomically consume quota before details call
+      const quota2 = await this.consumeGoogleApiQuota();
+      if (!quota2.allowed) {
+        console.error(`Google API daily limit reached (${quota2.current}/${quota2.limit}). Skipping details for OSM ${osmId}`);
         await this.createMapping(osmId, null, {
           mapping_status: 'pending',
           mapping_notes: `Rate limit reached before details fetch (place_id: ${matchResult.place_id})`
@@ -1181,7 +1281,6 @@ export class TravelDatabase {
 
       // Get full place details
       const placeDetails = await this.googlePlaces.getPlaceDetails(matchResult.place_id);
-      await this.incrementGoogleApiCounter(); // Count the details API call
 
       if (!placeDetails) {
         await this.createMapping(osmId, null, {
@@ -1201,6 +1300,15 @@ export class TravelDatabase {
         placeDetails.location.latitude,
         placeDetails.location.longitude
       );
+
+      // Reject matches that are too far away (> 500m is likely a wrong match)
+      if (distanceMeters > 500) {
+        await this.createMapping(osmId, null, {
+          mapping_status: 'no_match',
+          mapping_notes: `Match too far away (${Math.round(distanceMeters)}m > 500m limit)`
+        });
+        return;
+      }
 
       await this.createMapping(osmId, placeDetails.id, {
         match_confidence: matchResult.rating ? 0.95 : 0.80, // Higher if has rating
@@ -1448,7 +1556,7 @@ export class TravelDatabase {
    * Calculate distance between two coordinates in meters
    */
   calculateDistance(lat1, lon1, lat2, lon2) {
-    const R = 6371000; // Earth's radius in meters
+    const R = EARTH_RADIUS_METERS;
     const dLat = (lat2 - lat1) * Math.PI / 180;
     const dLon = (lon2 - lon1) * Math.PI / 180;
     const a =
@@ -1478,6 +1586,23 @@ export class TravelDatabase {
         telemetry.captureException(err, { context: 'batch_enrichment', osmId });
       })));
     }
+  }
+
+  /**
+   * Find stale Google Places cache entries that need refreshing
+   */
+  async getStaleGooglePlacesEntries(limit = 100) {
+    const cacheHours = parseInt(await this.getConfigCached('google_places_cache_hours') || '168');
+    const result = await this.pool.query(`
+      SELECT m.osm_id, m.google_place_id
+      FROM osm_google_mappings m
+      WHERE m.mapping_status = 'active'
+        AND m.google_place_id IS NOT NULL
+        AND m.updated_at < NOW() - INTERVAL '1 hour' * $1
+      ORDER BY m.updated_at ASC
+      LIMIT $2
+    `, [cacheHours, limit]);
+    return result.rows;
   }
 
   // =========================================================================
@@ -1554,7 +1679,7 @@ export class TravelDatabase {
       FROM import_log
       ORDER BY started_at DESC
       LIMIT $1
-    `, [Math.min(limit, 100)]);
+    `, [Math.min(limit, SEARCH_LIMIT_MAX)]);
 
     return result.rows;
   }
@@ -1563,6 +1688,10 @@ export class TravelDatabase {
   // Statistics
   // =========================================================================
 
+  /**
+   * Get aggregate database statistics including counts, breakdowns, and enrichment status.
+   * @returns {Promise<Object>} Stats object with countries, cities, pois, hotels, regions counts, pois_by_type, pois_by_country, recent_imports, and enrichment metrics
+   */
   async getStats() {
     const [countries, cities, pois, hotels, regions, poisByType, poisByCountry, recentImports, enrichmentStats, mappingStats] = await Promise.all([
       this.pool.query('SELECT COUNT(*) FROM geonames_countries'),
@@ -1946,7 +2075,7 @@ export class TravelDatabase {
       ${orderBy}
       LIMIT $${paramIndex}
     `;
-    params.push(Math.min(limit, 100));
+    params.push(Math.min(limit, SEARCH_LIMIT_MAX));
 
     const result = await this.pool.query(query, params);
     return result.rows;
@@ -1980,7 +2109,7 @@ export class TravelDatabase {
     `);
 
     this._countriesCache = result.rows;
-    this._countriesCacheExpiry = now + 60 * 60 * 1000; // 1 hour
+    this._countriesCacheExpiry = now + COUNTRIES_CACHE_TTL_MS;
     return result.rows;
   }
 
@@ -2056,11 +2185,11 @@ export class TravelDatabase {
     for (const [key, val] of this._homepageCache) {
       if (val.expiry <= now) this._homepageCache.delete(key);
     }
-    if (this._homepageCache.size >= 50) {
+    if (this._homepageCache.size >= HOMEPAGE_CACHE_MAX_SIZE) {
       const oldest = [...this._homepageCache.entries()].sort((a, b) => a[1].expiry - b[1].expiry)[0];
       if (oldest) this._homepageCache.delete(oldest[0]);
     }
-    this._homepageCache.set(country.code, { data: payload, expiry: now + 15 * 60 * 1000 });
+    this._homepageCache.set(country.code, { data: payload, expiry: now + HOMEPAGE_CACHE_TTL_MS });
 
     if (userId) {
       return { ...payload, hotels: await this.addFavoriteStatus([...hotels], userId) };

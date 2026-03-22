@@ -27,7 +27,9 @@
     "config": "node scripts/manage-config.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "agent": "node scripts/ollama-agent.js"
+    "agent": "node slm/ollama-agent.js",
+    "test:agent": "node slm/test-ollama-agent.js",
+    "prepare": "husky"
   },
   "keywords": [
     "mcp",
@@ -52,6 +54,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "eslint": "^10.0.1",
+    "husky": "^9.1.7",
     "nodemon": "^3.1.11"
   },
   "overrides": {

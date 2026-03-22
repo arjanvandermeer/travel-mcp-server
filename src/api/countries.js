@@ -4,6 +4,7 @@
  */
 
 import { sendJson } from '../api-router.js';
+import { validateCountryCode } from '../validation.js';
 
 export function registerCountryRoutes(router) {
   router.get('/api/v1/countries', async (req, res, { db }) => {
@@ -12,9 +13,9 @@ export function registerCountryRoutes(router) {
   });
 
   router.get('/api/v1/states', async (req, res, { db, query }) => {
-    const countryCode = query.country_code;
+    const countryCode = validateCountryCode(query.country_code);
     if (!countryCode) {
-      return sendJson(res, 400, { error: 'country_code parameter is required' });
+      return sendJson(res, 400, { error: 'country_code parameter is required (2-letter ISO code)' });
     }
     const states = await db.listStatesForCountry(countryCode);
     sendJson(res, 200, states);

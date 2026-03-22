@@ -26,7 +26,6 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { parse } from 'url';
 import { ApiRouter, parseCookies } from './api-router.js';
 import { registerCountryRoutes } from './api/countries.js';
 import { registerSearchRoutes } from './api/search.js';
@@ -35,6 +34,7 @@ import { registerPOIRoutes } from './api/poi.js';
 import { registerFavoritesRoutes } from './api/favorites.js';
 import { registerAuthRoutes } from './api/auth.js';
 import { registerHomepageRoutes } from './api/homepage.js';
+import { SESSION_MAX_AGE_MS, SESSION_CLEANUP_INTERVAL_MS, AUTH_TOKEN_MIN_LENGTH, OAUTH_INTROSPECTION_CACHE_TTL_MS } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -63,6 +63,9 @@ const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
 // Store active sessions: sessionId -> { server, transport, user }
 const sessions = new Map();
 
+// Cache OAuth introspection results: token -> { user, expiry }
+const introspectionCache = new Map();
+
 /**
  * Extract user from Authorization header
  * Returns null for anonymous requests (which is fine - auth is optional)
@@ -81,7 +84,7 @@ async function getUserFromRequest(req) {
   console.error(`[Auth] Token received: ${tokenPrefix}... (${tokenLength} chars)`);
 
   // Basic token validation - catch obviously malformed tokens
-  if (tokenLength < 10) {
+  if (tokenLength < AUTH_TOKEN_MIN_LENGTH) {
     console.error(`[Auth] Token too short: ${tokenLength} chars`);
     telemetry.incrementCounter('auth.failure', 1, { reason: 'token_too_short' });
     telemetry.captureMessage('Auth failed: token too short', 'warning', {
@@ -90,6 +93,16 @@ async function getUserFromRequest(req) {
       tokenPrefix,
     });
     return null;
+  }
+
+  // Check introspection cache
+  const cached = introspectionCache.get(token);
+  if (cached && cached.expiry > Date.now()) {
+    console.error(`[Auth] Cache hit for ${obfuscateEmail(cached.user.email)}`);
+    telemetry.incrementCounter('auth.cache_hit', 1);
+    telemetry.setUser({ id: cached.user.id.toString(), email: obfuscateEmail(cached.user.email), username: cached.user.name });
+    telemetry.setTag('user.id', cached.user.id.toString());
+    return cached.user;
   }
 
   // Track auth attempt
@@ -117,6 +130,7 @@ async function getUserFromRequest(req) {
         duration: authDuration,
       });
 
+      introspectionCache.set(token, { user: dbUser, expiry: Date.now() + OAUTH_INTROSPECTION_CACHE_TTL_MS });
       return dbUser;
     }
 
@@ -166,6 +180,7 @@ async function getUserFromRequest(req) {
             introspectDuration,
           });
 
+          introspectionCache.set(token, { user, expiry: Date.now() + OAUTH_INTROSPECTION_CACHE_TTL_MS });
           return user;
         } else {
           const authDuration = Date.now() - authStartTime;
@@ -382,8 +397,8 @@ async function main() {
   const WEB_DIR = path.join(__dirname, '..', 'web');
 
   const httpServer = http.createServer(async (req, res) => {
-    const parsedUrl = parse(req.url, true);
-    const pathname = parsedUrl.pathname;
+    const url = new URL(req.url, 'http://localhost');
+    const pathname = url.pathname;
 
     // Log all incoming requests (except health checks to reduce noise)
     if (pathname !== '/health') {
@@ -683,7 +698,7 @@ async function main() {
 
   // Clean up stale sessions every 5 minutes
   setInterval(() => {
-    const maxAge = 30 * 60 * 1000; // 30 minutes
+    const maxAge = SESSION_MAX_AGE_MS;
     const now = Date.now();
     let expiredCount = 0;
     for (const [sessionId, session] of sessions) {
@@ -705,7 +720,22 @@ async function main() {
         remainingSessions: sessions.size,
       });
     }
-  }, 5 * 60 * 1000);
+  }, SESSION_CLEANUP_INTERVAL_MS);
+
+  // Clean up expired introspection cache entries every 5 minutes
+  setInterval(() => {
+    const now = Date.now();
+    let evictedCount = 0;
+    for (const [token, entry] of introspectionCache) {
+      if (entry.expiry <= now) {
+        introspectionCache.delete(token);
+        evictedCount++;
+      }
+    }
+    if (evictedCount > 0) {
+      console.error(`[Auth] Introspection cache cleanup: ${evictedCount} evicted, ${introspectionCache.size} remaining`);
+    }
+  }, OAUTH_INTROSPECTION_CACHE_TTL_MS);
 
   httpServer.listen(PORT, () => {
     console.error(`Travel MCP Server (Streamable HTTP) running on port ${PORT}`);

@@ -9,6 +9,7 @@
 import crypto from 'crypto';
 import { sendJson } from '../api-router.js';
 import * as telemetry from '../telemetry.js';
+import { AUTH_PENDING_CLEANUP_INTERVAL_MS, AUTH_CHALLENGE_TTL_MS, AUTH_PENDING_MAX_SIZE, AUTH_SESSION_COOKIE_MAX_AGE_S } from '../config.js';
 
 // In-memory store for pending PKCE challenges (short-lived)
 const pendingAuth = new Map();
@@ -16,14 +17,14 @@ const pendingAuth = new Map();
 // Clean up old pending auth entries every 5 minutes
 // unref() allows Node.js to exit cleanly when no other work remains
 setInterval(() => {
-  const maxAge = 10 * 60 * 1000; // 10 minutes
+  const maxAge = AUTH_CHALLENGE_TTL_MS;
   const now = Date.now();
   for (const [state, entry] of pendingAuth) {
     if (now - entry.createdAt > maxAge) {
       pendingAuth.delete(state);
     }
   }
-}, 5 * 60 * 1000).unref();
+}, AUTH_PENDING_CLEANUP_INTERVAL_MS).unref();
 
 /**
  * Generate PKCE code_verifier and code_challenge (S256)
@@ -83,7 +84,7 @@ export function registerAuthRoutes(router) {
       const state = crypto.randomBytes(16).toString('hex');
 
       // Store PKCE verifier for the callback (cap size to prevent memory abuse)
-      if (pendingAuth.size >= 10000) {
+      if (pendingAuth.size >= AUTH_PENDING_MAX_SIZE) {
         sendJson(res, 503, { error: 'Too many pending login requests, try again later' });
         return;
       }
@@ -166,7 +167,7 @@ export function registerAuthRoutes(router) {
         'Path=/',
         'HttpOnly',
         'SameSite=Lax',
-        `Max-Age=${7 * 24 * 60 * 60}`, // 7 days
+        `Max-Age=${AUTH_SESSION_COOKIE_MAX_AGE_S}`, // 7 days
       ];
       if (isSecure) cookieFlags.push('Secure');
 

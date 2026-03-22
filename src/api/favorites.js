@@ -6,6 +6,7 @@
  */
 
 import { sendJson, parseBody } from '../api-router.js';
+import { validateLimit } from '../validation.js';
 
 export function registerFavoritesRoutes(router) {
   router.get('/api/v1/favorites', async (req, res, { db, query, user }) => {
@@ -14,7 +15,7 @@ export function registerFavoritesRoutes(router) {
     }
 
     const poiTypes = query.poi_types ? query.poi_types.split(',') : undefined;
-    const limit = Math.min(parseInt(query.limit) || 100, 100);
+    const limit = validateLimit(query.limit, 100, 100);
 
     const favorites = await db.listFavorites(user.id, { poiTypes, limit });
     sendJson(res, 200, { favorites, count: favorites.length });

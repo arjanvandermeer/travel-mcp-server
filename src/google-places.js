@@ -8,6 +8,7 @@
 import https from 'https';
 import dotenv from 'dotenv';
 import * as telemetry from './telemetry.js';
+import { GOOGLE_PLACES_MIN_CONFIDENCE, GOOGLE_PLACES_TEXT_SEARCH_RADIUS, GOOGLE_PLACES_NEARBY_SEARCH_RADIUS, GOOGLE_PLACES_MATCH_SEARCH_RADIUS, GOOGLE_PLACES_MAX_RESULTS } from './config.js';
 
 dotenv.config();
 
@@ -169,15 +170,20 @@ export class GooglePlacesClient {
   }
 
   /**
-   * Search for a place near coordinates
-   * Uses Nearby Search API (New)
+   * Search for places near coordinates using Google Places Nearby Search API.
+   * @param {number} latitude - Center latitude
+   * @param {number} longitude - Center longitude
+   * @param {string} name - Place name (unused in request body, kept for interface consistency)
+   * @param {string|null} type - Google Place type filter (e.g. 'lodging', 'restaurant')
+   * @param {number} radius - Search radius in meters
+   * @returns {Promise<Array<Object>>} Array of Google Place objects with id, displayName, rating, location, types
    */
-  async searchNearby(latitude, longitude, name, type = null, radius = 50) {
+  async searchNearby(latitude, longitude, name, type = null, radius = GOOGLE_PLACES_NEARBY_SEARCH_RADIUS) {
     const url = 'https://places.googleapis.com/v1/places:searchNearby';
 
     const body = {
       includedTypes: type ? [type] : ['lodging', 'restaurant', 'cafe', 'tourist_attraction'],
-      maxResultCount: 20,
+      maxResultCount: GOOGLE_PLACES_MAX_RESULTS,
       locationRestriction: {
         circle: {
           center: {
@@ -202,15 +208,18 @@ export class GooglePlacesClient {
   }
 
   /**
-   * Search for a place by text query
-   * Uses Text Search API (New)
+   * Search for places by text query using Google Places Text Search API.
+   * @param {string} query - Free-text search query
+   * @param {number|null} latitude - Optional latitude for location bias
+   * @param {number|null} longitude - Optional longitude for location bias
+   * @returns {Promise<Array<Object>>} Array of Google Place objects with id, displayName, rating, location, types
    */
   async searchText(query, latitude = null, longitude = null) {
     const url = 'https://places.googleapis.com/v1/places:searchText';
 
     const body = {
       textQuery: query,
-      maxResultCount: 20,
+      maxResultCount: GOOGLE_PLACES_MAX_RESULTS,
     };
 
     if (latitude && longitude) {
@@ -220,7 +229,7 @@ export class GooglePlacesClient {
             latitude: latitude,
             longitude: longitude,
           },
-          radius: 1000,
+          radius: GOOGLE_PLACES_TEXT_SEARCH_RADIUS,
         },
       };
     }
@@ -328,8 +337,14 @@ export class GooglePlacesClient {
   }
 
   /**
-   * Find the best matching Google Place for a POI
-   * Returns the place_id and basic info
+   * Find the best matching Google Place for an OSM POI using nearby and text search with name similarity scoring.
+   * @param {Object} poi - POI object to match
+   * @param {string} poi.name - POI name
+   * @param {string|null} poi.name_en - English transliteration of the name
+   * @param {number} poi.latitude - POI latitude
+   * @param {number} poi.longitude - POI longitude
+   * @param {string} poi.poi_type - OSM POI type (e.g. 'hotel', 'restaurant')
+   * @returns {Promise<{place_id: string, name: string, rating: number, user_ratings_total: number, types: string[]}|null>} Matched place info or null
    */
   async findMatchingPlace(poi) {
     if (!this.enabled) {
@@ -368,12 +383,12 @@ export class GooglePlacesClient {
     const googleType = googleTypeMap[poi_type];
 
     // Try nearby search first (most accurate for coordinates)
-    const nearbyResults = await this.searchNearby(latitude, longitude, name, googleType, 100);
+    const nearbyResults = await this.searchNearby(latitude, longitude, name, googleType, GOOGLE_PLACES_MATCH_SEARCH_RADIUS);
 
     if (nearbyResults.length > 0) {
       // Find best match based on name similarity (try all name variants)
       const bestMatch = this.findBestNameMatchMulti(matchNames, nearbyResults);
-      if (bestMatch) {
+      if (bestMatch && this.isTypeCompatible(poi_type, bestMatch.types)) {
         return {
           place_id: bestMatch.id,
           name: bestMatch.displayName?.text || bestMatch.displayName,
@@ -392,7 +407,7 @@ export class GooglePlacesClient {
     if (textResults.length > 0) {
       // Also validate text search results with name matching
       const textMatch = this.findBestNameMatchMulti(matchNames, textResults);
-      if (textMatch) {
+      if (textMatch && this.isTypeCompatible(poi_type, textMatch.types)) {
         return {
           place_id: textMatch.id,
           name: textMatch.displayName?.text || textMatch.displayName,
@@ -408,6 +423,29 @@ export class GooglePlacesClient {
       console.error(`  No Google Places match found for: "${name}"`);
     }
     return null;
+  }
+
+  /**
+   * Check if a Google Place's types are compatible with the OSM POI type.
+   * Returns true if types are compatible or if no compatibility rule exists for the POI type.
+   */
+  isTypeCompatible(poiType, googleTypes) {
+    if (!poiType || !googleTypes || googleTypes.length === 0) {
+      return true; // No type info to check, allow match
+    }
+
+    const compatibilityRules = {
+      hotel: ['lodging', 'hotel', 'guest_house', 'hostel'],
+      hostel: ['lodging', 'hotel', 'guest_house', 'hostel'],
+      restaurant: ['restaurant', 'food', 'meal_delivery', 'meal_takeaway'],
+    };
+
+    const requiredTypes = compatibilityRules[poiType];
+    if (!requiredTypes) {
+      return true; // No rule for this POI type, skip check
+    }
+
+    return googleTypes.some(t => requiredTypes.includes(t));
   }
 
   /**
@@ -510,7 +548,7 @@ export class GooglePlacesClient {
 
     // IMPORTANT: Only return a match if we have good confidence
     // Previously this returned results[0] even with score=0, causing wrong matches
-    const MIN_CONFIDENCE = 0.4; // Require at least 40% similarity
+    const MIN_CONFIDENCE = GOOGLE_PLACES_MIN_CONFIDENCE; // Require at least 40% similarity
 
     if (bestScore >= MIN_CONFIDENCE) {
       if (process.env.DEBUG_MATCHING) {
@@ -551,7 +589,7 @@ export class GooglePlacesClient {
       }
     }
 
-    const MIN_CONFIDENCE = 0.4;
+    const MIN_CONFIDENCE = GOOGLE_PLACES_MIN_CONFIDENCE;
     if (bestScore >= MIN_CONFIDENCE) {
       if (process.env.DEBUG_MATCHING) {
         const matchName = bestMatch.displayName?.text || bestMatch.displayName;

@@ -18,6 +18,8 @@
  * @returns {boolean} options.force - Refresh even if not due yet
  * @returns {boolean} options.list - Just list import sources
  * @returns {boolean} options.optimize - Run optimization after imports
+ * @returns {boolean} options.refreshGeonames - Also refresh GeoNames data
+ * @returns {boolean} options.refreshGoogle - Refresh stale Google Places cache entries
  * @returns {boolean} options.help - Help was requested (caller should show help)
  *
  * @example
@@ -36,6 +38,8 @@ export function parseRefreshArgs(args) {
     force: false,
     list: false,
     optimize: false,
+    refreshGeonames: false,
+    refreshGoogle: false,
     help: false,
   };
 
@@ -48,6 +52,10 @@ export function parseRefreshArgs(args) {
       options.list = true;
     } else if (arg === '--optimize') {
       options.optimize = true;
+    } else if (arg === '--refresh-geonames') {
+      options.refreshGeonames = true;
+    } else if (arg === '--refresh-google') {
+      options.refreshGoogle = true;
     } else if (arg.startsWith('--max=')) {
       const value = parseInt(arg.split('=')[1], 10);
       options.max = isNaN(value) ? null : value;

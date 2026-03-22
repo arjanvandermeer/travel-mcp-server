@@ -21,6 +21,8 @@ describe('parseRefreshArgs', () => {
       force: false,
       list: false,
       optimize: false,
+      refreshGeonames: false,
+      refreshGoogle: false,
       help: false,
     });
   });

@@ -7,21 +7,23 @@
 - [x] Error logging was already in place via `.catch()` handler
 
 ### Fix Google Places Matching Algorithm
+- [x] Raised MIN_CONFIDENCE from 0.4 to 0.7
+- [x] Added distance validation: reject matches >500m
+- [x] Added POI type compatibility check (hotel↔lodging, restaurant↔food)
 - [ ] Improve name matching (Thai/non-Latin names mismatch, abbreviations, word order)
-- [ ] Add validation: distance < 100m, POI type compatibility, reject confidence < 0.7
 - [ ] Use normalized name matching with transliteration
 
 ### Security: Pre-commit Hook for Credential Detection
-- [ ] Add git pre-commit hook to grep for credential patterns in staged files
-- [ ] Add to CI pipeline (`.github/workflows/ci.yml`)
+- [x] Add git pre-commit hook (husky) to grep for credential patterns in staged files
+- [x] Add credential scan step to CI pipeline (`.github/workflows/ci.yml`)
 
 ### Security: SQL Injection Audit
 - [x] Audit all queries in `database.js` for proper parameterization — all safe
 - [x] Fixed SQL injection in `optimize-db.js` — validate table names against allowlist
-- [ ] Review dynamic query building in `unifiedSearchPOIs()`, `searchCities()`
+- [x] Review dynamic query building in `searchPOIs()`, `searchCities()` — all use parameterized queries, safe
 
 ### OAuth 2.1 — Remaining Items
-- [ ] Cache OAuth introspection results (5 min TTL)
+- [x] Cache OAuth introspection results (5 min TTL) — in-memory Map in index-http.js
 - [ ] Test with MCP Inspector `--oauth` flag
 - [ ] Test with ChatGPT MCP connector
 - [ ] User preferences (currency, language, home location)
@@ -33,26 +35,30 @@
 - [ ] `ui://` URI scheme per MCP Apps spec (ChatGPT supports now; Claude TBD)
 
 ### Input Validation Layer
-- [ ] Centralized `src/validation.js` for lat/lon/limit/poiType/radius validation
+- [x] Centralized `src/validation.js` for lat/lon/limit/countryCode validation
+- [x] Applied in executeToolHandler and API routes
 
 ### Add Type Safety with JSDoc
-- [ ] JSDoc for top 10 most-used functions in database.js and google-places.js
+- [x] JSDoc for top 10 most-used functions in database.js and google-places.js
 
 ### Data Caching and Automatic Refresh
-- [ ] Background refresh of stale regions, on-demand refresh for missing data
+- [x] Google Places cache refresh via `npm run db:refresh -- --refresh-google`
+- [x] GeoNames refresh via `npm run db:refresh -- --refresh-geonames`
+- [ ] Background refresh scheduling (cron/Lambda)
 
 ### Google Places Rate Limiting
-- [ ] Token bucket rate limiter, daily quota tracking
+- [x] Atomic quota consumption (single INSERT...ON CONFLICT with WHERE clause)
+- [x] Eliminated TOCTOU race condition between check and increment
 
 ### Improve OSM Import Workflow
 - [ ] One-command import: `npm run init:osm thailand` (auto-download + import)
 
 ## Low Priority
 
-- [ ] Multi-language city search (alternate names table, language preference)
-- [ ] Log rotation for stdio server
-- [ ] Replace deprecated `url.parse()` with WHATWG `URL` API
-- [ ] Add .nvmrc for consistent Node version
+- [x] Multi-language city search (alternate_names ILIKE in searchCities)
+- [x] Log rotation for stdio server (10MB size-based rotation)
+- [x] Replace deprecated `url.parse()` with WHATWG `URL` API
+- [x] Add .nvmrc for consistent Node version (24)
 - [ ] Wikidata enrichment (images, descriptions)
 - [ ] Route planning capabilities
 - [ ] OpenAPI/Swagger spec for HTTP server
@@ -60,9 +66,9 @@
 ## Quick Wins
 
 - [x] Fix Promise.all() await issue
-- [ ] Extract constants to `src/config.js` (15 min)
-- [ ] Add input validation for coordinates and limits (20 min)
-- [ ] Replace `url.parse()` (10 min)
+- [x] Extract constants to `src/config.js`
+- [x] Add input validation for coordinates and limits
+- [x] Replace `url.parse()`
 
 ### Frontend Website Redesign
 - [ ] Redesign the entire frontend website (web/)

@@ -3,7 +3,6 @@
  * No external dependencies — just method + path matching.
  */
 
-import { parse } from 'url';
 import * as telemetry from './telemetry.js';
 
 export class ApiRouter {
@@ -37,8 +36,8 @@ export class ApiRouter {
    * @returns {boolean} true if a route matched (even if handler errored)
    */
   async handle(req, res, context) {
-    const parsedUrl = parse(req.url, true);
-    const pathname = parsedUrl.pathname;
+    const url = new URL(req.url, 'http://localhost');
+    const pathname = url.pathname;
     const method = req.method.toUpperCase();
 
     for (const route of this.routes) {
@@ -55,7 +54,7 @@ export class ApiRouter {
       try {
         await route.handler(req, res, {
           params,
-          query: parsedUrl.query,
+          query: Object.fromEntries(url.searchParams),
           ...context,
         });
       } catch (err) {

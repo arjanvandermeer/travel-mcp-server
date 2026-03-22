@@ -32,6 +32,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import * as telemetry from './telemetry.js';
 import { parseRefreshArgs } from './lib/arg-parsers.js';
+import { TravelDatabase } from './database.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,6 +58,8 @@ Options:
   --force         Refresh even if not due yet
   --list          Just list all import sources and their status
   --optimize      Run database optimization after imports complete
+  --refresh-geonames  Re-import GeoNames countries and cities data
+  --refresh-google    Refresh stale Google Places cache entries
   --help, -h      Show this help message
 
 Examples:
@@ -224,6 +227,32 @@ async function runImport(keyword) {
 }
 
 /**
+ * Run GeoNames import
+ */
+async function runGeonamesImport() {
+  return new Promise((resolve) => {
+    const geonamesScript = path.join(__dirname, 'import-geonames-postgres.js');
+
+    console.log(`\n${'='.repeat(60)}`);
+    console.log('Running GeoNames import...');
+    console.log('='.repeat(60));
+
+    const child = spawn('node', [geonamesScript], {
+      stdio: 'inherit',
+      env: process.env,
+    });
+
+    child.on('close', (code) => {
+      resolve(code === 0);
+    });
+
+    child.on('error', () => {
+      resolve(false);
+    });
+  });
+}
+
+/**
  * Run database optimization
  */
 async function runOptimization() {
@@ -277,7 +306,7 @@ async function main() {
     // Get stale imports
     const staleImports = await getStaleImports(pool, options);
 
-    if (staleImports.length === 0) {
+    if (staleImports.length === 0 && !options.refreshGoogle) {
       if (options.region) {
         console.log(`\nNo refresh needed for "${options.region}" (or region not found/disabled)`);
       } else {
@@ -286,36 +315,39 @@ async function main() {
       return;
     }
 
-    console.log(`\nFound ${staleImports.length} region(s) to refresh:`);
-    for (const source of staleImports) {
-      const lastImport = source.last_imported_at
-        ? `last imported ${Math.round((Date.now() - new Date(source.last_imported_at).getTime()) / 86400000)} days ago`
-        : 'never imported';
-      console.log(`  - ${source.keyword} (${source.display_name}) - ${lastImport}`);
-    }
-
-    // Dry run mode
-    if (options.dryRun) {
-      console.log('\n[DRY RUN] No imports were executed.');
-      return;
-    }
-
-    // Run imports
-    console.log('\nStarting imports...\n');
     const results = [];
+    const successful = [];
+    const failed = [];
 
-    for (const source of staleImports) {
-      const result = await runImport(source.keyword);
-      results.push(result);
+    if (staleImports.length > 0) {
+      console.log(`\nFound ${staleImports.length} region(s) to refresh:`);
+      for (const source of staleImports) {
+        const lastImport = source.last_imported_at
+          ? `last imported ${Math.round((Date.now() - new Date(source.last_imported_at).getTime()) / 86400000)} days ago`
+          : 'never imported';
+        console.log(`  - ${source.keyword} (${source.display_name}) - ${lastImport}`);
+      }
+
+      if (!options.dryRun) {
+        // Run imports
+        console.log('\nStarting imports...\n');
+
+        for (const source of staleImports) {
+          const result = await runImport(source.keyword);
+          results.push(result);
+        }
+
+        successful.push(...results.filter(r => r.success));
+        failed.push(...results.filter(r => !r.success));
+
+        // Summary
+        console.log('\n' + '='.repeat(60));
+        console.log('REFRESH SUMMARY');
+        console.log('='.repeat(60));
+      } else {
+        console.log('\n[DRY RUN] No imports were executed.');
+      }
     }
-
-    // Summary
-    console.log('\n' + '='.repeat(60));
-    console.log('REFRESH SUMMARY');
-    console.log('='.repeat(60));
-
-    const successful = results.filter(r => r.success);
-    const failed = results.filter(r => !r.success);
 
     if (successful.length > 0) {
       console.log(`\n✓ Successfully refreshed (${successful.length}):`);
@@ -336,6 +368,57 @@ async function main() {
       const optimizeSuccess = await runOptimization();
       transaction.setData('optimization_run', true);
       transaction.setData('optimization_success', optimizeSuccess);
+    }
+
+    // Run GeoNames import if requested
+    if (options.refreshGeonames) {
+      const geonamesSuccess = await runGeonamesImport();
+      transaction.setData('geonames_refresh', true);
+      transaction.setData('geonames_success', geonamesSuccess);
+      if (geonamesSuccess) {
+        console.log('\n✓ GeoNames import completed successfully');
+      } else {
+        console.log('\n✗ GeoNames import failed');
+      }
+    }
+
+    // Refresh stale Google Places cache entries if requested
+    if (options.refreshGoogle) {
+      console.log('\nRefreshing stale Google Places cache entries...');
+      const db = new TravelDatabase({ pool });
+      const staleEntries = await db.getStaleGooglePlacesEntries(options.max || 100);
+
+      if (staleEntries.length === 0) {
+        console.log('✓ All Google Places cache entries are up to date!');
+      } else {
+        console.log(`Found ${staleEntries.length} stale Google Places entries to refresh`);
+
+        if (!options.dryRun) {
+          let refreshed = 0;
+          let errors = 0;
+          const batchSize = 3;
+
+          for (let i = 0; i < staleEntries.length; i += batchSize) {
+            const batch = staleEntries.slice(i, i + batchSize);
+            await Promise.all(batch.map(async (entry) => {
+              try {
+                await db.enrichOSMPOI(entry.osm_id);
+                refreshed++;
+              } catch (err) {
+                errors++;
+                console.error(`  Error refreshing OSM ${entry.osm_id}: ${err.message}`);
+              }
+            }));
+          }
+
+          console.log(`\n✓ Google Places refresh complete: ${refreshed} refreshed, ${errors} errors`);
+          transaction.setData('google_refresh_count', refreshed);
+          transaction.setData('google_refresh_errors', errors);
+        } else {
+          console.log('[DRY RUN] No Google Places entries were refreshed.');
+        }
+      }
+      transaction.setData('google_refresh', true);
     }
 
     // Record telemetry

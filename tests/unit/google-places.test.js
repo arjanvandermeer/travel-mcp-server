@@ -236,6 +236,84 @@ describe('GooglePlacesClient', () => {
   });
 
   // =========================================================================
+  // isTypeCompatible
+  // =========================================================================
+
+  describe('isTypeCompatible', () => {
+    const client = new GooglePlacesClient('key', true);
+
+    it('should return true when no POI type is provided', () => {
+      assert.strictEqual(client.isTypeCompatible(null, ['lodging']), true);
+    });
+
+    it('should return true when no Google types are provided', () => {
+      assert.strictEqual(client.isTypeCompatible('hotel', null), true);
+      assert.strictEqual(client.isTypeCompatible('hotel', []), true);
+    });
+
+    it('should return true when POI type has no compatibility rule', () => {
+      assert.strictEqual(client.isTypeCompatible('museum', ['museum', 'point_of_interest']), true);
+    });
+
+    it('should return true when hotel matches lodging type', () => {
+      assert.strictEqual(client.isTypeCompatible('hotel', ['lodging', 'point_of_interest']), true);
+    });
+
+    it('should return true when hostel matches hostel type', () => {
+      assert.strictEqual(client.isTypeCompatible('hostel', ['hostel', 'lodging']), true);
+    });
+
+    it('should return false when hotel matches restaurant type', () => {
+      assert.strictEqual(client.isTypeCompatible('hotel', ['restaurant', 'food']), false);
+    });
+
+    it('should return true when restaurant matches food type', () => {
+      assert.strictEqual(client.isTypeCompatible('restaurant', ['food', 'point_of_interest']), true);
+    });
+
+    it('should return false when restaurant matches lodging type', () => {
+      assert.strictEqual(client.isTypeCompatible('restaurant', ['lodging', 'point_of_interest']), false);
+    });
+  });
+
+  // =========================================================================
+  // Confidence threshold
+  // =========================================================================
+
+  describe('confidence threshold', () => {
+    const client = new GooglePlacesClient('key', true);
+
+    it('should return null when name similarity is below 0.7', () => {
+      // "Grand Hotel" vs "Sunset Bar" should score well below 0.7
+      const results = [
+        { displayName: { text: 'Sunset Bar' }, id: '1' },
+      ];
+      const match = client.findBestNameMatch('Grand Hotel', results);
+      assert.strictEqual(match, null);
+    });
+
+    it('should return match when name similarity is above 0.7', () => {
+      const results = [
+        { displayName: { text: 'Grand Hotel NYC' }, id: '1' },
+      ];
+      const match = client.findBestNameMatch('Grand Hotel', results);
+      assert.ok(match, 'Expected a match for similar names above 0.7 threshold');
+      assert.strictEqual(match.id, '1');
+    });
+
+    it('should reject moderate similarity that was previously accepted at 0.4', () => {
+      // Names that might score ~0.4-0.6 but not 0.7
+      const results = [
+        { displayName: { text: 'Grand Palace' }, id: '1' },
+      ];
+      const match = client.findBestNameMatch('Grand Hotel', results);
+      // "Grand Palace" vs "Grand Hotel" - word overlap is just "grand" (filler words filtered)
+      // This should now be rejected with the higher threshold
+      assert.strictEqual(match, null);
+    });
+  });
+
+  // =========================================================================
   // searchNearby (with mocked makeRequest)
   // =========================================================================
 

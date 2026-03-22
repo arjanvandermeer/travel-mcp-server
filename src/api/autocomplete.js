@@ -3,6 +3,7 @@
  */
 
 import { sendJson } from '../api-router.js';
+import { validateLimit } from '../validation.js';
 
 export function registerAutocompleteRoutes(router) {
   router.get('/api/v1/autocomplete', async (req, res, { db, query }) => {
@@ -15,7 +16,7 @@ export function registerAutocompleteRoutes(router) {
     const cityGeonameId = query.city_geoname_id ? parseInt(query.city_geoname_id) : undefined;
     const poiType = query.poi_type || undefined;
     const poiTypes = query.poi_types ? query.poi_types.split(',').map(t => t.trim()).filter(Boolean) : undefined;
-    const limit = Math.min(parseInt(query.limit) || 10, 50);
+    const limit = validateLimit(query.limit, 10, 50);
 
     const suggestions = await db.autocompleteSearch(q, {
       countryCode,

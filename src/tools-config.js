@@ -7,6 +7,8 @@
 import { versionInfo } from './version.js';
 import { render } from './templates/index.js';
 import * as telemetry from './telemetry.js';
+import { NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX } from './config.js';
+import { validateCoordinates, validateLimit } from './validation.js';
 
 // Shared constants
 export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
@@ -887,7 +889,19 @@ export async function executeToolHandler(name, args, db, options = {}) {
         };
       }
 
-      const limit = Math.min(args.limit || 10, 100);
+      if (hasCoords) {
+        const coords = validateCoordinates(args.latitude, args.longitude);
+        if (!coords.valid) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify({ error: coords.error }, null, 2) }],
+          };
+        }
+        args.latitude = coords.lat;
+        args.longitude = coords.lon;
+      }
+
+      const limit = validateLimit(args.limit, 10, 100);
       const cities = await db.searchCities({
         query: args.query,
         countryCode: args.country_code,
@@ -904,6 +918,14 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
     case 'search_hotels':
     case 'search_hotels_ui': {
+      if (args.latitude !== undefined && args.longitude !== undefined) {
+        const coords = validateCoordinates(args.latitude, args.longitude);
+        if (!coords.valid) {
+          return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: coords.error }, null, 2) }] };
+        }
+        args.latitude = coords.lat;
+        args.longitude = coords.lon;
+      }
       const pois = await db.searchPOIs({
         name: args.query,
         cityName: args.city_name,
@@ -913,7 +935,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         longitude: args.longitude,
         radius: args.radius_km,
         poiTypes: accommodationTypes,
-        limit: Math.min(args.limit || 50, 100),
+        limit: validateLimit(args.limit, 50, 100),
         userId: options.user?.id,
       });
       triggerBackgroundEnrichment(pois, db);
@@ -926,6 +948,14 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
     case 'search_restaurants':
     case 'search_restaurants_ui': {
+      if (args.latitude !== undefined && args.longitude !== undefined) {
+        const coords = validateCoordinates(args.latitude, args.longitude);
+        if (!coords.valid) {
+          return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: coords.error }, null, 2) }] };
+        }
+        args.latitude = coords.lat;
+        args.longitude = coords.lon;
+      }
       const types = args.type ? [args.type] : foodTypes;
       const pois = await db.searchPOIs({
         name: args.query,
@@ -936,7 +966,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         longitude: args.longitude,
         radius: args.radius_km,
         poiTypes: types,
-        limit: Math.min(args.limit || 50, 100),
+        limit: validateLimit(args.limit, 50, 100),
         userId: options.user?.id,
       });
       triggerBackgroundEnrichment(pois, db);
@@ -949,6 +979,14 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
     case 'search_pois':
     case 'search_pois_ui': {
+      if (args.latitude !== undefined && args.longitude !== undefined) {
+        const coords = validateCoordinates(args.latitude, args.longitude);
+        if (!coords.valid) {
+          return { isError: true, content: [{ type: 'text', text: JSON.stringify({ error: coords.error }, null, 2) }] };
+        }
+        args.latitude = coords.lat;
+        args.longitude = coords.lon;
+      }
       const pois = await db.searchPOIs({
         name: args.query,
         cityName: args.city_name,
@@ -958,7 +996,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         longitude: args.longitude,
         radius: args.radius_km,
         poiType: args.poi_type,
-        limit: Math.min(args.limit || 50, 100),
+        limit: validateLimit(args.limit, 50, 100),
         userId: options.user?.id,
       });
       triggerBackgroundEnrichment(pois, db);
@@ -1030,8 +1068,8 @@ export async function executeToolHandler(name, args, db, options = {}) {
       }
 
       const resultTypes = args.result_types || getNearbyTypes(sourcePoi.poi_type);
-      const radiusKm = Math.min(args.radius_km || 1.5, 10);
-      const nearbyLimit = Math.min(args.limit || 10, 20);
+      const radiusKm = Math.min(args.radius_km || NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM);
+      const nearbyLimit = validateLimit(args.limit, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX);
 
       const nearbyPois = await db.searchPOIsNearCoordinates(
         sourcePoi.osm_latitude,

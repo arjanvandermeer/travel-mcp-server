@@ -577,3 +577,42 @@ describe('getHomepageDiscover', () => {
     assert.strictEqual(receivedRadius, 30);
   });
 });
+
+// =============================================================================
+// Google API Quota (atomic)
+// =============================================================================
+
+describe('consumeGoogleApiQuota', () => {
+  it('should return allowed=true when under limit', async () => {
+    const { db } = createTestDb({
+      // getConfigCached will query config table — return default
+      'FROM config': emptyResult(),
+      // The atomic INSERT...ON CONFLICT RETURNING succeeds
+      'INSERT INTO google_api_usage': dbResult([{ call_count: 5 }]),
+    });
+
+    const result = await db.consumeGoogleApiQuota();
+
+    assert.strictEqual(result.allowed, true);
+    assert.strictEqual(result.current, 5);
+    assert.strictEqual(result.limit, 100); // DEFAULT_GOOGLE_API_DAILY_LIMIT
+    assert.strictEqual(result.remaining, 95);
+  });
+
+  it('should return allowed=false when at limit', async () => {
+    const { db } = createTestDb({
+      'FROM config': emptyResult(),
+      // INSERT...ON CONFLICT returns no rows (WHERE clause blocked it)
+      'INSERT INTO google_api_usage': emptyResult(),
+      // Fallback SELECT to get current count
+      'SELECT call_count FROM google_api_usage': dbResult([{ call_count: 100 }]),
+    });
+
+    const result = await db.consumeGoogleApiQuota();
+
+    assert.strictEqual(result.allowed, false);
+    assert.strictEqual(result.current, 100);
+    assert.strictEqual(result.limit, 100);
+    assert.strictEqual(result.remaining, 0);
+  });
+});
