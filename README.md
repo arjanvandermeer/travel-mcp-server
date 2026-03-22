@@ -15,7 +15,7 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 - **Personal favorites** — bookmark POIs with notes, filtered by location or type
 - **Rich detail views** — structured JSON or rendered HTML pages via MCP resource templates
 - **Dual transport** — stdio (Claude Desktop) and HTTP/SSE (ChatGPT, web clients)
-- **[Ollama Agent](doc/ollama-agent.md)** — local AI travel assistant using Qwen 3.5
+- **[Local SLM agent](slm/README.md)** — offline travel assistant powered by Ollama (Qwen 3.5), with tool calling against the REST API or MCP — great for demos, model evaluation, and prompt tuning
 
 ## Quick Start
 
@@ -78,7 +78,7 @@ Claude Desktop / ChatGPT / Web Browser
 | [doc/osm-import-system.md](doc/osm-import-system.md) | OpenStreetMap import workflow |
 | [doc/google-places.md](doc/google-places.md) | Google Places API integration |
 | [doc/http-transport.md](doc/http-transport.md) | HTTP/SSE server setup |
-| [doc/ollama-agent.md](doc/ollama-agent.md) | Local AI agent with Ollama |
+| [slm/README.md](slm/README.md) | Local SLM agent with Ollama (usage, test suite, integration guide) |
 | [TODO.md](TODO.md) | Planned improvements and known issues |
 
 ## Data Sources
