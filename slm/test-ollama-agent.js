@@ -15,9 +15,11 @@
  *   node slm/test-ollama-agent.js --dry-run     # list questions without running
  *   node slm/test-ollama-agent.js --filter 3    # run only test #3
  *   node slm/test-ollama-agent.js --filter 1-5  # run tests 1 through 5
+ *   node slm/test-ollama-agent.js --output results.json  # save results as JSON
  */
 
 import { execFile } from 'node:child_process';
+import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
@@ -209,6 +211,23 @@ function runQuestion(question) {
   });
 }
 
+function parseStats(stderr) {
+  // Parse tool calls from stderr lines like: "  → search_pois({...})"
+  const callMatches = stderr.match(/→ (\w+)\(/g) || [];
+  const toolsCalled = callMatches.map(m => m.match(/→ (\w+)\(/)[1]);
+
+  const toolCounts = {};
+  for (const t of toolsCalled) {
+    toolCounts[t] = (toolCounts[t] || 0) + 1;
+  }
+
+  return {
+    totalToolCalls: toolsCalled.length,
+    toolCounts,
+    toolSequence: toolsCalled,
+  };
+}
+
 function checkResult(test, result) {
   const issues = [];
 
@@ -257,6 +276,8 @@ async function main() {
   const args = process.argv.slice(2);
   const dryRun = args.includes('--dry-run');
   const filterIdx = args.indexOf('--filter');
+  const outputIdx = args.indexOf('--output');
+  const outputFile = outputIdx >= 0 ? args[outputIdx + 1] : null;
   let filterRange = null;
 
   if (filterIdx >= 0 && args[filterIdx + 1]) {
@@ -320,22 +341,31 @@ async function main() {
       console.log(`\x1b[31mFAIL\x1b[0m (${elapsed}s) — ${check.issues.join(', ')}`);
     }
 
+    const stats = parseStats(result.stderr);
+
     results.push({
-      ...test,
+      id: test.id,
+      category: test.category,
+      question: test.question,
       pass: check.pass,
       issues: check.issues,
-      elapsed,
-      answer: result.stdout.trim().slice(0, 200),
-      toolCalls: result.stderr,
+      elapsed_s: parseFloat(elapsed),
+      answer: result.stdout.trim(),
+      timedOut: result.timedOut,
+      ...stats,
     });
   }
 
   // Summary
   const passed = results.filter(r => r.pass).length;
   const failed = results.filter(r => !r.pass).length;
+  const totalElapsed = results.reduce((sum, r) => sum + r.elapsed_s, 0);
+  const totalToolCalls = results.reduce((sum, r) => sum + r.totalToolCalls, 0);
 
   console.log(`\n  ─────────────────────────────────`);
   console.log(`  Results: \x1b[32m${passed} passed\x1b[0m, \x1b[31m${failed} failed\x1b[0m, ${results.length} total`);
+  console.log(`  Time: ${totalElapsed.toFixed(1)}s total, ${(totalElapsed / results.length).toFixed(1)}s avg`);
+  console.log(`  Tool calls: ${totalToolCalls} total across all tests`);
 
   if (failed > 0) {
     console.log(`\n  Failed tests:`);
@@ -346,6 +376,38 @@ async function main() {
     }
   }
   console.log('');
+
+  // Write JSON results file
+  const outputPath = outputFile || path.join(__dirname, 'test-results.json');
+  const jsonOutput = {
+    timestamp: new Date().toISOString(),
+    model: process.env.OLLAMA_MODEL || 'qwen3.5:latest',
+    summary: {
+      total: results.length,
+      passed,
+      failed,
+      timedOut: results.filter(r => r.timedOut).length,
+      total_time_s: parseFloat(totalElapsed.toFixed(1)),
+      avg_time_s: parseFloat((totalElapsed / results.length).toFixed(1)),
+      total_tool_calls: totalToolCalls,
+    },
+    results: results.map(r => ({
+      id: r.id,
+      category: r.category,
+      question: r.question,
+      pass: r.pass,
+      issues: r.issues,
+      answer: r.answer || null,
+      elapsed_s: r.elapsed_s,
+      timed_out: r.timedOut,
+      tool_calls: r.totalToolCalls,
+      tool_counts: r.toolCounts,
+      tool_sequence: r.toolSequence,
+    })),
+  };
+
+  writeFileSync(outputPath, JSON.stringify(jsonOutput, null, 2) + '\n');
+  console.log(`  Results written to ${outputPath}\n`);
 }
 
 main().catch(err => {
