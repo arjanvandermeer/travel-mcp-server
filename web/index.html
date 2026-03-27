@@ -5,11 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Travel Explorer</title>
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script type="module" src="/js/app.js"></script>
 </head>
 <body>
 
-  <!-- ─── Navbar ─── -->
+  <!-- Navbar -->
   <nav class="navbar">
     <a href="#/" class="navbar-brand">Travel Explorer</a>
     <div class="navbar-right">
@@ -40,214 +45,92 @@
     </div>
   </nav>
 
-  <!-- ─── Main content (SPA pages) ─── -->
-  <div class="main" x-data>
+  <!-- Main content (SPA pages) -->
+  <div x-data>
 
-    <!-- ─── SEARCH PAGE ─── -->
-    <div x-show="$store.route.page === 'search'">
+    <!-- MAP PAGE -->
+    <div x-show="$store.route.page === 'map'">
 
-      <!-- ─── DISCOVER SECTION ─── -->
-      <div class="discover-section"
-           x-show="$store.discover.hotels.length > 0 || $store.discover.loading">
+      <!-- Map container (full viewport below navbar) -->
+      <div id="map" style="width:100%;height:calc(100vh - 56px);"></div>
 
-        <div class="discover-header">
-          <h2 class="discover-title">
-            Discover:
-            <span x-text="$store.discover.city?.name"></span><span x-show="$store.discover.country?.name">,
-            <span x-text="$store.discover.country?.name"></span></span>
-          </h2>
-          <button class="discover-refresh" @click="$store.discover.load()"
-                  :disabled="$store.discover.loading"
-                  title="Show another destination">&#x21BB;</button>
+      <!-- Search overlay (top-left on map) -->
+      <div class="map-search-overlay">
+        <div class="map-search-bar">
+          <input class="map-search-input" type="text" placeholder="Search places..."
+            x-model="$store.search.poiQuery"
+            @input="$store.search.searchPOIs($store.search.poiQuery)"
+            @keydown="$store.search.poiKeydown($event)"
+            @keydown.enter.prevent="$store.search.search()"
+            @focus="if ($store.search.poiSuggestions.length) $store.search.poiOpen = true"
+            @click.outside="$store.search.poiOpen = false">
+          <div class="map-search-dropdown" x-show="$store.search.poiOpen" x-transition>
+            <template x-for="(poi, idx) in $store.search.poiSuggestions" :key="poi.osm_id">
+              <div class="typeahead-item"
+                :class="{ highlighted: idx === $store.search.poiHighlight }"
+                @click="$store.search.selectPOI(poi)"
+                @mouseenter="$store.search.poiHighlight = idx">
+                <span class="name">
+                  <span class="icon" x-text="$store.search.poiTypeIcon(poi.poi_type)"></span>
+                  <span x-text="poi.name"></span>
+                </span>
+                <span class="meta" x-show="poi.google_rating" x-text="'\u2B50 ' + poi.google_rating"></span>
+              </div>
+            </template>
+          </div>
         </div>
 
-        <div x-show="$store.discover.loading" class="empty-state">
-          <div class="loading-spinner"></div>
-        </div>
-
-        <div class="results-list" x-show="!$store.discover.loading">
-          <template x-for="poi in $store.discover.hotels" :key="poi.osm_id">
-            <div class="result-card" @click="window.location.hash = '#/poi/' + poi.osm_id">
-              <img x-show="poi.photo_url || (poi.google_photos && poi.google_photos[0])"
-                :src="poi.photo_url || (poi.google_photos && poi.google_photos[0]?.url)"
-                class="card-thumb" alt="">
-              <div class="card-content">
-                <div class="card-header">
-                  <span class="card-title" x-text="poi.name || poi.osm_name || 'Unknown'"></span>
-                  <span class="card-type" x-text="poi.poi_type"></span>
-                </div>
-                <div class="card-meta" x-show="poi.google_rating || poi.distance_km">
-                  <span class="card-rating" x-show="poi.google_rating"
-                    x-text="'\u2B50 ' + poi.google_rating + (poi.google_review_count ? ' (' + poi.google_review_count + ')' : '')"></span>
-                  <span class="card-distance" x-show="poi.distance_km"
-                    x-text="parseFloat(poi.distance_km).toFixed(1) + ' km'"></span>
-                </div>
-                <div class="card-address" x-show="poi.city || poi.country_code"
-                  x-text="(poi.city || '') + (poi.country_code ? ', ' + poi.country_code : '')"></div>
-              </div>
-              <div class="card-actions" x-show="$store.auth.authenticated" @click.stop>
-                <button class="btn-fav" :class="{ active: poi.is_favorite }"
-                  @click="$store.discover.toggleFavorite(poi)"
-                  x-text="poi.is_favorite ? '\u2665' : '\u2661'"></button>
-              </div>
-            </div>
+        <!-- Type filter pills -->
+        <div class="map-type-filters">
+          <template x-for="cat in $store.map.categories" :key="cat.value">
+            <button class="map-filter-pill"
+              :class="{ active: $store.map.activeCategory === cat.value }"
+              @click="$store.map.setCategory(cat.value)">
+              <span x-text="cat.icon + ' ' + cat.label"></span>
+            </button>
           </template>
         </div>
       </div>
 
-      <div class="search-panel">
-        <h2>Explore Places</h2>
-
-        <!-- Country -->
-        <div class="form-group">
-          <label>Country</label>
-          <select class="form-select"
-            x-model="$store.search.countryCode"
-            @change="$store.search.onCountryChange()">
-            <option value="">-- Select country --</option>
-            <template x-for="c in $store.search.countries" :key="c.code">
-              <option :value="c.code" x-text="c.name"></option>
-            </template>
-          </select>
-        </div>
-
-        <!-- State (visible after country selected) -->
-        <div class="form-group" x-show="$store.search.countryCode && $store.search.states.length > 0">
-          <label>State / Province</label>
-          <select class="form-select"
-            x-model="$store.search.stateCode"
-            @change="$store.search.onStateChange()">
-            <option value="">-- All states --</option>
-            <template x-for="s in $store.search.states" :key="s.code">
-              <option :value="s.code" x-text="s.name"></option>
-            </template>
-          </select>
-        </div>
-
-        <!-- City type-ahead (visible after country selected) -->
-        <div class="form-group" x-show="$store.search.countryCode">
-          <label>City</label>
-          <div class="typeahead" @click.outside="$store.search.cityOpen = false">
-            <input class="form-input" type="text" placeholder="Start typing a city name..."
-              x-model="$store.search.cityQuery"
-              @input="$store.search.searchCities($store.search.cityQuery)"
-              @keydown="$store.search.cityKeydown($event)"
-              @focus="if ($store.search.citySuggestions.length) $store.search.cityOpen = true">
-            <div class="typeahead-dropdown" x-show="$store.search.cityOpen" x-transition>
-              <template x-for="(city, idx) in $store.search.citySuggestions" :key="city.geoname_id">
-                <div class="typeahead-item"
-                  :class="{ highlighted: idx === $store.search.cityHighlight }"
-                  @click="$store.search.selectCity(city)"
-                  @mouseenter="$store.search.cityHighlight = idx">
-                  <span class="name">
-                    <span x-text="city.name"></span>
-                    <span x-show="city.state_name" class="meta" x-text="', ' + city.state_name"></span>
-                  </span>
-                  <span class="meta" x-text="$store.search.formatPop(city.population)"></span>
-                </div>
-              </template>
+      <!-- POI card (bottom sheet on marker click) -->
+      <div class="map-poi-card" x-show="$store.map.selectedPoi" x-transition.opacity>
+        <button class="map-poi-close" @click="$store.map.selectedPoi = null">&times;</button>
+        <div class="map-poi-content" x-data @click="if ($store.map.selectedPoi) window.location.hash = '#/poi/' + $store.map.selectedPoi.osm_id">
+          <img class="map-poi-thumb"
+            x-show="$store.map.selectedPoi?.photo_url"
+            :src="$store.map.selectedPoi?.photo_url" alt="">
+          <div class="map-poi-info">
+            <div class="card-header">
+              <span class="card-title" x-text="$store.map.selectedPoi?.name"></span>
+              <span class="card-type" x-text="$store.map.selectedPoi?.poi_type"></span>
             </div>
-          </div>
-        </div>
-
-        <!-- POI Category -->
-        <div class="form-group">
-          <label>Type</label>
-          <div class="radio-group">
-            <template x-for="cat in $store.search.poiCategories" :key="cat.value">
-              <label class="radio-pill" :class="{ active: $store.search.poiCategory === cat.value }">
-                <input type="radio" name="poi-category"
-                  :value="cat.value"
-                  x-model="$store.search.poiCategory"
-                  style="display:none">
-                <span x-text="cat.label"></span>
-              </label>
-            </template>
-          </div>
-        </div>
-
-        <!-- POI name type-ahead -->
-        <div class="form-group">
-          <label>Search by name</label>
-          <div class="typeahead" @click.outside="$store.search.poiOpen = false">
-            <input class="form-input" type="text" placeholder="Search for a place..."
-              x-model="$store.search.poiQuery"
-              @input="$store.search.searchPOIs($store.search.poiQuery)"
-              @keydown.enter.prevent="$store.search.search()"
-              @keydown="$store.search.poiKeydown($event)"
-              @focus="if ($store.search.poiSuggestions.length) $store.search.poiOpen = true">
-            <div class="typeahead-dropdown" x-show="$store.search.poiOpen" x-transition>
-              <template x-for="(poi, idx) in $store.search.poiSuggestions" :key="poi.osm_id">
-                <div class="typeahead-item"
-                  :class="{ highlighted: idx === $store.search.poiHighlight }"
-                  @click="$store.search.selectPOI(poi)"
-                  @mouseenter="$store.search.poiHighlight = idx">
-                  <span class="name">
-                    <span class="icon" x-text="$store.search.poiTypeIcon(poi.poi_type)"></span>
-                    <span x-text="poi.name"></span>
-                  </span>
-                  <span class="meta" x-show="poi.google_rating" x-text="'\u2B50 ' + poi.google_rating"></span>
-                </div>
-              </template>
+            <div class="card-meta" x-show="$store.map.selectedPoi?.google_rating">
+              <span class="card-rating"
+                x-text="'\u2B50 ' + $store.map.selectedPoi?.google_rating + ($store.map.selectedPoi?.google_review_count ? ' (' + $store.map.selectedPoi?.google_review_count + ')' : '')"></span>
             </div>
+            <div class="card-address" x-show="$store.map.selectedPoi?.city"
+              x-text="($store.map.selectedPoi?.city || '') + ($store.map.selectedPoi?.country_code ? ', ' + $store.map.selectedPoi?.country_code : '')"></div>
+          </div>
+          <div class="card-actions" x-show="$store.auth.authenticated" @click.stop>
+            <button class="btn-fav" :class="{ active: $store.map.selectedPoi?.is_favorite }"
+              @click="$store.map.toggleFavorite()">
+              <span x-text="$store.map.selectedPoi?.is_favorite ? '\u2665' : '\u2661'"></span>
+            </button>
           </div>
         </div>
-
-        <!-- Search button -->
-        <button class="btn-search" @click="$store.search.search()"
-          :disabled="$store.search.loading || (!$store.search.poiQuery && !$store.search.city && !$store.search.countryCode)">
-          <span x-show="$store.search.loading" class="loading-spinner"></span>
-          <span x-show="!$store.search.loading">Search</span>
-        </button>
       </div>
 
-      <!-- Results -->
-      <div x-show="$store.search.searched">
-        <div class="results-header">
-          <h2 x-text="$store.search.resultTitle"></h2>
-          <span class="count" x-text="$store.search.resultCount + ' results'"></span>
-        </div>
-
-        <div x-show="$store.search.results.length === 0 && !$store.search.loading" class="empty-state">
-          <h3>No results found</h3>
-          <p>Try adjusting your search criteria</p>
-        </div>
-
-        <div class="results-list">
-          <template x-for="poi in $store.search.results" :key="poi.osm_id">
-            <div class="result-card" @click="window.location.hash = '#/poi/' + poi.osm_id">
-              <img x-show="poi.photo_url || (poi.google_photos && poi.google_photos[0])"
-                :src="poi.photo_url || (poi.google_photos && poi.google_photos[0]?.url)"
-                class="card-thumb" alt="">
-              <div class="card-content">
-                <div class="card-header">
-                  <span class="card-title" x-text="poi.name || poi.osm_name || 'Unknown'"></span>
-                  <span class="card-type" x-text="poi.poi_type"></span>
-                </div>
-                <div class="card-meta" x-show="poi.google_rating || poi.distance_km">
-                  <span class="card-rating" x-show="poi.google_rating"
-                    x-text="'\u2B50 ' + poi.google_rating + (poi.google_review_count ? ' (' + poi.google_review_count + ')' : '')"></span>
-                  <span class="card-distance" x-show="poi.distance_km"
-                    x-text="parseFloat(poi.distance_km).toFixed(1) + ' km'"></span>
-                </div>
-                <div class="card-address" x-show="poi.city || poi.country_code"
-                  x-text="(poi.city || '') + (poi.country_code ? ', ' + poi.country_code : '')"></div>
-                <div class="card-cuisine" x-show="poi.osm_cuisine" x-text="poi.osm_cuisine"></div>
-              </div>
-              <div class="card-actions" x-show="$store.auth.authenticated" @click.stop>
-                <button class="btn-fav" :class="{ active: poi.is_favorite }"
-                  @click="$store.search.toggleFavorite(poi)"
-                  x-text="poi.is_favorite ? '\u2665' : '\u2661'"></button>
-              </div>
-            </div>
-          </template>
-        </div>
-      </div>
+      <!-- Locate me button (bottom-right) -->
+      <button class="map-locate-btn" @click="$store.map.locateMe()" title="Go to my location">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
+        </svg>
+      </button>
     </div>
 
-    <!-- ─── POI DETAIL PAGE ─── -->
-    <div x-show="$store.route.page === 'poi'">
-      <a href="#/" class="btn-back">&larr; Back to search</a>
+    <!-- POI DETAIL PAGE -->
+    <div class="main" x-show="$store.route.page === 'poi'">
+      <a href="#/" class="btn-back">&larr; Back to map</a>
       <div class="poi-detail">
         <div class="poi-detail-actions" x-show="$store.auth.authenticated">
           <button class="btn-search" style="width:auto;padding:8px 16px;font-size:14px"
@@ -268,7 +151,6 @@
         <iframe :src="'/preview/poi/' + $store.route.poiOsmId"
           style="width:100%;border:none;min-height:700px"
           @load="
-            // Auto-resize iframe to content height
             try {
               const h = $el.contentDocument.documentElement.scrollHeight;
               if (h > 100) $el.style.height = h + 'px';
@@ -277,8 +159,8 @@
       </div>
     </div>
 
-    <!-- ─── FAVORITES PAGE ─── -->
-    <div x-show="$store.route.page === 'favorites'"
+    <!-- FAVORITES PAGE -->
+    <div class="main" x-show="$store.route.page === 'favorites'"
       x-data
       x-effect="if ($store.route.page === 'favorites' && $store.auth.authenticated) $store.favorites.load()">
 

@@ -491,7 +491,8 @@ export class TravelDatabase {
         g.short_formatted_address as google_short_address,
         g.national_phone as google_phone, g.website_uri as google_website,
         g.google_maps_uri as google_maps_url,
-        g.opening_hours as google_opening_hours, g.photos as google_photos
+        g.opening_hours as google_opening_hours, g.photos as google_photos,
+        g.utc_offset_minutes as google_utc_offset_minutes
       FROM osm_google_mappings m
       JOIN google_places g ON m.google_place_id = g.google_place_id
       WHERE m.osm_id = ANY($1) AND m.mapping_status = 'active'
@@ -519,6 +520,7 @@ export class TravelDatabase {
         google_maps_url: g.google_maps_url,
         google_opening_hours: g.google_opening_hours,
         google_photos: g.google_photos,
+        google_utc_offset_minutes: g.google_utc_offset_minutes,
       };
     });
   }
@@ -546,6 +548,87 @@ export class TravelDatabase {
   //
   // =========================================================================
 
+  // =========================================================================
+  // Extra Filters: cuisine, amenities, dietary
+  // Appends WHERE clauses to an in-progress query and pushes bind params.
+  // =========================================================================
+
+  /**
+   * User-friendly amenity names mapped to OSM tag keys.
+   * The tag must exist and not equal 'no' to match.
+   */
+  static AMENITY_TAG_MAP = {
+    wifi: 'internet_access',
+    pool: 'swimming_pool',
+    parking: 'parking',
+    breakfast: 'breakfast',
+    air_conditioning: 'air_conditioning',
+    pet_friendly: 'pets',
+    restaurant: 'restaurant',
+    spa: 'spa',
+    gym: 'fitness_centre',
+    bar: 'bar',
+    elevator: 'elevator',
+  };
+
+  /**
+   * User-friendly dietary names mapped to OSM tag keys.
+   */
+  static DIETARY_TAG_MAP = {
+    vegetarian: 'diet:vegetarian',
+    vegan: 'diet:vegan',
+    gluten_free: 'diet:gluten_free',
+    halal: 'diet:halal',
+    kosher: 'diet:kosher',
+    organic: 'diet:organic',
+    lactose_free: 'diet:lactose_free',
+  };
+
+  /**
+   * Append cuisine, amenity, and dietary WHERE clauses to a query.
+   * Mutates queryParams array. Returns SQL fragment string to append.
+   * @param {string[]|null} cuisine - Cuisine values to match (OR logic, ILIKE on p.cuisine)
+   * @param {string[]|null} amenities - Amenity keys to require (AND logic, tags JSONB)
+   * @param {string[]|null} dietary - Dietary restriction keys to require (AND logic, tags JSONB)
+   * @param {Array} queryParams - Bind parameter array (mutated in-place)
+   * @returns {string} SQL fragment to append after existing WHERE clauses
+   */
+  static buildExtraFilters(cuisine, amenities, dietary, queryParams) {
+    let sql = '';
+
+    // Cuisine filter: match any of the provided cuisines (OR)
+    if (cuisine && cuisine.length > 0) {
+      const cuisineClauses = cuisine.map(c => {
+        const escaped = c.replace(/[%_\\]/g, '\\$&');
+        queryParams.push(`%${escaped}%`);
+        return `p.cuisine ILIKE $${queryParams.length}`;
+      });
+      sql += ` AND (${cuisineClauses.join(' OR ')})`;
+    }
+
+    // Amenity filter: require all amenities (AND)
+    if (amenities && amenities.length > 0) {
+      for (const amenity of amenities) {
+        const tagKey = TravelDatabase.AMENITY_TAG_MAP[amenity] || amenity;
+        queryParams.push(tagKey);
+        const idx = queryParams.length;
+        sql += ` AND p.tags->>$${idx} IS NOT NULL AND p.tags->>$${idx} != 'no'`;
+      }
+    }
+
+    // Dietary filter: require all dietary options (AND)
+    if (dietary && dietary.length > 0) {
+      for (const diet of dietary) {
+        const tagKey = TravelDatabase.DIETARY_TAG_MAP[diet] || diet;
+        queryParams.push(tagKey);
+        const idx = queryParams.length;
+        sql += ` AND p.tags->>$${idx} IS NOT NULL AND p.tags->>$${idx} != 'no'`;
+      }
+    }
+
+    return sql;
+  }
+
   /**
    * Search for POIs by name, city, coordinates, and/or type filters.
    * @param {Object} params - Search parameters
@@ -558,6 +641,10 @@ export class TravelDatabase {
    * @param {string|null} params.poiType - Single POI type filter
    * @param {string[]|null} params.poiTypes - Array of POI type filters
    * @param {string|null} params.name - POI name search query
+   * @param {string[]|null} params.cuisine - Cuisine filter (e.g., ["thai", "japanese"])
+   * @param {string[]|null} params.amenities - Amenity filter (e.g., ["wifi", "pool"])
+   * @param {string[]|null} params.dietary - Dietary restriction filter (e.g., ["vegan", "halal"])
+   * @param {boolean} params.openNow - Filter to only currently open POIs
    * @param {number} params.limit - Max results (default SEARCH_LIMIT_DEFAULT, capped at SEARCH_LIMIT_MAX)
    * @param {string|null} params.userId - User ID for including favorite status
    * @returns {Promise<Array<Object>>} Array of POI objects with osm_id, name, coordinates, city, type, and optional favorite status
@@ -573,6 +660,10 @@ export class TravelDatabase {
       poiType = null,
       poiTypes = null,  // New: array of types
       name = null,
+      cuisine = null,     // Cuisine filter (e.g., ["thai", "japanese"])
+      amenities = null,   // Amenity filter (e.g., ["wifi", "pool"])
+      dietary = null,     // Dietary restriction filter (e.g., ["vegan", "halal"])
+      openNow = false,    // Filter to only currently open POIs
       limit: rawLimit = SEARCH_LIMIT_DEFAULT,
       userId = null,    // For including favorite status in results
     } = params;
@@ -580,7 +671,13 @@ export class TravelDatabase {
 
     // Debug logging
     const typeDesc = poiTypes ? poiTypes.join(',') : poiType || 'all';
-    console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radius}km, types=${typeDesc}, limit=${limit}`);
+    const extraDesc = [
+      cuisine && `cuisine=${cuisine.join(',')}`,
+      amenities && `amenities=${amenities.join(',')}`,
+      dietary && `dietary=${dietary.join(',')}`,
+      openNow && 'openNow',
+    ].filter(Boolean).join(', ');
+    console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radius}km, types=${typeDesc}, limit=${limit}${extraDesc ? `, ${extraDesc}` : ''}`);
 
     let query;
     let queryParams;
@@ -632,11 +729,15 @@ export class TravelDatabase {
         queryParams.push(typeFilter);
       }
 
+      // Extra filters: cuisine, amenities, dietary
+      query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
+
       query += ` ORDER BY name_similarity DESC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
     }
     // Case 2: Location only (city or coordinates)
     else if (!hasName && (hasCity || hasCoords)) {
+      const extraFilters = { cuisine, amenities, dietary };
       if (hasCity) {
         const city = await this.getCityByName(cityName, countryCode, state);
         if (!city) {
@@ -650,7 +751,10 @@ export class TravelDatabase {
           searchRadius,
           typeFilter,
           limit,
-          userId
+          userId,
+          null,
+          extraFilters,
+          openNow,
         );
       } else {
         const searchRadius = radius || 10; // Default 10km
@@ -660,7 +764,10 @@ export class TravelDatabase {
           searchRadius,
           typeFilter,
           limit,
-          userId
+          userId,
+          null,
+          extraFilters,
+          openNow,
         );
       }
     }
@@ -723,6 +830,9 @@ export class TravelDatabase {
         queryParams.push(typeFilter);
       }
 
+      // Extra filters: cuisine, amenities, dietary
+      query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
+
       query += ` ORDER BY name_similarity DESC, distance_km ASC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
     }
@@ -730,12 +840,63 @@ export class TravelDatabase {
       throw new Error('Must provide either name, cityName, or coordinates (latitude + longitude)');
     }
 
+    // For openNow, over-fetch and post-filter using Google Places opening_hours
+    const fetchLimit = openNow ? limit * 3 : limit;
+    // Replace the limit param (always the last one) with the potentially larger fetch limit
+    if (openNow) {
+      queryParams[queryParams.length - 1] = fetchLimit;
+    }
+
     const result = await this.pool.query(query, queryParams);
     const enriched = await this.enrichWithGoogleData(result.rows);
+
+    let filtered = enriched;
+    if (openNow) {
+      filtered = this.filterOpenNow(enriched).slice(0, limit);
+    }
+
     const baseUrl = await this.getServerBaseUrl();
-    const withUris = addResourceUris(removeNullFields(enriched), baseUrl);
+    const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
     const withPhotos = await this.addPhotoUrls(withUris);
     return this.addFavoriteStatus(withPhotos, userId);
+  }
+
+  /**
+   * Filter POIs to only those currently open, using Google Places opening_hours data.
+   * POIs without opening hours data are excluded (we can't determine if they're open).
+   */
+  filterOpenNow(pois) {
+    // Import isOpenNow lazily to avoid circular deps — it's a pure function
+    const now = new Date();
+    return pois.filter(poi => {
+      if (!poi.google_opening_hours?.periods || poi.google_utc_offset_minutes == null) {
+        return false; // No hours data — can't confirm open, exclude
+      }
+      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+      const localMs = utcMs + poi.google_utc_offset_minutes * 60000;
+      const localDate = new Date(localMs);
+      const day = localDate.getDay();
+      const currentMinutes = localDate.getHours() * 60 + localDate.getMinutes();
+
+      for (const period of poi.google_opening_hours.periods) {
+        if (!period.open) continue;
+        const openDay = period.open.day;
+        const openMin = period.open.hour * 60 + period.open.minute;
+        if (!period.close) {
+          if (openDay === day) return true; // 24 hours
+          continue;
+        }
+        const closeDay = period.close.day;
+        const closeMin = period.close.hour * 60 + period.close.minute;
+        if (openDay === closeDay && openDay === day) {
+          if (currentMinutes >= openMin && currentMinutes < closeMin) return true;
+        } else if (openDay !== closeDay) {
+          if (day === openDay && currentMinutes >= openMin) return true;
+          if (day === closeDay && currentMinutes < closeMin) return true;
+        }
+      }
+      return false;
+    });
   }
 
   /**
@@ -789,9 +950,11 @@ export class TravelDatabase {
    * @param {number} rawLimit - Max results (capped at SEARCH_LIMIT_MAX)
    * @param {string|null} userId - User ID for including favorite status
    * @param {string[]|null} excludeOsmIds - OSM IDs to exclude from results
+   * @param {Object|null} extraFilters - Additional filters: { cuisine, amenities, dietary }
+   * @param {boolean} openNow - Filter to only currently open POIs
    * @returns {Promise<Array<Object>>} Array of POI objects with distance_km included
    */
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null) {
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null, extraFilters = null, openNow = false) {
     const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
     // Debug logging
     const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
@@ -834,15 +997,91 @@ export class TravelDatabase {
       params.push(excludeOsmIds);
     }
 
+    // Extra filters: cuisine, amenities, dietary
+    if (extraFilters) {
+      query += TravelDatabase.buildExtraFilters(
+        extraFilters.cuisine, extraFilters.amenities, extraFilters.dietary, params
+      );
+    }
+
+    // For openNow, over-fetch and post-filter
+    const fetchLimit = openNow ? limit * 3 : limit;
     query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1}`;
-    params.push(limit);
+    params.push(fetchLimit);
 
     const result = await this.pool.query(query, params);
     const enriched = await this.enrichWithGoogleData(result.rows);
+
+    let filtered = enriched;
+    if (openNow) {
+      filtered = this.filterOpenNow(enriched).slice(0, limit);
+    }
+
     const baseUrl = await this.getServerBaseUrl();
-    const withUris = addResourceUris(removeNullFields(enriched), baseUrl);
+    const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
     const withPhotos = await this.addPhotoUrls(withUris);
     return this.addFavoriteStatus(withPhotos, userId);
+  }
+
+  /**
+   * Search POIs within a bounding box (for map viewport queries).
+   * Uses ST_MakeEnvelope for fast spatial index lookups.
+   * Skips Google enrichment for speed — returns lightweight markers.
+   * @param {number} swLat - Southwest corner latitude
+   * @param {number} swLng - Southwest corner longitude
+   * @param {number} neLat - Northeast corner latitude
+   * @param {number} neLng - Northeast corner longitude
+   * @param {string[]|null} typeFilter - POI types to include
+   * @param {number} rawLimit - Max results
+   * @param {number} minRating - Minimum Google rating (0 to skip)
+   * @param {number|null} userId - User ID for favorite status
+   * @returns {Promise<Array>} Lightweight POI objects for map markers
+   */
+  async searchPOIsInBBox(swLat, swLng, neLat, neLng, typeFilter = null, rawLimit = 200, minRating = 0, userId = null) {
+    const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
+    console.error(`[searchPOIsInBBox] sw=${swLat},${swLng} ne=${neLat},${neLng} types=${typeFilter || 'all'} minRating=${minRating} limit=${limit}`);
+
+    let query = `
+      SELECT
+        p.osm_id,
+        p.poi_type,
+        p.name,
+        p.latitude,
+        p.longitude,
+        c.name as city,
+        c.country_code,
+        p.stars as osm_stars,
+        p.cuisine as osm_cuisine,
+        g.rating as google_rating,
+        g.user_rating_count as google_review_count,
+        g.photos->0->>'url' as photo_url
+      FROM osm_pois p
+      LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+      LEFT JOIN osm_google_mappings m ON p.osm_id = m.osm_id AND m.mapping_status = 'active'
+      LEFT JOIN google_places g ON m.google_place_id = g.google_place_id
+      WHERE p.name IS NOT NULL
+        AND p.location && ST_MakeEnvelope($1, $2, $3, $4, 4326)
+    `;
+
+    const params = [swLng, swLat, neLng, neLat];
+
+    if (typeFilter && typeFilter.length > 0) {
+      query += ` AND p.poi_type = ANY($${params.length + 1})`;
+      params.push(typeFilter);
+    }
+
+    if (minRating > 0) {
+      query += ` AND g.rating >= $${params.length + 1}`;
+      params.push(minRating);
+    }
+
+    // Prefer POIs with ratings, then by rating desc
+    query += ` ORDER BY g.rating DESC NULLS LAST LIMIT $${params.length + 1}`;
+    params.push(limit);
+
+    const result = await this.pool.query(query, params);
+    const cleaned = removeNullFields(result.rows);
+    return this.addFavoriteStatus(cleaned, userId);
   }
 
   async getCityByName(name, countryCode = null, state = null) {

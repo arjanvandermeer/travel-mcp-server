@@ -34,6 +34,7 @@ import { registerPOIRoutes } from './api/poi.js';
 import { registerFavoritesRoutes } from './api/favorites.js';
 import { registerAuthRoutes } from './api/auth.js';
 import { registerHomepageRoutes } from './api/homepage.js';
+import { registerMapRoutes } from './api/map.js';
 import { SESSION_MAX_AGE_MS, SESSION_CLEANUP_INTERVAL_MS, AUTH_TOKEN_MIN_LENGTH, OAUTH_INTROSPECTION_CACHE_TTL_MS } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -381,6 +382,7 @@ async function main() {
   registerFavoritesRoutes(apiRouter);
   registerAuthRoutes(apiRouter);
   registerHomepageRoutes(apiRouter);
+  registerMapRoutes(apiRouter);
 
   // Static file MIME types
   const MIME_TYPES = {

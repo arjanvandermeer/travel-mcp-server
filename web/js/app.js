@@ -1,47 +1,33 @@
 /**
- * Main app — Alpine.js stores, initialization
- *
- * Alpine is imported as an ES module (not CDN auto-init) to avoid
- * timing issues between defer scripts and module scripts.
+ * Main app — Alpine.js stores, Leaflet map integration
  */
 
 import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
 import { apiGet, apiPost, apiDelete } from './api.js';
 
-// POI category radio options (grouped types)
+// POI category options with icons
 const POI_CATEGORIES = [
-  { value: '',            label: 'All',            types: [] },
-  { value: 'dining',      label: 'Dining',         types: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
-  { value: 'accommodation', label: 'Accommodation', types: ['hotel', 'guest_house', 'hostel', 'resort', 'motel'] },
-  { value: 'attractions', label: 'Attractions',    types: ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'] },
+  { value: '',            label: 'All',            icon: '\u{1F30D}', types: [] },
+  { value: 'dining',      label: 'Dining',         icon: '\u{1F37D}', types: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
+  { value: 'accommodation', label: 'Stay',         icon: '\u{1F3E8}', types: ['hotel', 'guest_house', 'hostel', 'resort', 'motel'] },
+  { value: 'attractions', label: 'Attractions',    icon: '\u{1F3DB}', types: ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'] },
 ];
+
+// Marker color by POI type
+const MARKER_COLORS = {
+  hotel: '#4285F4', guest_house: '#4285F4', hostel: '#4285F4', resort: '#4285F4', motel: '#4285F4',
+  restaurant: '#EA4335', cafe: '#EA4335', bar: '#EA4335', pub: '#EA4335', fast_food: '#EA4335', food_court: '#EA4335',
+  attraction: '#34A853', monument: '#34A853', museum: '#34A853', park: '#34A853', viewpoint: '#34A853',
+  ruins: '#34A853', castle: '#34A853', zoo: '#34A853', theme_park: '#34A853',
+};
 
 // POI type icons for autocomplete
 const TYPE_ICONS = {
-  hotel: '\u{1F3E8}',
-  guest_house: '\u{1F3E0}',
-  hostel: '\u{1F6CF}',
-  resort: '\u{1F3D6}',
-  restaurant: '\u{1F37D}',
-  cafe: '\u2615',
-  bar: '\u{1F37A}',
-  pub: '\u{1F37A}',
-  fast_food: '\u{1F354}',
-  attraction: '\u{1F3DB}',
-  monument: '\u{1F3DB}',
-  museum: '\u{1F3DB}',
-  park: '\u{1F333}',
+  hotel: '\u{1F3E8}', guest_house: '\u{1F3E0}', hostel: '\u{1F6CF}', resort: '\u{1F3D6}',
+  restaurant: '\u{1F37D}', cafe: '\u2615', bar: '\u{1F37A}', pub: '\u{1F37A}', fast_food: '\u{1F354}',
+  attraction: '\u{1F3DB}', monument: '\u{1F3DB}', museum: '\u{1F3DB}', park: '\u{1F333}',
 };
 
-// Format population for display
-function formatPopulation(pop) {
-  if (!pop) return '';
-  if (pop >= 1_000_000) return `${(pop / 1_000_000).toFixed(1)}M`;
-  if (pop >= 1_000) return `${Math.round(pop / 1_000)}K`;
-  return pop.toString();
-}
-
-// Debounce helper
 function debounce(fn, ms) {
   let timer;
   return function (...args) {
@@ -50,391 +36,352 @@ function debounce(fn, ms) {
   };
 }
 
-// ─── Register Alpine stores ───
+function createMarkerIcon(poiType) {
+  const color = MARKER_COLORS[poiType] || '#667eea';
+  return L.divIcon({
+    className: '',
+    html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>`,
+    iconSize: [12, 12],
+    iconAnchor: [6, 6],
+  });
+}
 
+// ─── Auth Store ───
 Alpine.store('auth', {
-    checked: false,
-    authenticated: false,
-    user: null,
+  checked: false,
+  authenticated: false,
+  user: null,
 
-    async check() {
-      try {
-        const data = await apiGet('/auth/me');
-        this.authenticated = data.authenticated;
-        this.user = data.authenticated ? data : null;
-      } catch {
-        this.authenticated = false;
-        this.user = null;
-      }
-      this.checked = true;
-    },
-
-    login() {
-      window.location.href = '/auth/login';
-    },
-
-    logout() {
-      window.location.href = '/auth/logout';
-    },
-  });
-
-  // ─── Search Store ───
-  Alpine.store('search', {
-    // Dropdown data
-    countries: [],
-    states: [],
-    poiCategories: POI_CATEGORIES,
-
-    // Current selections
-    countryCode: '',
-    stateCode: '',
-    cityQuery: '',
-    city: null,    // { geoname_id, name, latitude, longitude }
-    poiCategory: '',  // '' | 'dining' | 'accommodation' | 'attractions'
-    poiQuery: '',
-
-    // Type-ahead
-    citySuggestions: [],
-    cityOpen: false,
-    cityHighlight: -1,
-    cityLoading: false,
-    poiSuggestions: [],
-    poiOpen: false,
-    poiHighlight: -1,
-    poiLoading: false,
-
-    // Results
-    results: [],
-    resultTitle: '',
-    resultCount: 0,
-    loading: false,
-    searched: false,
-
-    // ─── Loaders ───
-    async loadCountries() {
-      try {
-        this.countries = await apiGet('/api/v1/countries');
-      } catch (err) {
-        console.error('Failed to load countries:', err);
-      }
-    },
-
-    async loadStates() {
-      if (!this.countryCode) {
-        this.states = [];
-        return;
-      }
-      try {
-        this.states = await apiGet('/api/v1/states', { country_code: this.countryCode });
-      } catch (err) {
-        console.error('Failed to load states:', err);
-        this.states = [];
-      }
-    },
-
-    // ─── Country change ───
-    onCountryChange() {
-      this.stateCode = '';
-      this.city = null;
-      this.cityQuery = '';
-      this.citySuggestions = [];
-      this.poiQuery = '';
-      this.poiSuggestions = [];
-      this.results = [];
-      this.searched = false;
-      this.loadStates();
-    },
-
-    onStateChange() {
-      this.city = null;
-      this.cityQuery = '';
-      this.citySuggestions = [];
-      this.poiQuery = '';
-      this.poiSuggestions = [];
-      this.results = [];
-      this.searched = false;
-    },
-
-    // ─── City type-ahead ───
-    _searchCitiesDebounced: null,
-    searchCities(q) {
-      if (!this._searchCitiesDebounced) {
-        this._searchCitiesDebounced = debounce(async (query) => {
-          if (!query || query.length < 2 || !this.countryCode) {
-            this.citySuggestions = [];
-            this.cityOpen = false;
-            return;
-          }
-          this.cityLoading = true;
-          try {
-            const data = await apiGet('/api/v1/search/cities', {
-              country_code: this.countryCode,
-              state: this.stateCode || undefined,
-              q: query,
-              limit: 8,
-            });
-            this.citySuggestions = data.results || [];
-            this.cityOpen = this.citySuggestions.length > 0;
-            this.cityHighlight = -1;
-          } catch (err) {
-            console.error('City search failed:', err);
-          }
-          this.cityLoading = false;
-        }, 300);
-      }
-      this._searchCitiesDebounced(q);
-    },
-
-    selectCity(city) {
-      this.city = city;
-      this.cityQuery = city.name + (city.state_name ? `, ${city.state_name}` : '');
-      this.citySuggestions = [];
-      this.cityOpen = false;
-      this.poiQuery = '';
-      this.poiSuggestions = [];
-      this.results = [];
-      this.searched = false;
-    },
-
-    cityKeydown(event) {
-      if (!this.cityOpen) return;
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        this.cityHighlight = Math.min(this.cityHighlight + 1, this.citySuggestions.length - 1);
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        this.cityHighlight = Math.max(this.cityHighlight - 1, -1);
-      } else if (event.key === 'Enter' && this.cityHighlight >= 0) {
-        event.preventDefault();
-        this.selectCity(this.citySuggestions[this.cityHighlight]);
-      } else if (event.key === 'Escape') {
-        this.cityOpen = false;
-      }
-    },
-
-    // ─── POI type-ahead ───
-    _searchPOIsDebounced: null,
-    searchPOIs(q) {
-      if (!this._searchPOIsDebounced) {
-        this._searchPOIsDebounced = debounce(async (query) => {
-          if (!query || query.length < 2) {
-            this.poiSuggestions = [];
-            this.poiOpen = false;
-            return;
-          }
-          this.poiLoading = true;
-          try {
-            const data = await apiGet('/api/v1/autocomplete', {
-              q: query,
-              country_code: this.countryCode || undefined,
-              city_geoname_id: this.city?.geoname_id || undefined,
-              poi_types: this.selectedPoiTypes().join(',') || undefined,
-              limit: 10,
-            });
-            this.poiSuggestions = data.suggestions || [];
-            this.poiOpen = this.poiSuggestions.length > 0;
-            this.poiHighlight = -1;
-          } catch (err) {
-            console.error('POI autocomplete failed:', err);
-          }
-          this.poiLoading = false;
-        }, 300);
-      }
-      this._searchPOIsDebounced(q);
-    },
-
-    selectPOI(poi) {
-      // Navigate to detail page
-      window.location.hash = `/poi/${poi.osm_id}`;
-      this.poiOpen = false;
-    },
-
-    poiKeydown(event) {
-      if (!this.poiOpen) return;
-      if (event.key === 'ArrowDown') {
-        event.preventDefault();
-        this.poiHighlight = Math.min(this.poiHighlight + 1, this.poiSuggestions.length - 1);
-      } else if (event.key === 'ArrowUp') {
-        event.preventDefault();
-        this.poiHighlight = Math.max(this.poiHighlight - 1, -1);
-      } else if (event.key === 'Enter' && this.poiHighlight >= 0) {
-        event.preventDefault();
-        this.selectPOI(this.poiSuggestions[this.poiHighlight]);
-      } else if (event.key === 'Escape') {
-        this.poiOpen = false;
-      }
-    },
-
-    poiTypeIcon(type) {
-      return TYPE_ICONS[type] || '\u{1F4CD}';
-    },
-
-    formatPop(pop) {
-      return formatPopulation(pop);
-    },
-
-    // Get the array of POI types for the selected category
-    selectedPoiTypes() {
-      const cat = POI_CATEGORIES.find(c => c.value === this.poiCategory);
-      return cat ? cat.types : [];
-    },
-
-    // ─── Full search ───
-    async search() {
-      // Need at least something to search by
-      if (!this.poiQuery && !this.city && !this.countryCode) return;
-
-      this.loading = true;
-      this.searched = true;
-      this.poiOpen = false;
-      try {
-        const types = this.selectedPoiTypes();
-        const params = {
-          q: this.poiQuery || undefined,
-          country_code: this.countryCode || undefined,
-          city_name: this.city?.name || undefined,
-          state: this.stateCode || undefined,
-          poi_types: types.length ? types.join(',') : undefined,
-          limit: 50,
-        };
-        const data = await apiGet('/api/v1/search/pois', params);
-        this.results = data.results || [];
-        this.resultCount = data.count || 0;
-
-        // Build title
-        const cat = POI_CATEGORIES.find(c => c.value === this.poiCategory);
-        const typeLabel = cat && cat.value ? cat.label : 'Places';
-        const loc = this.city?.name || '';
-        this.resultTitle = loc ? `${typeLabel} in ${loc}` : typeLabel;
-      } catch (err) {
-        console.error('Search failed:', err);
-        this.results = [];
-        this.resultCount = 0;
-      }
-      this.loading = false;
-    },
-
-    // ─── Favorites ───
-    async toggleFavorite(poi) {
-      const auth = Alpine.store('auth');
-      if (!auth.authenticated) {
-        auth.login();
-        return;
-      }
-      try {
-        if (poi.is_favorite) {
-          await apiDelete(`/api/v1/favorites/${poi.osm_id}`);
-          poi.is_favorite = false;
-        } else {
-          await apiPost('/api/v1/favorites', { osm_id: poi.osm_id });
-          poi.is_favorite = true;
-        }
-      } catch (err) {
-        console.error('Favorite toggle failed:', err);
-      }
-    },
-  });
-
-  // ─── Route Store (simple hash router) ───
-  Alpine.store('route', {
-    page: 'search',   // 'search' | 'poi' | 'favorites'
-    poiOsmId: null,
-
-    init() {
-      this.handleHash();
-      window.addEventListener('hashchange', () => this.handleHash());
-    },
-
-    handleHash() {
-      const hash = window.location.hash || '#/';
-      if (hash.startsWith('#/poi/')) {
-        this.page = 'poi';
-        this.poiOsmId = hash.replace('#/poi/', '');
-      } else if (hash === '#/favorites') {
-        this.page = 'favorites';
-      } else {
-        this.page = 'search';
-      }
-    },
-  });
-
-  // ─── Favorites Store ───
-  Alpine.store('favorites', {
-    items: [],
-    loading: false,
-    loaded: false,
-    filterType: '',
-
-    async load() {
-      this.loading = true;
-      try {
-        const params = {};
-        if (this.filterType) params.poi_types = this.filterType;
-        const data = await apiGet('/api/v1/favorites', params);
-        this.items = data.favorites || [];
-        this.loaded = true;
-      } catch (err) {
-        console.error('Failed to load favorites:', err);
-      }
-      this.loading = false;
-    },
-
-    async remove(osmId) {
-      try {
-        await apiDelete(`/api/v1/favorites/${osmId}`);
-        this.items = this.items.filter(f => f.poi_osm_id !== osmId && f.osm_id !== osmId);
-      } catch (err) {
-        console.error('Failed to remove favorite:', err);
-      }
-    },
-  });
-
-// ─── Discover Store (homepage featured section) ───
-Alpine.store('discover', {
-  loading: false,
-  country: null,
-  city: null,
-  hotels: [],
-  error: null,
-
-  async load() {
-    this.loading = true;
-    this.error = null;
+  async check() {
     try {
-      const data = await apiGet('/api/v1/homepage');
-      this.country = data.country;
-      this.city = data.city;
-      this.hotels = data.hotels || [];
+      const data = await apiGet('/auth/me');
+      this.authenticated = data.authenticated;
+      this.user = data.authenticated ? data : null;
+    } catch {
+      this.authenticated = false;
+      this.user = null;
+    }
+    this.checked = true;
+  },
+  login() { window.location.href = '/auth/login'; },
+  logout() { window.location.href = '/auth/logout'; },
+});
+
+// ─── Route Store ───
+Alpine.store('route', {
+  page: 'map',   // 'map' | 'poi' | 'favorites'
+  poiOsmId: null,
+
+  init() {
+    this.handleHash();
+    window.addEventListener('hashchange', () => this.handleHash());
+  },
+
+  handleHash() {
+    const hash = window.location.hash || '#/';
+    if (hash.startsWith('#/poi/')) {
+      this.page = 'poi';
+      this.poiOsmId = hash.replace('#/poi/', '');
+    } else if (hash === '#/favorites') {
+      this.page = 'favorites';
+    } else {
+      this.page = 'map';
+    }
+  },
+});
+
+// ─── Map Store ───
+Alpine.store('map', {
+  leafletMap: null,
+  markerCluster: null,
+  markers: new Map(),  // osm_id -> L.marker
+  selectedPoi: null,
+  activeCategory: '',
+  categories: POI_CATEGORIES,
+  loading: false,
+  _fetchDebounced: null,
+  _lastBbox: null,
+
+  initMap() {
+    if (this.leafletMap) return;
+
+    const map = L.map('map', {
+      center: [20, 0],  // World view default
+      zoom: 3,
+      zoomControl: true,
+      attributionControl: true,
+    });
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 19,
+    }).addTo(map);
+
+    this.markerCluster = L.markerClusterGroup({
+      maxClusterRadius: 50,
+      spiderfyOnMaxZoom: true,
+      showCoverageOnHover: false,
+      disableClusteringAtZoom: 16,
+    });
+    map.addLayer(this.markerCluster);
+
+    // Fetch POIs when map moves
+    this._fetchDebounced = debounce(() => this.fetchPOIs(), 400);
+    map.on('moveend', () => this._fetchDebounced());
+    map.on('zoomend', () => this._fetchDebounced());
+
+    this.leafletMap = map;
+
+    // Request geolocation
+    this.locateMe();
+  },
+
+  locateMe() {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude } = pos.coords;
+        if (this.leafletMap) {
+          this.leafletMap.flyTo([latitude, longitude], 13, { duration: 1.5 });
+        }
+      },
+      () => {
+        // Denied or unavailable — stay at world view, that's fine
+      },
+      { enableHighAccuracy: false, timeout: 8000 }
+    );
+  },
+
+  setCategory(value) {
+    this.activeCategory = value;
+    this.fetchPOIs();
+  },
+
+  async fetchPOIs() {
+    if (!this.leafletMap) return;
+    const zoom = this.leafletMap.getZoom();
+
+    // Don't fetch at very low zoom — too many results, not useful
+    if (zoom < 8) {
+      this.markerCluster.clearLayers();
+      this.markers.clear();
+      this._lastBbox = null;
+      return;
+    }
+
+    const bounds = this.leafletMap.getBounds();
+    const bbox = {
+      sw_lat: bounds.getSouth().toFixed(4),
+      sw_lng: bounds.getWest().toFixed(4),
+      ne_lat: bounds.getNorth().toFixed(4),
+      ne_lng: bounds.getEast().toFixed(4),
+    };
+
+    // Skip if bbox hasn't changed meaningfully
+    const bboxKey = `${bbox.sw_lat},${bbox.sw_lng},${bbox.ne_lat},${bbox.ne_lng},${this.activeCategory}`;
+    if (bboxKey === this._lastBbox) return;
+    this._lastBbox = bboxKey;
+
+    const cat = POI_CATEGORIES.find(c => c.value === this.activeCategory);
+    const types = cat && cat.types.length ? cat.types.join(',') : undefined;
+
+    this.loading = true;
+    try {
+      const data = await apiGet('/api/v1/map/pois', {
+        ...bbox,
+        types,
+        limit: 300,
+      });
+
+      this._updateMarkers(data.results || []);
     } catch (err) {
-      console.error('Discover load failed:', err);
-      this.error = 'Could not load featured places';
+      console.error('Map POI fetch failed:', err);
     }
     this.loading = false;
   },
 
-  async toggleFavorite(poi) {
+  _updateMarkers(pois) {
+    const newIds = new Set(pois.map(p => p.osm_id));
+
+    // Remove markers no longer in view
+    for (const [id, marker] of this.markers) {
+      if (!newIds.has(id)) {
+        this.markerCluster.removeLayer(marker);
+        this.markers.delete(id);
+      }
+    }
+
+    // Add new markers
+    for (const poi of pois) {
+      if (this.markers.has(poi.osm_id)) continue;
+
+      const marker = L.marker([poi.latitude, poi.longitude], {
+        icon: createMarkerIcon(poi.poi_type),
+      });
+
+      marker.on('click', () => {
+        this.selectedPoi = poi;
+      });
+
+      this.markers.set(poi.osm_id, marker);
+      this.markerCluster.addLayer(marker);
+    }
+  },
+
+  async toggleFavorite() {
     const auth = Alpine.store('auth');
     if (!auth.authenticated) { auth.login(); return; }
+    if (!this.selectedPoi) return;
+
     try {
-      if (poi.is_favorite) {
-        await apiDelete(`/api/v1/favorites/${poi.osm_id}`);
-        poi.is_favorite = false;
+      if (this.selectedPoi.is_favorite) {
+        await apiDelete(`/api/v1/favorites/${this.selectedPoi.osm_id}`);
+        this.selectedPoi.is_favorite = false;
       } else {
-        await apiPost('/api/v1/favorites', { osm_id: poi.osm_id });
-        poi.is_favorite = true;
+        await apiPost('/api/v1/favorites', { osm_id: this.selectedPoi.osm_id });
+        this.selectedPoi.is_favorite = true;
       }
     } catch (err) {
       console.error('Favorite toggle failed:', err);
+    }
+  },
+
+  flyTo(lat, lng, zoom = 15) {
+    if (this.leafletMap) {
+      this.leafletMap.flyTo([lat, lng], zoom, { duration: 1 });
+    }
+  },
+});
+
+// ─── Search Store (simplified for map overlay) ───
+Alpine.store('search', {
+  poiQuery: '',
+  poiSuggestions: [],
+  poiOpen: false,
+  poiHighlight: -1,
+  loading: false,
+
+  _searchPOIsDebounced: null,
+  searchPOIs(q) {
+    if (!this._searchPOIsDebounced) {
+      this._searchPOIsDebounced = debounce(async (query) => {
+        if (!query || query.length < 2) {
+          this.poiSuggestions = [];
+          this.poiOpen = false;
+          return;
+        }
+        this.loading = true;
+        try {
+          const data = await apiGet('/api/v1/autocomplete', {
+            q: query,
+            limit: 10,
+          });
+          this.poiSuggestions = data.suggestions || [];
+          this.poiOpen = this.poiSuggestions.length > 0;
+          this.poiHighlight = -1;
+        } catch (err) {
+          console.error('POI autocomplete failed:', err);
+        }
+        this.loading = false;
+      }, 300);
+    }
+    this._searchPOIsDebounced(q);
+  },
+
+  selectPOI(poi) {
+    this.poiOpen = false;
+    this.poiQuery = poi.name;
+    // Fly to POI on map
+    const mapStore = Alpine.store('map');
+    mapStore.flyTo(poi.latitude, poi.longitude, 16);
+    mapStore.selectedPoi = poi;
+  },
+
+  search() {
+    // If there's a query but no suggestion selected, search and fly to first result
+    if (this.poiQuery && this.poiSuggestions.length > 0) {
+      this.selectPOI(this.poiSuggestions[0]);
+    }
+  },
+
+  poiKeydown(event) {
+    if (!this.poiOpen) return;
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.poiHighlight = Math.min(this.poiHighlight + 1, this.poiSuggestions.length - 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.poiHighlight = Math.max(this.poiHighlight - 1, -1);
+    } else if (event.key === 'Enter' && this.poiHighlight >= 0) {
+      event.preventDefault();
+      this.selectPOI(this.poiSuggestions[this.poiHighlight]);
+    } else if (event.key === 'Escape') {
+      this.poiOpen = false;
+    }
+  },
+
+  poiTypeIcon(type) {
+    return TYPE_ICONS[type] || '\u{1F4CD}';
+  },
+});
+
+// ─── Favorites Store ───
+Alpine.store('favorites', {
+  items: [],
+  loading: false,
+
+  async load() {
+    this.loading = true;
+    try {
+      const data = await apiGet('/api/v1/favorites');
+      this.items = data.favorites || [];
+    } catch (err) {
+      console.error('Failed to load favorites:', err);
+    }
+    this.loading = false;
+  },
+
+  async remove(osmId) {
+    try {
+      await apiDelete(`/api/v1/favorites/${osmId}`);
+      this.items = this.items.filter(f => f.poi_osm_id !== osmId && f.osm_id !== osmId);
+    } catch (err) {
+      console.error('Failed to remove favorite:', err);
     }
   },
 });
 
 // Bootstrap
 Alpine.store('auth').check();
-Alpine.store('search').loadCountries();
 Alpine.store('route').init();
-Alpine.store('discover').load();
 
-// Make Alpine available globally for devtools, then start
+// Initialize map when on map page
+const initMapWhenReady = () => {
+  if (Alpine.store('route').page === 'map') {
+    // Small delay to ensure DOM is ready
+    requestAnimationFrame(() => {
+      Alpine.store('map').initMap();
+    });
+  }
+};
+
+// Re-init map when navigating back to it
+window.addEventListener('hashchange', () => {
+  requestAnimationFrame(() => {
+    if (Alpine.store('route').page === 'map') {
+      const mapStore = Alpine.store('map');
+      if (!mapStore.leafletMap) {
+        mapStore.initMap();
+      } else {
+        // Invalidate size in case container was hidden
+        mapStore.leafletMap.invalidateSize();
+      }
+    }
+  });
+});
+
 window.Alpine = Alpine;
 Alpine.start();
+
+// Init map after Alpine has started and DOM is ready
+requestAnimationFrame(initMapWhenReady);
