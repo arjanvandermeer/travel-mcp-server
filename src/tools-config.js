@@ -700,9 +700,9 @@ export function getToolsConfig(widgetDomain) {
           ...tool._meta,
           'openai/widgetDomain': widgetDomain,
           'openai/widgetCSP': {
-            connect_domains: [],
-            resource_domains: [],
-            frame_domains: isPoiDetails ? ['maps.google.com'] : [],
+            connect_domains: ['https://chatgpt.com', widgetDomain],
+            resource_domains: [widgetDomain, 'https://*.oaistatic.com'],
+            frame_domains: isPoiDetails ? ['https://maps.google.com'] : [],
           },
         },
       };
@@ -769,9 +769,9 @@ export function getResourcesConfig(widgetDomain) {
         _meta: {
           'openai/widgetDomain': widgetDomain,
           'openai/widgetCSP': {
-            connect_domains: [],
-            resource_domains: [],
-            frame_domains: ['maps.google.com'],
+            connect_domains: ['https://chatgpt.com', widgetDomain],
+            resource_domains: [widgetDomain, 'https://*.oaistatic.com'],
+            frame_domains: ['https://maps.google.com'],
           },
         },
       },
@@ -783,8 +783,8 @@ export function getResourcesConfig(widgetDomain) {
         _meta: {
           'openai/widgetDomain': widgetDomain,
           'openai/widgetCSP': {
-            connect_domains: [],
-            resource_domains: [],
+            connect_domains: ['https://chatgpt.com', widgetDomain],
+            resource_domains: [widgetDomain, 'https://*.oaistatic.com'],
             frame_domains: [],
           },
         },
@@ -797,8 +797,8 @@ export function getResourcesConfig(widgetDomain) {
         _meta: {
           'openai/widgetDomain': widgetDomain,
           'openai/widgetCSP': {
-            connect_domains: [],
-            resource_domains: [],
+            connect_domains: ['https://chatgpt.com', widgetDomain],
+            resource_domains: [widgetDomain, 'https://*.oaistatic.com'],
             frame_domains: [],
           },
         },
@@ -811,9 +811,9 @@ export function getResourcesConfig(widgetDomain) {
         _meta: {
           'openai/widgetDomain': widgetDomain,
           'openai/widgetCSP': {
-            connect_domains: [],
-            resource_domains: [],
-            frame_domains: ['maps.google.com'],
+            connect_domains: ['https://chatgpt.com', widgetDomain],
+            resource_domains: [widgetDomain, 'https://*.oaistatic.com'],
+            frame_domains: ['https://maps.google.com'],
           },
         },
       },

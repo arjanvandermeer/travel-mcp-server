@@ -1,0 +1,559 @@
+{
+  "timestamp": "2026-03-23T20:17:09.977Z",
+  "model": "qwen3.5:latest",
+  "summary": {
+    "total": 20,
+    "passed": 8,
+    "failed": 12,
+    "timedOut": 5,
+    "total_time_s": 2628.8,
+    "avg_time_s": 131.4,
+    "total_tool_calls": 168
+  },
+  "results": [
+    {
+      "id": 1,
+      "category": "Simple search",
+      "question": "hotels in hua hin",
+      "pass": true,
+      "issues": [],
+      "answer": "Found 5 hotels in Hua Hin:\n\n1. **Dune Hua Hin** - 12.5837°N, 99.9557°E\n2. **Hua Hin Loft** - 12.5665°N, 99.9577°E\n3. **Hub Hua Hin 57** - 12.5722°N, 99.9578°E\n4. **Riche Hua Hin** - 12.6069°N, 99.9495°E\n5. **Milano Hua Hin** - 12.5310°N, 99.9587°E\n\nWould you like more details about any specific hotel, or would you like me to search for restaurants or attractions in the area?",
+      "elapsed_s": 91.9,
+      "timed_out": false,
+      "tool_calls": 4,
+      "tool_counts": {
+        "search_hotels": 3,
+        "search_pois": 1
+      },
+      "tool_sequence": [
+        "search_hotels",
+        "search_hotels",
+        "search_pois",
+        "search_hotels"
+      ]
+    },
+    {
+      "id": 2,
+      "category": "Simple search",
+      "question": "find cafes in chiang mai",
+      "pass": false,
+      "issues": [
+        "Timed out"
+      ],
+      "answer": null,
+      "elapsed_s": 180,
+      "timed_out": true,
+      "tool_calls": 9,
+      "tool_counts": {
+        "search_pois": 6,
+        "search_restaurants": 3
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "search_restaurants",
+        "search_pois",
+        "search_pois",
+        "search_restaurants",
+        "search_restaurants",
+        "search_pois",
+        "search_pois"
+      ]
+    },
+    {
+      "id": 3,
+      "category": "Distance",
+      "question": "what's the distance between coco 51 and hua hin marriott",
+      "pass": true,
+      "issues": [],
+      "answer": "The distance between Coco 51 and Hua Hin Marriott Resort & Spa is **2.09 kilometers** (approximately 2,089 meters).",
+      "elapsed_s": 54,
+      "timed_out": false,
+      "tool_calls": 3,
+      "tool_counts": {
+        "search_pois": 2,
+        "calculate_distance": 1
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "calculate_distance"
+      ]
+    },
+    {
+      "id": 4,
+      "category": "Distance",
+      "question": "how far is hyatt regency hua hin from hua hin loft",
+      "pass": true,
+      "issues": [],
+      "answer": "The distance between Hyatt Regency Hua Hin and Hua Hin Loft is approximately **3.45 kilometers** (3,448 meters).",
+      "elapsed_s": 54.6,
+      "timed_out": false,
+      "tool_calls": 3,
+      "tool_counts": {
+        "search_pois": 2,
+        "calculate_distance": 1
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "calculate_distance"
+      ]
+    },
+    {
+      "id": 5,
+      "category": "Nearby",
+      "question": "restaurants near coco 51",
+      "pass": true,
+      "issues": [],
+      "answer": "Here are restaurants near Coco 51, listed by distance:\n\n| Restaurant | Distance |\n|------------|----------|\n| Living Room | 39m |\n| ร้านอาหารอยู่เย็น | 52m |\n| Todai Hua Hin | 72m |\n| Mooz | 73m |\n| ขาหมูตรอกซุง หัวหิน | 151m |\n| SLOT Beef and Japanese Curry | 165m |\n| แสงไทย ซีฟู้ด | 182m |\n| ระตะมา | 205m |\n| The 51 French Brasserie | 274m |\n\nAll these restaurants are within walking distance (under 300m) of Coco 51. Would you like more details about any specific restaurant?",
+      "elapsed_s": 162.8,
+      "timed_out": false,
+      "tool_calls": 11,
+      "tool_counts": {
+        "search_pois": 1,
+        "search_restaurants": 1,
+        "calculate_distance": 9
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_restaurants",
+        "calculate_distance",
+        "calculate_distance",
+        "calculate_distance",
+        "calculate_distance",
+        "calculate_distance",
+        "calculate_distance",
+        "calculate_distance",
+        "calculate_distance",
+        "calculate_distance"
+      ]
+    },
+    {
+      "id": 6,
+      "category": "Nearby",
+      "question": "hotels near doi inthanon",
+      "pass": false,
+      "issues": [
+        "Hit max iterations",
+        "Answer doesn't match expected pattern: /hotel/i"
+      ],
+      "answer": "Reached maximum iterations. Here is what I have so far.",
+      "elapsed_s": 177.7,
+      "timed_out": false,
+      "tool_calls": 18,
+      "tool_counts": {
+        "search_pois": 1,
+        "search_hotels": 1,
+        "get_poi_details": 16
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_hotels",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details"
+      ]
+    },
+    {
+      "id": 7,
+      "category": "Detail lookup",
+      "question": "tell me everything about coco 51",
+      "pass": false,
+      "issues": [
+        "Hit max iterations",
+        "Answer doesn't match expected pattern: /coco/i"
+      ],
+      "answer": "Reached maximum iterations. Here is what I have so far.",
+      "elapsed_s": 143.4,
+      "timed_out": false,
+      "tool_calls": 10,
+      "tool_counts": {
+        "search_pois": 1,
+        "get_poi_details": 9
+      },
+      "tool_sequence": [
+        "search_pois",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details"
+      ]
+    },
+    {
+      "id": 8,
+      "category": "Detail lookup",
+      "question": "what type of place is hua hin marriott and what are its details",
+      "pass": false,
+      "issues": [
+        "Hit max iterations",
+        "Answer doesn't match expected pattern: /marriott|hotel/i"
+      ],
+      "answer": "Reached maximum iterations. Here is what I have so far.",
+      "elapsed_s": 134.4,
+      "timed_out": false,
+      "tool_calls": 10,
+      "tool_counts": {
+        "search_pois": 2,
+        "get_poi_details": 8
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details"
+      ]
+    },
+    {
+      "id": 9,
+      "category": "Fuzzy names",
+      "question": "find coco51",
+      "pass": false,
+      "issues": [
+        "Hit max iterations",
+        "Answer doesn't match expected pattern: /coco/i"
+      ],
+      "answer": "Reached maximum iterations. Here is what I have so far.",
+      "elapsed_s": 126.2,
+      "timed_out": false,
+      "tool_calls": 10,
+      "tool_counts": {
+        "search_pois": 2,
+        "search_hotels": 1,
+        "get_poi_details": 7
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_hotels",
+        "search_pois",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details"
+      ]
+    },
+    {
+      "id": 10,
+      "category": "Fuzzy names",
+      "question": "where is the hyatt in hua hin",
+      "pass": false,
+      "issues": [
+        "Hit max iterations",
+        "Answer doesn't match expected pattern: /hyatt|hua hin/i"
+      ],
+      "answer": "Reached maximum iterations. Here is what I have so far.",
+      "elapsed_s": 123.3,
+      "timed_out": false,
+      "tool_calls": 10,
+      "tool_counts": {
+        "search_hotels": 3,
+        "search_pois": 1,
+        "get_poi_details": 6
+      },
+      "tool_sequence": [
+        "search_hotels",
+        "search_hotels",
+        "search_pois",
+        "search_hotels",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details"
+      ]
+    },
+    {
+      "id": 11,
+      "category": "Existence check",
+      "question": "are there any museums in hua hin?",
+      "pass": false,
+      "issues": [
+        "Timed out"
+      ],
+      "answer": null,
+      "elapsed_s": 180,
+      "timed_out": true,
+      "tool_calls": 9,
+      "tool_counts": {
+        "search_pois": 5,
+        "search_hotels": 1,
+        "get_poi_details": 3
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "search_hotels",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "get_poi_details",
+        "get_poi_details",
+        "get_poi_details"
+      ]
+    },
+    {
+      "id": 12,
+      "category": "Existence check",
+      "question": "any castles in phuket?",
+      "pass": false,
+      "issues": [
+        "Hit max iterations",
+        "Answer doesn't match expected pattern: /castle|no |not |none|found|couldn/i"
+      ],
+      "answer": "Reached maximum iterations. Here is what I have so far.",
+      "elapsed_s": 133.2,
+      "timed_out": false,
+      "tool_calls": 10,
+      "tool_counts": {
+        "search_pois": 10
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois"
+      ]
+    },
+    {
+      "id": 13,
+      "category": "Comparative",
+      "question": "which is closer to coco 51: hua hin marriott or hua hin loft?",
+      "pass": true,
+      "issues": [],
+      "answer": "**Hua Hin Loft** is closer to Coco 51.\n\n- Distance to Hua Hin Loft: **1.46 km**\n- Distance to Hua Hin Marriott: **2.09 km**",
+      "elapsed_s": 76.9,
+      "timed_out": false,
+      "tool_calls": 5,
+      "tool_counts": {
+        "search_pois": 3,
+        "calculate_distance": 2
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "calculate_distance",
+        "calculate_distance"
+      ]
+    },
+    {
+      "id": 14,
+      "category": "Exploration",
+      "question": "what can I do in chiang mai?",
+      "pass": false,
+      "issues": [
+        "Timed out"
+      ],
+      "answer": null,
+      "elapsed_s": 180,
+      "timed_out": true,
+      "tool_calls": 17,
+      "tool_counts": {
+        "search_pois": 16,
+        "search_hotels": 1
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_hotels",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois"
+      ]
+    },
+    {
+      "id": 15,
+      "category": "Exploration",
+      "question": "tell me about hua hin as a travel destination",
+      "pass": true,
+      "issues": [],
+      "answer": "Based on my search, here's what I found about Hua Hin as a travel destination:\n\n**Location:** Hua Hin is a coastal resort town in Thailand, located approximately at coordinates 12.57°N, 99.92°E.\n\n**Key Attractions:**\n- **Hua Hin Safari & Adventure Park** - A wildlife and adventure attraction\n- **หมู่บ้านศิลปินหัวหิน** - Local cultural attraction\n- **ตลาดน้ำหัวหินสามพันนาม** - Local market attraction\n\n**Accommodation Options:**\nThe area offers various hotels and resorts including:\n- Lotuswell Resort\n- AKA Resort & Spa Hua Hin\n- Get Link Hip Hotel\n- Danieli Resort\n- สาลี่ หัวหิน รีสอร์ท\n\n**Dining:**\nNumerous restaurants are available, including:\n- Daddy Deli\n- L'Occitan\n- Pollitos\n- เสวนา (local Thai restaurant)\n- Focacia and panini bakery\n\n**Summary:** Hua Hin is a well-established Thai coastal resort destination with a good mix of attractions, accommodation, and dining options. It's suitable for travelers looking for beach relaxation, wildlife experiences, and local cultural activities.",
+      "elapsed_s": 158.1,
+      "timed_out": false,
+      "tool_calls": 10,
+      "tool_counts": {
+        "search_pois": 4,
+        "get_poi_details": 2,
+        "search_restaurants": 2,
+        "search_hotels": 2
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "get_poi_details",
+        "search_pois",
+        "get_poi_details",
+        "search_restaurants",
+        "search_hotels",
+        "search_restaurants",
+        "search_hotels"
+      ]
+    },
+    {
+      "id": 16,
+      "category": "Coordinates",
+      "question": "what hotels are near latitude 12.57, longitude 99.96?",
+      "pass": true,
+      "issues": [],
+      "answer": "Found 5 hotels near latitude 12.57, longitude 99.96:\n\n1. **Fresh Inn Hotel** - 12.5704, 99.9599\n2. **โรงแรมสกุลวิไล** (Sukul Vilai Hotel) - 12.5704, 99.9594\n3. **โรงแรมบ้านพักหัวหิน** (Ban Phak Hua Hin Hotel) - 12.5702, 99.9593\n4. **โรงแรมทิพย์อุไรซิตี้** (Tiphai Urisiti Hotel) - 12.5694, 99.9593\n5. **โรงแรมสิริน** (Sirin Hotel) - 12.5691, 99.9595\n\nThese hotels are all located in the Hua Hin area of Thailand. Would you like more details about any specific hotel?",
+      "elapsed_s": 50.8,
+      "timed_out": false,
+      "tool_calls": 1,
+      "tool_counts": {
+        "search_hotels": 1
+      },
+      "tool_sequence": [
+        "search_hotels"
+      ]
+    },
+    {
+      "id": 17,
+      "category": "Coordinates",
+      "question": "find restaurants near coordinates 13.75, 100.5",
+      "pass": true,
+      "issues": [],
+      "answer": "Found 10 restaurants near coordinates 13.75, 100.5:\n\n1. **โจ๊กหมูเจ๊แหม่ม** - 13.7487, 100.5002\n2. **Corner 144** - 13.7516, 100.5004\n3. **เจ๊ขวัญ** - 13.7481, 100.5001\n4. **บ้านนวล เฟื่องนคร** - 13.7504, 100.4981\n5. **อาหารตามสั่ง** - 13.7481, 100.5002\n6. **อาหารตามสั่ง** - 13.7480, 100.5012\n7. **โยตาอาหารเจ** - 13.7479, 100.5016\n8. **Chote Chipr** - 13.7521, 100.4980\n9. **All vegan dumplings** - 13.7527, 100.4983\n10. **street food** - 13.7532, 100.4987\n\nWould you like more details about any specific restaurant, such as phone number, website, or opening hours?",
+      "elapsed_s": 77,
+      "timed_out": false,
+      "tool_calls": 1,
+      "tool_counts": {
+        "search_restaurants": 1
+      },
+      "tool_sequence": [
+        "search_restaurants"
+      ]
+    },
+    {
+      "id": 18,
+      "category": "Multi-criteria",
+      "question": "find guest houses in chiang mai",
+      "pass": false,
+      "issues": [
+        "Timed out"
+      ],
+      "answer": null,
+      "elapsed_s": 180,
+      "timed_out": true,
+      "tool_calls": 9,
+      "tool_counts": {
+        "search_hotels": 2,
+        "search_pois": 7
+      },
+      "tool_sequence": [
+        "search_hotels",
+        "search_pois",
+        "search_hotels",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois"
+      ]
+    },
+    {
+      "id": 19,
+      "category": "Multi-criteria",
+      "question": "bars in phuket",
+      "pass": false,
+      "issues": [
+        "Timed out"
+      ],
+      "answer": null,
+      "elapsed_s": 180,
+      "timed_out": true,
+      "tool_calls": 8,
+      "tool_counts": {
+        "search_pois": 7,
+        "search_restaurants": 1
+      },
+      "tool_sequence": [
+        "search_pois",
+        "search_pois",
+        "search_restaurants",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois",
+        "search_pois"
+      ]
+    },
+    {
+      "id": 20,
+      "category": "Reasoning",
+      "question": "I want to stay in hua hin and eat near my hotel. Find me a hotel and nearby restaurants.",
+      "pass": false,
+      "issues": [
+        "Hit max iterations",
+        "Answer doesn't match expected pattern: /hotel|restaurant/i"
+      ],
+      "answer": "Reached maximum iterations. Here is what I have so far.",
+      "elapsed_s": 164.5,
+      "timed_out": false,
+      "tool_calls": 10,
+      "tool_counts": {
+        "search_hotels": 3,
+        "search_pois": 6,
+        "search_restaurants": 1
+      },
+      "tool_sequence": [
+        "search_hotels",
+        "search_pois",
+        "search_pois",
+        "search_hotels",
+        "search_pois",
+        "search_hotels",
+        "search_pois",
+        "search_restaurants",
+        "search_pois",
+        "search_pois"
+      ]
+    }
+  ]
+}

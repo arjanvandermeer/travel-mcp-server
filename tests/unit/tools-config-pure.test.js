@@ -186,7 +186,7 @@ describe('getToolsConfig', () => {
     assert.ok(poiDetailsTool, 'Should have a poi-details tool');
     assert.deepStrictEqual(
       poiDetailsTool._meta['openai/widgetCSP'].frame_domains,
-      ['maps.google.com'],
+      ['https://maps.google.com'],
     );
   });
 
@@ -275,7 +275,7 @@ describe('getResourcesConfig', () => {
       assert.strictEqual(poiDetails._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
         poiDetails._meta['openai/widgetCSP'].frame_domains,
-        ['maps.google.com'],
+        ['https://maps.google.com'],
       );
     });
 
@@ -316,7 +316,7 @@ describe('getResourcesConfig', () => {
       assert.strictEqual(poiById._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
         poiById._meta['openai/widgetCSP'].frame_domains,
-        ['maps.google.com'],
+        ['https://maps.google.com'],
       );
     });
 
