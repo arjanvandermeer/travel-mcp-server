@@ -80,12 +80,12 @@
           </div>
         </div>
 
-        <!-- Type filter pills -->
+        <!-- Type filter pills (multi-toggle) -->
         <div class="map-type-filters">
           <template x-for="cat in $store.map.categories" :key="cat.value">
             <button class="map-filter-pill"
-              :class="{ active: $store.map.activeCategory === cat.value }"
-              @click="$store.map.setCategory(cat.value)">
+              :class="{ active: $store.map.activeCategories.has(cat.value) }"
+              @click="$store.map.toggleCategory(cat.value)">
               <span x-text="cat.icon + ' ' + cat.label"></span>
             </button>
           </template>

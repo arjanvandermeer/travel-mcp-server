@@ -96,8 +96,8 @@ Alpine.store('map', {
   markerCluster: null,
   markers: new Map(),  // osm_id -> L.marker
   selectedPoi: null,
-  activeCategory: '',
-  categories: POI_CATEGORIES,
+  activeCategories: new Set(['dining', 'accommodation', 'attractions']),  // all on by default
+  categories: POI_CATEGORIES.filter(c => c.value !== ''),  // exclude "All" — multi-toggle replaces it
   loading: false,
   _fetchDebounced: null,
   _lastBbox: null,
@@ -142,18 +142,28 @@ Alpine.store('map', {
       (pos) => {
         const { latitude, longitude } = pos.coords;
         if (this.leafletMap) {
-          this.leafletMap.flyTo([latitude, longitude], 13, { duration: 1.5 });
+          // Zoom to 500m radius around current location
+          const center = L.latLng(latitude, longitude);
+          const bounds = center.toBounds(1000); // 1000m = 500m radius
+          this.leafletMap.flyToBounds(bounds, { duration: 1.5, maxZoom: 17 });
         }
       },
       () => {
         // Denied or unavailable — stay at world view, that's fine
       },
-      { enableHighAccuracy: false, timeout: 8000 }
+      { enableHighAccuracy: true, timeout: 8000 }
     );
   },
 
-  setCategory(value) {
-    this.activeCategory = value;
+  toggleCategory(value) {
+    if (this.activeCategories.has(value)) {
+      this.activeCategories.delete(value);
+    } else {
+      this.activeCategories.add(value);
+    }
+    // Force Alpine reactivity (Set mutations aren't tracked)
+    this.activeCategories = new Set(this.activeCategories);
+    this._lastBbox = null; // force re-fetch
     this.fetchPOIs();
   },
 
@@ -177,13 +187,27 @@ Alpine.store('map', {
       ne_lng: bounds.getEast().toFixed(4),
     };
 
+    // Build types from all active category toggles
+    const activeTypes = [];
+    for (const cat of POI_CATEGORIES) {
+      if (cat.value && this.activeCategories.has(cat.value)) {
+        activeTypes.push(...cat.types);
+      }
+    }
+    const types = activeTypes.length ? activeTypes.join(',') : undefined;
+
+    // If no categories active, clear map
+    if (!types) {
+      this.markerCluster.clearLayers();
+      this.markers.clear();
+      this._lastBbox = null;
+      return;
+    }
+
     // Skip if bbox hasn't changed meaningfully
-    const bboxKey = `${bbox.sw_lat},${bbox.sw_lng},${bbox.ne_lat},${bbox.ne_lng},${this.activeCategory}`;
+    const bboxKey = `${bbox.sw_lat},${bbox.sw_lng},${bbox.ne_lat},${bbox.ne_lng},${types}`;
     if (bboxKey === this._lastBbox) return;
     this._lastBbox = bboxKey;
-
-    const cat = POI_CATEGORIES.find(c => c.value === this.activeCategory);
-    const types = cat && cat.types.length ? cat.types.join(',') : undefined;
 
     this.loading = true;
     try {
