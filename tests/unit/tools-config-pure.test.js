@@ -165,51 +165,51 @@ describe('getToolsConfig', () => {
     assert.ok(tools.length > 0);
   });
 
-  it('should add widgetDomain to tools with outputTemplate', () => {
+  it('should add ui.domain to tools with ui.resourceUri', () => {
     const domain = 'https://mcp.example.com';
     const tools = getToolsConfig(domain);
 
-    const uiTools = tools.filter(t => t._meta?.['openai/widgetDomain']);
-    assert.ok(uiTools.length > 0, 'Should have UI tools with widgetDomain');
+    const uiTools = tools.filter(t => t._meta?.ui?.domain);
+    assert.ok(uiTools.length > 0, 'Should have UI tools with domain');
 
     for (const tool of uiTools) {
-      assert.strictEqual(tool._meta['openai/widgetDomain'], domain);
+      assert.strictEqual(tool._meta.ui.domain, domain);
     }
   });
 
-  it('should add CSP with frame_domains for poi-details tools', () => {
+  it('should add CSP with frameDomains for poi-details tools', () => {
     const tools = getToolsConfig('https://example.com');
 
     const poiDetailsTool = tools.find(
-      t => t._meta?.['openai/outputTemplate']?.includes('poi-details'),
+      t => t._meta?.ui?.resourceUri?.includes('poi-details'),
     );
     assert.ok(poiDetailsTool, 'Should have a poi-details tool');
     assert.deepStrictEqual(
-      poiDetailsTool._meta['openai/widgetCSP'].frame_domains,
+      poiDetailsTool._meta.ui.csp.frameDomains,
       ['https://maps.google.com'],
     );
   });
 
-  it('should add CSP with empty frame_domains for non-poi-details UI tools', () => {
+  it('should add CSP with empty frameDomains for non-poi-details UI tools', () => {
     const tools = getToolsConfig('https://example.com');
 
     const searchResultsTool = tools.find(
-      t => t._meta?.['openai/outputTemplate']?.includes('search-results'),
+      t => t._meta?.ui?.resourceUri?.includes('search-results'),
     );
     assert.ok(searchResultsTool, 'Should have a search-results tool');
     assert.deepStrictEqual(
-      searchResultsTool._meta['openai/widgetCSP'].frame_domains,
+      searchResultsTool._meta.ui.csp.frameDomains,
       [],
     );
   });
 
-  it('should not add widgetDomain to tools without outputTemplate', () => {
+  it('should not add ui.domain to tools without ui.resourceUri', () => {
     const tools = getToolsConfig('https://example.com');
 
-    // search_cities has no outputTemplate
+    // search_cities has no resourceUri
     const searchCities = tools.find(t => t.name === 'search_cities');
     assert.ok(searchCities, 'Should have search_cities tool');
-    assert.strictEqual(searchCities._meta?.['openai/widgetDomain'], undefined);
+    assert.strictEqual(searchCities._meta?.ui?.domain, undefined);
   });
 
   it('should preserve original tool properties', () => {
@@ -272,9 +272,9 @@ describe('getResourcesConfig', () => {
 
       assert.ok(poiDetails);
       assert.strictEqual(poiDetails.mimeType, 'text/html+skybridge');
-      assert.strictEqual(poiDetails._meta['openai/widgetDomain'], domain);
+      assert.strictEqual(poiDetails._meta.ui.domain, domain);
       assert.deepStrictEqual(
-        poiDetails._meta['openai/widgetCSP'].frame_domains,
+        poiDetails._meta.ui.csp.frameDomains,
         ['https://maps.google.com'],
       );
     });
@@ -287,9 +287,9 @@ describe('getResourcesConfig', () => {
 
       assert.ok(searchResults);
       assert.strictEqual(searchResults.mimeType, 'text/html+skybridge');
-      assert.strictEqual(searchResults._meta['openai/widgetDomain'], domain);
+      assert.strictEqual(searchResults._meta.ui.domain, domain);
       assert.deepStrictEqual(
-        searchResults._meta['openai/widgetCSP'].frame_domains,
+        searchResults._meta.ui.csp.frameDomains,
         [],
       );
     });
@@ -302,7 +302,7 @@ describe('getResourcesConfig', () => {
 
       assert.ok(nearby);
       assert.strictEqual(nearby.mimeType, 'text/html+skybridge');
-      assert.strictEqual(nearby._meta['openai/widgetDomain'], domain);
+      assert.strictEqual(nearby._meta.ui.domain, domain);
     });
 
     it('should include poi by ID template', () => {
@@ -313,9 +313,9 @@ describe('getResourcesConfig', () => {
 
       assert.ok(poiById);
       assert.strictEqual(poiById.mimeType, 'text/html+skybridge');
-      assert.strictEqual(poiById._meta['openai/widgetDomain'], domain);
+      assert.strictEqual(poiById._meta.ui.domain, domain);
       assert.deepStrictEqual(
-        poiById._meta['openai/widgetCSP'].frame_domains,
+        poiById._meta.ui.csp.frameDomains,
         ['https://maps.google.com'],
       );
     });
@@ -326,7 +326,7 @@ describe('getResourcesConfig', () => {
 
       for (const template of config.resourceTemplates) {
         assert.strictEqual(
-          template._meta['openai/widgetDomain'],
+          template._meta.ui.domain,
           customDomain,
           `${template.uriTemplate} should use custom domain`,
         );
