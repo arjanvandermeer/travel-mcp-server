@@ -721,11 +721,10 @@ export function getToolsConfig(widgetDomain) {
   return baseToolsConfig.map(tool => {
     // If tool has ui.resourceUri, add CSP and domain
     if (tool._meta?.ui?.resourceUri) {
-      const isPoiDetails = tool._meta.ui.resourceUri.includes('poi-details');
       const csp = {
         connectDomains: ['https://chatgpt.com', widgetDomain],
         resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-        frameDomains: isPoiDetails ? ['https://maps.google.com'] : [],
+        frameDomains: [],
       };
       return {
         ...tool,
@@ -807,7 +806,7 @@ export function getResourcesConfig(widgetDomain) {
         name: 'POI Details Widget',
         description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
         mimeType: 'text/html+skybridge',
-        _meta: buildWidgetMeta(['https://maps.google.com']),
+        _meta: buildWidgetMeta([]),
       },
       {
         uriTemplate: 'ui://widget/search-results.html',
@@ -828,7 +827,7 @@ export function getResourcesConfig(widgetDomain) {
         name: 'POI Detail Page (by ID)',
         description: 'POI detail page accessed by OSM ID - used when clicking search results.',
         mimeType: 'text/html+skybridge',
-        _meta: buildWidgetMeta(['https://maps.google.com']),
+        _meta: buildWidgetMeta([]),
       },
     ],
   };
@@ -1635,7 +1634,7 @@ export async function handleReadResource(uri, db, render) {
     // Return empty template - data is populated client-side via window.openai.toolOutput
     const html = render('poi-details', {});
     return {
-      contents: [buildHtmlContent(html, ['https://maps.google.com'])],
+      contents: [buildHtmlContent(html)],
     };
   }
 
@@ -1680,13 +1679,13 @@ export async function handleReadResource(uri, db, render) {
         code: osmId,
       });
       return {
-        contents: [buildHtmlContent(errorHtml, ['https://maps.google.com'])],
+        contents: [buildHtmlContent(errorHtml)],
       };
     }
 
     const { nearbyPois: resNearby, nearbyTitle: resNearbyTitle } = await fetchNearbyForPOI(poi, db);
     return {
-      contents: [buildHtmlContent(renderPOIPreview(poi, render, resNearby, resNearbyTitle), ['https://maps.google.com'])],
+      contents: [buildHtmlContent(renderPOIPreview(poi, render, resNearby, resNearbyTitle))],
     };
   }
 

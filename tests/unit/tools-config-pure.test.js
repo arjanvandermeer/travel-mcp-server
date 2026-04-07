@@ -183,7 +183,7 @@ describe('getToolsConfig', () => {
     }
   });
 
-  it('should add CSP with frameDomains for poi-details tools', () => {
+  it('should add CSP with empty frameDomains for poi-details tools', () => {
     const tools = getToolsConfig('https://example.com');
 
     const poiDetailsTool = tools.find(
@@ -192,7 +192,7 @@ describe('getToolsConfig', () => {
     assert.ok(poiDetailsTool, 'Should have a poi-details tool');
     assert.deepStrictEqual(
       poiDetailsTool._meta.ui.csp.frameDomains,
-      ['https://maps.google.com'],
+      [],
     );
   });
 
@@ -282,11 +282,11 @@ describe('getResourcesConfig', () => {
       assert.strictEqual(poiDetails._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
         poiDetails._meta.ui.csp.frameDomains,
-        ['https://maps.google.com'],
+        [],
       );
       assert.deepStrictEqual(
         poiDetails._meta['openai/widgetCSP'].frame_domains,
-        ['https://maps.google.com'],
+        [],
       );
     });
 
@@ -334,11 +334,11 @@ describe('getResourcesConfig', () => {
       assert.strictEqual(poiById._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
         poiById._meta.ui.csp.frameDomains,
-        ['https://maps.google.com'],
+        [],
       );
       assert.deepStrictEqual(
         poiById._meta['openai/widgetCSP'].frame_domains,
-        ['https://maps.google.com'],
+        [],
       );
     });
 
