@@ -476,22 +476,25 @@ describe('handleReadResource', () => {
   });
 
   it('should handle ui://widget/poi-details.html', async () => {
-    const db = createMockDb();
+    const db = createMockDb({ getServerBaseUrl: async () => 'https://mcp.example.com' });
     const result = await handleReadResource('ui://widget/poi-details.html', db, render);
     assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
     assert.ok(result.contents[0].text.includes('<'));
+    assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
 
   it('should handle ui://widget/search-results.html', async () => {
-    const db = createMockDb();
+    const db = createMockDb({ getServerBaseUrl: async () => 'https://mcp.example.com' });
     const result = await handleReadResource('ui://widget/search-results.html', db, render);
     assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
+    assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
 
   it('should handle ui://widget/nearby-pois.html', async () => {
-    const db = createMockDb();
+    const db = createMockDb({ getServerBaseUrl: async () => 'https://mcp.example.com' });
     const result = await handleReadResource('ui://widget/nearby-pois.html', db, render);
     assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
+    assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
 
   it('should handle ui://host/poi/{osm_id} for existing POI', async () => {
@@ -500,19 +503,25 @@ describe('handleReadResource', () => {
       osm_latitude: 40.7, osm_longitude: -73.9,
     };
     const db = createMockDb({
+      getServerBaseUrl: async () => 'https://mcp.example.com',
       getPOIDetails: async () => poi,
       searchPOIsNearCoordinates: async () => [],
     });
     const result = await handleReadResource('ui://mcp.example.com/poi/123', db, render);
     assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
     assert.ok(result.contents[0].text.includes('Test Hotel'));
+    assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
 
   it('should handle ui://host/poi/{osm_id} for missing POI', async () => {
-    const db = createMockDb({ getPOIDetails: async () => null });
+    const db = createMockDb({
+      getServerBaseUrl: async () => 'https://mcp.example.com',
+      getPOIDetails: async () => null,
+    });
     const result = await handleReadResource('ui://mcp.example.com/poi/999', db, render);
     assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
     assert.ok(result.contents[0].text.includes('Not Found') || result.contents[0].text.includes('999'));
+    assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
 
   it('should throw for unknown URI', async () => {

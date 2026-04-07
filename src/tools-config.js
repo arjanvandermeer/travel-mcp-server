@@ -774,26 +774,7 @@ export function getToolsConfig(widgetDomain) {
  * @returns {object} - MCP resources configuration
  */
 export function getResourcesConfig(widgetDomain) {
-  const buildWidgetMeta = (frameDomains = []) => {
-    const csp = {
-      connectDomains: ['https://chatgpt.com', widgetDomain],
-      resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-      frameDomains,
-    };
-
-    return {
-      'openai/widgetDomain': widgetDomain,
-      'openai/widgetCSP': {
-        connect_domains: csp.connectDomains,
-        resource_domains: csp.resourceDomains,
-        frame_domains: csp.frameDomains,
-      },
-      ui: {
-        domain: widgetDomain,
-        csp,
-      },
-    };
-  };
+  const buildWidgetMeta = (frameDomains = []) => buildOpenAIWidgetMeta(widgetDomain, frameDomains);
 
   return {
     // Static resources - fixed URIs that always return the same type of content
@@ -871,6 +852,27 @@ export function buildSearchResponse(pois) {
     structuredContent: {
       results: pois,
       count: pois.length,
+    },
+  };
+}
+
+function buildOpenAIWidgetMeta(widgetDomain, frameDomains = []) {
+  const csp = {
+    connectDomains: ['https://chatgpt.com', widgetDomain],
+    resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
+    frameDomains,
+  };
+
+  return {
+    'openai/widgetDomain': widgetDomain,
+    'openai/widgetCSP': {
+      connect_domains: csp.connectDomains,
+      resource_domains: csp.resourceDomains,
+      frame_domains: csp.frameDomains,
+    },
+    ui: {
+      domain: widgetDomain,
+      csp,
     },
   };
 }
@@ -1500,6 +1502,14 @@ export function renderNearbyWidget(sourcePoi, nearbyPois, render) {
  * @returns {object} - MCP resource contents
  */
 export async function handleReadResource(uri, db, render) {
+  const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
+  const buildHtmlContent = (html, frameDomains = []) => ({
+    uri,
+    mimeType: 'text/html+skybridge',
+    text: html,
+    _meta: buildOpenAIWidgetMeta(widgetDomain, frameDomains),
+  });
+
   // Version info
   if (uri === 'info://version') {
     return {
@@ -1625,7 +1635,7 @@ export async function handleReadResource(uri, db, render) {
     // Return empty template - data is populated client-side via window.openai.toolOutput
     const html = render('poi-details', {});
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+      contents: [buildHtmlContent(html, ['https://maps.google.com'])],
     };
   }
 
@@ -1639,7 +1649,7 @@ export async function handleReadResource(uri, db, render) {
       results: [],
     });
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+      contents: [buildHtmlContent(html)],
     };
   }
 
@@ -1651,7 +1661,7 @@ export async function handleReadResource(uri, db, render) {
       count: 0,
     });
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: html }],
+      contents: [buildHtmlContent(html)],
     };
   }
 
@@ -1670,13 +1680,13 @@ export async function handleReadResource(uri, db, render) {
         code: osmId,
       });
       return {
-        contents: [{ uri, mimeType: 'text/html+skybridge', text: errorHtml }],
+        contents: [buildHtmlContent(errorHtml, ['https://maps.google.com'])],
       };
     }
 
     const { nearbyPois: resNearby, nearbyTitle: resNearbyTitle } = await fetchNearbyForPOI(poi, db);
     return {
-      contents: [{ uri, mimeType: 'text/html+skybridge', text: renderPOIPreview(poi, render, resNearby, resNearbyTitle) }],
+      contents: [buildHtmlContent(renderPOIPreview(poi, render, resNearby, resNearbyTitle), ['https://maps.google.com'])],
     };
   }
 
