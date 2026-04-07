@@ -258,6 +258,116 @@ already store but don't yet expose through search parameters.
 - Real-time availability/pricing APIs (Booking.com, Expedia)
 - Wikidata events and attractions
 - Other enrichment sources (Yelp, TripAdvisor, Foursquare)
+
+## Codebase Analysis Notes
+
+Analysis date: 2026-04-07
+
+### Architecture Summary
+
+- Core architecture is strong and coherent:
+  - `src/database.js` is the main business/data layer
+  - `src/tools-config.js` is the MCP contract and handler layer
+  - `src/index.js` and `src/index-http.js` are relatively thin transport wrappers
+- HTTP surface is broader than MCP alone:
+  - MCP over stdio
+  - MCP over Streamable HTTP
+  - REST API under `src/api/*.js`
+  - HTML preview pages
+  - SPA frontend in `web/`
+- Data model is ambitious but sensible:
+  - GeoNames for cities
+  - OSM for POIs
+  - Google Places for enrichment
+  - OAuth + favorites layered on top
+- Operational tooling is reasonably complete:
+  - schema and migrations in `data/`
+  - import/refresh/optimize scripts in `src/`
+  - OAuth provider separated into `cloudflare-oauth-worker/`
+  - local evaluation agent in `slm/`
+
+### Strengths To Preserve
+
+- Keep transport code thin and business logic centralized in `database.js` and `tools-config.js`
+- Keep REST route modules small and delegation-heavy
+- Preserve DB-first search, then optional enrichment, then shared reuse across MCP/REST/web
+- Preserve current breadth of automated tests across handlers, validation, templates, routing, auth, and database query logic
+- Preserve the clear separation between MCP server and Cloudflare OAuth provider
+
+### High-Priority Follow-Ups From Analysis
+
+#### Correctness: Fix Zero-Coordinate Bugs
+- [ ] Fix truthy/falsy coordinate detection in `src/database.js`
+  - Current bug: `const hasCoords = !!(latitude && longitude)` fails for valid `0` latitude or longitude
+  - Use explicit null/undefined checks instead
+- [ ] Audit all coordinate checks for the same bug pattern
+  - Confirm in `searchPOIs()`
+  - Confirm in any nearby/map/search helpers
+  - Confirm frontend/API query handling too
+- [ ] Fix Google Places location bias condition in `src/google-places.js`
+  - Current bug: `if (latitude && longitude)` skips valid zero coordinates
+
+#### Safety: Make Schema Initialization Non-Destructive By Default
+- [ ] Split destructive dev reset from safe bootstrap/init flow
+- [ ] Replace the current default behavior in `data/schema.sql` that drops core tables up front
+- [ ] Introduce one of:
+  - a dedicated dev-only reset schema
+  - migrations-only bootstrap for non-destructive setup
+  - explicit confirmation/documentation around destructive init
+- [ ] Update `GETTING_STARTED.md` and `README.md` so `db:init` is clearly safe or clearly marked destructive
+
+#### Lifecycle: Remove Async Side Effects From `TravelDatabase` Constructor
+- [ ] Refactor `TravelDatabase` so constructor does not immediately kick off async initialization
+- [ ] Move Google Places initialization behind an explicit bootstrap/init step
+- [ ] Make startup sequencing more explicit in `src/index.js` and `src/index-http.js`
+- [ ] Reduce test noise and hidden lifecycle coupling caused by constructor-time async work
+
+#### Scalability: Revisit Process-Local Auth and Session State
+- [ ] Decide whether single-instance deployment is a permanent assumption
+- [ ] If not single-instance, externalize or redesign process-local state:
+  - pending PKCE state in `src/api/auth.js`
+  - MCP session state in `src/index-http.js`
+  - OAuth introspection cache in `src/index-http.js`
+- [ ] Document current deployment assumptions around sticky sessions and horizontal scaling
+
+### Medium-Priority Hardening
+
+#### Documentation
+- [ ] Add a short architecture document naming the authoritative layers:
+  - transport
+  - tools contract
+  - database/business logic
+  - enrichment
+  - auth worker
+  - frontend
+- [ ] Document the canonical request flow for:
+  - MCP tool call
+  - REST API request
+  - preview page render
+  - OAuth login and token introspection
+
+#### Repo Hygiene
+- [ ] Remove stray `tests/.DS_Store`
+- [ ] Add `.DS_Store` to `.gitignore` if not already ignored
+- [ ] Do a small pass to reconcile older docs/scripts/schema naming drift where `imports` vs `import_log` still shows historical evolution
+
+#### Test Coverage Extensions
+- [ ] Add regression tests for coordinate value `0`
+  - equator/prime-meridian cases
+  - searchPOIs path
+  - Google Places text bias path
+- [ ] Add tests around startup/bootstrap lifecycle if `TravelDatabase` init is refactored
+- [ ] Add tests that lock in whichever schema-init safety model we choose
+
+### Notes On Current Code Health
+
+- The codebase is in good shape overall; most risk is in edge-case correctness and production hardening, not fundamental architecture
+- The current design already has good reuse, especially around:
+  - shared tool handlers
+  - shared DB search methods
+  - shared preview rendering
+  - shared auth-aware request handling
+- Existing tests appear strong enough to support refactoring, especially around handlers and query-layer behavior
 - Image management and CDN
 - User-contributed data and corrections
 - GraphQL API alongside MCP
