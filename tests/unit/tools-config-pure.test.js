@@ -174,6 +174,12 @@ describe('getToolsConfig', () => {
 
     for (const tool of uiTools) {
       assert.strictEqual(tool._meta.ui.domain, domain);
+      assert.strictEqual(tool._meta['openai/outputTemplate'], tool._meta.ui.resourceUri);
+      assert.strictEqual(tool._meta['openai/widgetDomain'], domain);
+      assert.deepStrictEqual(
+        tool._meta['openai/widgetCSP'].connect_domains,
+        tool._meta.ui.csp.connectDomains,
+      );
     }
   });
 
@@ -273,8 +279,13 @@ describe('getResourcesConfig', () => {
       assert.ok(poiDetails);
       assert.strictEqual(poiDetails.mimeType, 'text/html+skybridge');
       assert.strictEqual(poiDetails._meta.ui.domain, domain);
+      assert.strictEqual(poiDetails._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
         poiDetails._meta.ui.csp.frameDomains,
+        ['https://maps.google.com'],
+      );
+      assert.deepStrictEqual(
+        poiDetails._meta['openai/widgetCSP'].frame_domains,
         ['https://maps.google.com'],
       );
     });
@@ -288,8 +299,13 @@ describe('getResourcesConfig', () => {
       assert.ok(searchResults);
       assert.strictEqual(searchResults.mimeType, 'text/html+skybridge');
       assert.strictEqual(searchResults._meta.ui.domain, domain);
+      assert.strictEqual(searchResults._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
         searchResults._meta.ui.csp.frameDomains,
+        [],
+      );
+      assert.deepStrictEqual(
+        searchResults._meta['openai/widgetCSP'].frame_domains,
         [],
       );
     });
@@ -303,6 +319,7 @@ describe('getResourcesConfig', () => {
       assert.ok(nearby);
       assert.strictEqual(nearby.mimeType, 'text/html+skybridge');
       assert.strictEqual(nearby._meta.ui.domain, domain);
+      assert.strictEqual(nearby._meta['openai/widgetDomain'], domain);
     });
 
     it('should include poi by ID template', () => {
@@ -314,8 +331,13 @@ describe('getResourcesConfig', () => {
       assert.ok(poiById);
       assert.strictEqual(poiById.mimeType, 'text/html+skybridge');
       assert.strictEqual(poiById._meta.ui.domain, domain);
+      assert.strictEqual(poiById._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
         poiById._meta.ui.csp.frameDomains,
+        ['https://maps.google.com'],
+      );
+      assert.deepStrictEqual(
+        poiById._meta['openai/widgetCSP'].frame_domains,
         ['https://maps.google.com'],
       );
     });

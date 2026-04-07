@@ -722,18 +722,26 @@ export function getToolsConfig(widgetDomain) {
     // If tool has ui.resourceUri, add CSP and domain
     if (tool._meta?.ui?.resourceUri) {
       const isPoiDetails = tool._meta.ui.resourceUri.includes('poi-details');
+      const csp = {
+        connectDomains: ['https://chatgpt.com', widgetDomain],
+        resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
+        frameDomains: isPoiDetails ? ['https://maps.google.com'] : [],
+      };
       return {
         ...tool,
         _meta: {
           ...tool._meta,
+          'openai/outputTemplate': tool._meta.ui.resourceUri,
+          'openai/widgetDomain': widgetDomain,
+          'openai/widgetCSP': {
+            connect_domains: csp.connectDomains,
+            resource_domains: csp.resourceDomains,
+            frame_domains: csp.frameDomains,
+          },
           ui: {
             ...tool._meta.ui,
             domain: widgetDomain,
-            csp: {
-              connectDomains: ['https://chatgpt.com', widgetDomain],
-              resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-              frameDomains: isPoiDetails ? ['https://maps.google.com'] : [],
-            },
+            csp,
           },
         },
       };
@@ -766,6 +774,27 @@ export function getToolsConfig(widgetDomain) {
  * @returns {object} - MCP resources configuration
  */
 export function getResourcesConfig(widgetDomain) {
+  const buildWidgetMeta = (frameDomains = []) => {
+    const csp = {
+      connectDomains: ['https://chatgpt.com', widgetDomain],
+      resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
+      frameDomains,
+    };
+
+    return {
+      'openai/widgetDomain': widgetDomain,
+      'openai/widgetCSP': {
+        connect_domains: csp.connectDomains,
+        resource_domains: csp.resourceDomains,
+        frame_domains: csp.frameDomains,
+      },
+      ui: {
+        domain: widgetDomain,
+        csp,
+      },
+    };
+  };
+
   return {
     // Static resources - fixed URIs that always return the same type of content
     resources: [
@@ -797,64 +826,28 @@ export function getResourcesConfig(widgetDomain) {
         name: 'POI Details Widget',
         description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
         mimeType: 'text/html+skybridge',
-        _meta: {
-          ui: {
-            domain: widgetDomain,
-            csp: {
-              connectDomains: ['https://chatgpt.com', widgetDomain],
-              resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-              frameDomains: ['https://maps.google.com'],
-            },
-          },
-        },
+        _meta: buildWidgetMeta(['https://maps.google.com']),
       },
       {
         uriTemplate: 'ui://widget/search-results.html',
         name: 'Search Results Widget',
         description: 'Interactive list of search results. Renders tool output as clickable cards.',
         mimeType: 'text/html+skybridge',
-        _meta: {
-          ui: {
-            domain: widgetDomain,
-            csp: {
-              connectDomains: ['https://chatgpt.com', widgetDomain],
-              resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-              frameDomains: [],
-            },
-          },
-        },
+        _meta: buildWidgetMeta([]),
       },
       {
         uriTemplate: 'ui://widget/nearby-pois.html',
         name: 'Nearby POIs Widget',
         description: 'Horizontal scrollable cards showing nearby points of interest.',
         mimeType: 'text/html+skybridge',
-        _meta: {
-          ui: {
-            domain: widgetDomain,
-            csp: {
-              connectDomains: ['https://chatgpt.com', widgetDomain],
-              resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-              frameDomains: [],
-            },
-          },
-        },
+        _meta: buildWidgetMeta([]),
       },
       {
         uriTemplate: 'ui://poi/{osm_id}',
         name: 'POI Detail Page (by ID)',
         description: 'POI detail page accessed by OSM ID - used when clicking search results.',
         mimeType: 'text/html+skybridge',
-        _meta: {
-          ui: {
-            domain: widgetDomain,
-            csp: {
-              connectDomains: ['https://chatgpt.com', widgetDomain],
-              resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-              frameDomains: ['https://maps.google.com'],
-            },
-          },
-        },
+        _meta: buildWidgetMeta(['https://maps.google.com']),
       },
     ],
   };
