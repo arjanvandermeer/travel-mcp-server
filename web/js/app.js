@@ -353,7 +353,7 @@ Alpine.store('atlas', {
   _lastKey: '',
   _fetchDebounced: null,
   title() {
-    return this.city?.name ? `${this.city.name} Atlas` : 'Spatial Explorer';
+    return this.city?.name ? `${this.city.name} map` : 'Travel map';
   },
   contextLine() {
     return this.city?.country_code ? `${this.city.country_code} · live map places` : 'Search or move the map to discover places.';

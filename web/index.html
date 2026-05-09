@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Atlas Studio</title>
+  <title>Travel</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -17,7 +17,7 @@
     <header class="topbar">
       <a href="#/" class="brand" @click="$store.route.goHome()">
         <span class="brand-mark">A</span>
-        <span>Atlas Studio</span>
+        <span>Travel</span>
       </a>
       <nav class="nav-actions">
         <button class="icon-button" title="Command search" @click="$store.ui.focusCommand()">⌘</button>
@@ -68,7 +68,7 @@
           <div class="pulse-actions">
             <button class="secondary-button" @click="$store.discovery.useLocation()">Use my location</button>
             <button class="secondary-button" @click="$store.discovery.loadFallback()">Fallback city</button>
-            <button class="secondary-button" @click="$store.discovery.openAtlas()">Open Atlas</button>
+            <button class="secondary-button" @click="$store.discovery.openAtlas()">Open map</button>
           </div>
         </div>
 
@@ -117,7 +117,7 @@
       <section class="atlas" x-show="$store.route.page === 'atlas'" x-cloak>
         <aside class="atlas-rail">
           <div class="rail-section">
-            <div class="eyebrow">Atlas Studio</div>
+            <div class="eyebrow">Travel</div>
             <h2 x-text="$store.atlas.title()"></h2>
             <p x-text="$store.atlas.contextLine()"></p>
           </div>
@@ -145,7 +145,7 @@
             </template>
           </div>
           <div class="rail-tabs">
-            <button :class="{ active: $store.ui.railTab === 'places' }" @click="$store.ui.railTab = 'places'">Atlas</button>
+            <button :class="{ active: $store.ui.railTab === 'places' }" @click="$store.ui.railTab = 'places'">Places</button>
             <button :class="{ active: $store.ui.railTab === 'radar' }" @click="$store.ui.railTab = 'radar'">Radar</button>
             <button :class="{ active: $store.ui.railTab === 'compare' }" @click="$store.ui.railTab = 'compare'">Compare</button>
           </div>
@@ -217,7 +217,7 @@
       </section>
 
       <section class="dossier" x-show="$store.route.page === 'poi'" x-cloak>
-        <button class="back-button" @click="$store.route.goAtlas()">← Back to Atlas</button>
+        <button class="back-button" @click="$store.route.goAtlas()">← Back to map</button>
         <template x-if="$store.poi.loading">
           <div class="skeleton-stack dossier-shell"><div class="skeleton block"></div><div class="skeleton block"></div></div>
         </template>
