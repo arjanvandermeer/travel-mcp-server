@@ -245,6 +245,7 @@
                 </div>
                 <div x-show="$store.poi.tab === 'overview'" class="copy-block">
                   <p x-text="$store.poi.summary()"></p>
+                  <p class="state-callout compact" x-show="$store.poi.enrichmentMessage()" x-text="$store.poi.enrichmentMessage()"></p>
                   <div class="action-grid">
                     <a :href="$store.poi.current.website" x-show="$store.poi.current.website" target="_blank">Website</a>
                     <a :href="$store.poi.mapsUrl()" target="_blank">Maps</a>

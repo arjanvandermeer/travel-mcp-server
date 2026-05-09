@@ -96,11 +96,10 @@ async function renderWebIndex(filePath) {
 }
 
 function getStaticHeaders(contentType, filePath) {
-  const headers = { 'Content-Type': contentType };
-  if (path.basename(filePath) === 'index.html' || filePath.startsWith(WEB_DIR)) {
-    headers['Cache-Control'] = 'no-cache';
-  }
-  return headers;
+  return {
+    'Content-Type': contentType,
+    'Cache-Control': 'no-cache',
+  };
 }
 
 /**

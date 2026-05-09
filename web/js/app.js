@@ -519,6 +519,9 @@ Alpine.store('poi', {
   enrichmentLabel() {
     return this.current?._enrichment?.status || 'base';
   },
+  enrichmentMessage() {
+    return this.current?._enrichment?.message || '';
+  },
   summary() {
     if (!this.current) return '';
     const name = this.current.name || this.current.osm_name || 'This place';
