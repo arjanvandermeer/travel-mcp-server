@@ -333,6 +333,7 @@ CREATE TABLE osm_pois (
 
 -- Geography index for fast ST_DWithin distance queries
 CREATE INDEX idx_osm_pois_location_geog ON osm_pois USING GIST((location::geography));
+CREATE INDEX idx_osm_pois_location ON osm_pois USING GIST(location);
 
 -- Type and lookup indexes
 CREATE INDEX idx_osm_pois_type ON osm_pois(poi_type);
