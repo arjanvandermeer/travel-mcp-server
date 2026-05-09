@@ -54,7 +54,6 @@ CREATE TABLE import_sources (
     FOREIGN KEY (last_import_id) REFERENCES import_log(id)
 );
 
-CREATE UNIQUE INDEX import_sources_keyword_key ON import_sources(keyword);
 CREATE INDEX idx_import_sources_enabled ON import_sources(enabled);
 
 -- ============================================================================

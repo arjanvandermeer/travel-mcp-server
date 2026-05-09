@@ -26,10 +26,13 @@ import http from 'http';
 import pg from 'pg';
 import parseOSM from 'osm-pbf-parser';
 import through2 from 'through2';
+import dotenv from 'dotenv';
 import * as telemetry from './telemetry.js';
 import { matchPOIType, extractPOIData, shouldFilterPOI } from './lib/osm-mappings.js';
 import { parseImportArgs } from './lib/arg-parsers.js';
 import { linkPOIsToCities } from './link-pois-to-cities.js';
+
+dotenv.config();
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 

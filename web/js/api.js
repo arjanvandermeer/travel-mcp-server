@@ -13,7 +13,7 @@ export async function apiGet(path, params = {}) {
   const res = await fetch(url, { credentials: 'same-origin' });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error || `HTTP ${res.status}`);
+    throw new Error(body.message || body.error || `HTTP ${res.status}`);
   }
   return res.json();
 }
@@ -27,7 +27,21 @@ export async function apiPost(path, body = {}) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
+    throw new Error(data.message || data.error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+export async function apiPatch(path, body = {}) {
+  const res = await fetch(`${BASE}${path}`, {
+    method: 'PATCH',
+    credentials: 'same-origin',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }
   return res.json();
 }
@@ -39,7 +53,7 @@ export async function apiDelete(path) {
   });
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${res.status}`);
+    throw new Error(data.message || data.error || `HTTP ${res.status}`);
   }
   return res.json();
 }

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Travel Explorer</title>
+  <title>Atlas Studio</title>
   <link rel="stylesheet" href="/css/style.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
@@ -12,213 +12,295 @@
   <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script type="module" src="/js/app.js"></script>
 </head>
-<body>
-
-  <!-- Navbar -->
-  <nav class="navbar">
-    <a href="#/" class="navbar-brand">Travel Explorer</a>
-    <div class="navbar-right">
-      <!-- Logged in -->
-      <template x-data x-if="$store.auth.authenticated">
-        <div style="display:flex;align-items:center;gap:16px;">
-          <a href="#/favorites" style="color:white;text-decoration:none;font-size:14px;">My Favorites</a>
-          <div class="user-menu" x-data="{ open: false }" @click.outside="open = false">
-            <button class="user-toggle" @click="open = !open">
-              <img x-show="$store.auth.user?.picture_url" :src="$store.auth.user?.picture_url" class="user-avatar" alt="">
+<body x-data>
+  <div class="app-shell">
+    <header class="topbar">
+      <a href="#/" class="brand" @click="$store.route.goHome()">
+        <span class="brand-mark">A</span>
+        <span>Atlas Studio</span>
+      </a>
+      <nav class="nav-actions">
+        <button class="icon-button" title="Command search" @click="$store.ui.focusCommand()">⌘</button>
+        <button class="nav-link" @click="$store.route.goHome()">City Pulse</button>
+        <button class="nav-link" @click="$store.route.goComposer()">Trip Composer</button>
+        <template x-if="$store.auth.checked && !$store.auth.authenticated">
+          <button class="primary-button compact" @click="$store.auth.login()">Sign in</button>
+        </template>
+        <template x-if="$store.auth.authenticated">
+          <div class="account" x-data="{ open: false }" @click.outside="open = false">
+            <button class="account-button" @click="open = !open">
+              <img x-show="$store.auth.user?.picture_url" :src="$store.auth.user?.picture_url" alt="">
               <span x-text="$store.auth.user?.name || $store.auth.user?.email"></span>
-              <span style="font-size:10px">&#9662;</span>
             </button>
-            <div class="user-dropdown" x-show="open" x-transition>
-              <a href="#/favorites">My Favorites</a>
+            <div class="account-menu" x-show="open" x-transition>
+              <button @click="$store.route.goComposer(); open = false">Trip Composer</button>
               <button @click="$store.auth.logout()">Logout</button>
             </div>
           </div>
-        </div>
-      </template>
-      <!-- Anonymous -->
-      <template x-data x-if="$store.auth.checked && !$store.auth.authenticated">
-        <button class="btn-login" @click="$store.auth.login()">
-          <svg viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
-          Sign in with Google
-        </button>
-      </template>
-    </div>
-  </nav>
+        </template>
+      </nav>
+    </header>
 
-  <!-- Main content (SPA pages) -->
-  <div x-data>
-
-    <!-- MAP PAGE -->
-    <div x-show="$store.route.page === 'map'">
-
-      <!-- Map container (full viewport below navbar) -->
-      <div id="map" style="width:100%;height:calc(100vh - 56px);"></div>
-
-      <!-- Search overlay (top-left on map) -->
-      <div class="map-search-overlay">
-        <div class="map-search-bar">
-          <input class="map-search-input" type="text" placeholder="Search places..."
-            x-model="$store.search.poiQuery"
-            @input="$store.search.searchPOIs($store.search.poiQuery)"
-            @keydown="$store.search.poiKeydown($event)"
-            @keydown.enter.prevent="$store.search.search()"
-            @focus="if ($store.search.poiSuggestions.length) $store.search.poiOpen = true"
-            @click.outside="$store.search.poiOpen = false">
-          <div class="map-search-dropdown" x-show="$store.search.poiOpen" x-transition>
-            <template x-for="(poi, idx) in $store.search.poiSuggestions" :key="poi.osm_id">
-              <div class="typeahead-item"
-                :class="{ highlighted: idx === $store.search.poiHighlight }"
-                @click="$store.search.selectPOI(poi)"
-                @mouseenter="$store.search.poiHighlight = idx">
-                <span class="name">
-                  <span class="icon" x-text="$store.search.poiTypeIcon(poi.poi_type)"></span>
-                  <span x-text="poi.name"></span>
-                </span>
-                <span class="meta" x-show="poi.google_rating" x-text="'\u2B50 ' + poi.google_rating"></span>
-              </div>
-            </template>
+    <main class="workspace" :class="'page-' + $store.route.page">
+      <section class="city-pulse" x-show="$store.route.page === 'home'" x-cloak :style="$store.discovery.heroStyle()">
+        <div class="pulse-panel">
+          <div class="eyebrow" x-text="$store.discovery.eyebrow()"></div>
+          <h1>
+            <span x-text="$store.discovery.cityTitle()"></span>
+          </h1>
+          <p x-text="$store.discovery.subtitle()"></p>
+          <div class="command-wrap">
+            <input id="command-search" class="command-input" type="search" placeholder="Search a city, hotel, restaurant, or landmark"
+              x-model="$store.search.query"
+              @input="$store.search.autocomplete()"
+              @keydown="$store.search.onKeydown($event)"
+              @focus="$store.search.open = $store.search.suggestions.length > 0">
+            <button class="primary-button" @click="$store.search.commit()">Explore</button>
+            <div class="suggestions" x-show="$store.search.open" x-transition @click.outside="$store.search.open = false">
+              <template x-for="(item, index) in $store.search.suggestions" :key="item.osm_id">
+                <button class="suggestion" :class="{ active: index === $store.search.highlight }" @click="$store.search.select(item)">
+                  <span class="suggestion-name" x-text="item.name"></span>
+                  <span class="suggestion-meta" x-text="$store.format.placeMeta(item)"></span>
+                </button>
+              </template>
+            </div>
+          </div>
+          <div class="pulse-actions">
+            <button class="secondary-button" @click="$store.discovery.useLocation()">Use my location</button>
+            <button class="secondary-button" @click="$store.discovery.loadFallback()">Fallback city</button>
+            <button class="secondary-button" @click="$store.discovery.openAtlas()">Open Atlas</button>
           </div>
         </div>
 
-        <!-- Type filter pills (multi-toggle) -->
-        <div class="map-type-filters">
-          <template x-for="cat in $store.map.categories" :key="cat.value">
-            <button class="map-filter-pill"
-              :class="{ active: $store.map.activeCategories.has(cat.value) }"
-              @click="$store.map.toggleCategory(cat.value)">
-              <span x-text="cat.icon + ' ' + cat.label"></span>
-            </button>
+        <div class="pulse-modules">
+          <template x-if="$store.discovery.loading">
+            <div class="skeleton-stack">
+              <div class="skeleton line"></div>
+              <div class="skeleton block"></div>
+              <div class="skeleton block"></div>
+            </div>
           </template>
-        </div>
-      </div>
-
-      <!-- POI card (bottom sheet on marker click) -->
-      <div class="map-poi-card" x-show="$store.map.selectedPoi" x-transition.opacity>
-        <button class="map-poi-close" @click="$store.map.selectedPoi = null">&times;</button>
-        <div class="map-poi-content" x-data @click="if ($store.map.selectedPoi) window.location.hash = '#/poi/' + $store.map.selectedPoi.osm_id">
-          <img class="map-poi-thumb"
-            x-show="$store.map.selectedPoi?.photo_url"
-            :src="$store.map.selectedPoi?.photo_url" alt="">
-          <div class="map-poi-info">
-            <div class="card-header">
-              <span class="card-title" x-text="$store.map.selectedPoi?.name"></span>
-              <span class="card-type" x-text="$store.map.selectedPoi?.poi_type"></span>
+          <template x-if="!$store.discovery.loading">
+            <div>
+              <div class="module-head">
+                <span>City Signals</span>
+                <span x-text="$store.discovery.countryLabel()"></span>
+              </div>
+              <div class="signal-grid">
+                <button class="signal" @click="$store.discovery.openAtlas('accommodation')">
+                  <strong x-text="$store.discovery.hotels.length"></strong>
+                  <span>stays surfaced</span>
+                </button>
+                <button class="signal" @click="$store.discovery.openAtlas('dining')">
+                  <strong x-text="$store.discovery.overview?.counts?.food || '•'"></strong>
+                  <span>food leads</span>
+                </button>
+                <button class="signal" @click="$store.discovery.openAtlas('attractions')">
+                  <strong x-text="$store.discovery.overview?.counts?.attractions || '•'"></strong>
+                  <span>anchors nearby</span>
+                </button>
+              </div>
+              <div class="place-strip">
+                <template x-for="poi in $store.discovery.featuredPlaces()" :key="poi.osm_id">
+                  <button class="mini-place" @click="$store.poi.open(poi.osm_id)">
+                    <span x-text="poi.name || poi.osm_name"></span>
+                    <small x-text="$store.format.placeMeta(poi)"></small>
+                  </button>
+                </template>
+              </div>
             </div>
-            <div class="card-meta" x-show="$store.map.selectedPoi?.google_rating">
-              <span class="card-rating"
-                x-text="'\u2B50 ' + $store.map.selectedPoi?.google_rating + ($store.map.selectedPoi?.google_review_count ? ' (' + $store.map.selectedPoi?.google_review_count + ')' : '')"></span>
+          </template>
+          <div class="state-callout" x-show="$store.discovery.error" x-text="$store.discovery.error"></div>
+        </div>
+      </section>
+
+      <section class="atlas" x-show="$store.route.page === 'atlas'" x-cloak>
+        <aside class="atlas-rail">
+          <div class="rail-section">
+            <div class="eyebrow">Atlas Studio</div>
+            <h2 x-text="$store.atlas.title()"></h2>
+            <p x-text="$store.atlas.contextLine()"></p>
+          </div>
+          <div class="command-wrap rail-command">
+            <input class="command-input" type="search" placeholder="Search inside the atlas"
+              x-model="$store.search.query"
+              @input="$store.search.autocomplete()"
+              @keydown="$store.search.onKeydown($event)"
+              @focus="$store.search.open = $store.search.suggestions.length > 0">
+            <div class="suggestions" x-show="$store.search.open" x-transition @click.outside="$store.search.open = false">
+              <template x-for="(item, index) in $store.search.suggestions" :key="item.osm_id">
+                <button class="suggestion" :class="{ active: index === $store.search.highlight }" @click="$store.search.select(item)">
+                  <span class="suggestion-name" x-text="item.name"></span>
+                  <span class="suggestion-meta" x-text="$store.format.placeMeta(item)"></span>
+                </button>
+              </template>
             </div>
-            <div class="card-address" x-show="$store.map.selectedPoi?.city"
-              x-text="($store.map.selectedPoi?.city || '') + ($store.map.selectedPoi?.country_code ? ', ' + $store.map.selectedPoi?.country_code : '')"></div>
           </div>
-          <div class="card-actions" x-show="$store.auth.authenticated" @click.stop>
-            <button class="btn-fav" :class="{ active: $store.map.selectedPoi?.is_favorite }"
-              @click="$store.map.toggleFavorite()">
-              <span x-text="$store.map.selectedPoi?.is_favorite ? '\u2665' : '\u2661'"></span>
-            </button>
+          <div class="layer-grid">
+            <template x-for="layer in $store.atlas.layers" :key="layer.key">
+              <button class="layer-toggle" :class="{ active: $store.atlas.activeLayers.has(layer.key) }" @click="$store.atlas.toggleLayer(layer.key)">
+                <span class="layer-dot" :style="'--dot:' + layer.color"></span>
+                <span x-text="layer.label"></span>
+              </button>
+            </template>
           </div>
-        </div>
-      </div>
-
-      <!-- Locate me button (bottom-right) -->
-      <button class="map-locate-btn" @click="$store.map.locateMe()" title="Go to my location">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <circle cx="12" cy="12" r="3"/><path d="M12 2v4m0 12v4M2 12h4m12 0h4"/>
-        </svg>
-      </button>
-    </div>
-
-    <!-- POI DETAIL PAGE -->
-    <div class="main" x-show="$store.route.page === 'poi'">
-      <a href="#/" class="btn-back">&larr; Back to map</a>
-      <div class="poi-detail">
-        <div class="poi-detail-actions" x-show="$store.auth.authenticated">
-          <button class="btn-search" style="width:auto;padding:8px 16px;font-size:14px"
-            x-data="{ fav: false, loading: true }"
-            x-effect="
-              fav = false; loading = true;
-              if ($store.auth.authenticated && $store.route.poiOsmId) {
-                apiGet('/api/v1/poi/' + $store.route.poiOsmId).then(d => { fav = d.is_favorite; loading = false; }).catch(() => { loading = false; });
-              } else { loading = false; }
-            "
-            @click="
-              if (fav) { apiDelete('/api/v1/favorites/' + $store.route.poiOsmId).then(() => fav = false); }
-              else { apiPost('/api/v1/favorites', { osm_id: parseInt($store.route.poiOsmId) }).then(() => fav = true); }
-            "
-            x-text="loading ? 'Loading...' : (fav ? 'Remove from Favorites' : 'Add to Favorites')">
-          </button>
-        </div>
-        <iframe :src="'/preview/poi/' + $store.route.poiOsmId"
-          style="width:100%;border:none;min-height:700px"
-          @load="
-            try {
-              const h = $el.contentDocument.documentElement.scrollHeight;
-              if (h > 100) $el.style.height = h + 'px';
-            } catch(e) {}
-          "></iframe>
-      </div>
-    </div>
-
-    <!-- FAVORITES PAGE -->
-    <div class="main" x-show="$store.route.page === 'favorites'"
-      x-data
-      x-effect="if ($store.route.page === 'favorites' && $store.auth.authenticated) $store.favorites.load()">
-
-      <template x-if="!$store.auth.authenticated && $store.auth.checked">
-        <div class="empty-state">
-          <h3>Login required</h3>
-          <p>Please sign in to view your favorites.</p>
-          <button class="btn-search" style="width:auto;margin-top:16px" @click="$store.auth.login()">Sign in with Google</button>
-        </div>
-      </template>
-
-      <template x-if="$store.auth.authenticated">
-        <div>
-          <h2 style="margin-bottom:16px">My Favorites (<span x-text="$store.favorites.items.length"></span>)</h2>
-
-          <div x-show="$store.favorites.loading" class="empty-state">
-            <div class="loading-spinner"></div>
+          <div class="rail-tabs">
+            <button :class="{ active: $store.ui.railTab === 'places' }" @click="$store.ui.railTab = 'places'">Atlas</button>
+            <button :class="{ active: $store.ui.railTab === 'radar' }" @click="$store.ui.railTab = 'radar'">Radar</button>
+            <button :class="{ active: $store.ui.railTab === 'compare' }" @click="$store.ui.railTab = 'compare'">Compare</button>
           </div>
-
-          <div x-show="!$store.favorites.loading && $store.favorites.items.length === 0" class="empty-state">
-            <h3>No favorites yet</h3>
-            <p>Search for places and click the heart icon to save them.</p>
-          </div>
-
-          <div class="results-list" x-show="!$store.favorites.loading">
-            <template x-for="fav in $store.favorites.items" :key="fav.osm_id || fav.poi_osm_id">
-              <div class="result-card" @click="window.location.hash = '#/poi/' + (fav.osm_id || fav.poi_osm_id)">
-                <div class="card-content">
-                  <div class="card-header">
-                    <span class="card-title" x-text="fav.name || fav.osm_name || 'Unknown'"></span>
-                    <span class="card-type" x-text="fav.poi_type"></span>
+          <div class="rail-scroll" x-show="$store.ui.railTab === 'places'">
+            <template x-if="$store.atlas.loading">
+              <div class="skeleton-stack"><div class="skeleton card"></div><div class="skeleton card"></div><div class="skeleton card"></div></div>
+            </template>
+            <template x-if="!$store.atlas.loading && $store.atlas.places.length === 0">
+              <div class="empty-panel">
+                <h3>No places in view</h3>
+                <p>Move the map, enable more layers, or search for a stronger starting point.</p>
+              </div>
+            </template>
+            <template x-for="poi in $store.atlas.places" :key="poi.osm_id">
+              <article class="place-card" :class="{ selected: $store.atlas.selected?.osm_id === poi.osm_id }" @mouseenter="$store.atlas.preview(poi)" @click="$store.atlas.select(poi)">
+                <div class="thumb" :style="$store.format.thumbStyle(poi)"></div>
+                <div class="place-body">
+                  <h3 x-text="poi.name || poi.osm_name"></h3>
+                  <p x-text="$store.format.placeMeta(poi)"></p>
+                  <div class="place-actions" @click.stop>
+                    <button title="Save" @click="$store.favorites.toggle(poi)" :class="{ active: poi.is_favorite }">♡</button>
+                    <button title="Compare" @click="$store.compare.toggle(poi)" :class="{ active: $store.compare.has(poi) }">⇄</button>
+                    <button title="Nearby radar" @click="$store.radar.fromPoi(poi)">⌖</button>
+                    <button title="Inspect" @click="$store.poi.open(poi.osm_id)">↗</button>
                   </div>
-                  <div class="card-meta" x-show="fav.google_rating">
-                    <span class="card-rating" x-text="'\u2B50 ' + fav.google_rating"></span>
-                  </div>
-                  <div class="card-address" x-show="fav.city || fav.country_code"
-                    x-text="(fav.city || '') + (fav.country_code ? ', ' + fav.country_code : '')"></div>
                 </div>
-                <div class="card-actions" @click.stop>
-                  <button class="btn-fav active"
-                    @click="$store.favorites.remove(fav.osm_id || fav.poi_osm_id)">&#x2665;</button>
-                </div>
+              </article>
+            </template>
+          </div>
+          <div class="rail-scroll" x-show="$store.ui.railTab === 'radar'">
+            <div class="radar-card">
+              <div class="radar-target" x-text="$store.radar.title()"></div>
+              <div class="radar-rings">
+                <span>5 min</span><span>15 min</span><span>30 min</span>
+              </div>
+            </div>
+            <template x-for="poi in $store.radar.results" :key="poi.osm_id">
+              <button class="nearby-row" @click="$store.poi.open(poi.osm_id)">
+                <span x-text="poi.name || poi.osm_name"></span>
+                <small x-text="$store.format.distance(poi)"></small>
+              </button>
+            </template>
+          </div>
+          <div class="rail-scroll" x-show="$store.ui.railTab === 'compare'">
+            <template x-if="$store.compare.items.length === 0">
+              <div class="empty-panel"><h3>Compare places</h3><p>Add places from cards or markers to see them side by side.</p></div>
+            </template>
+            <template x-for="poi in $store.compare.items" :key="poi.osm_id">
+              <div class="compare-row">
+                <div><strong x-text="poi.name || poi.osm_name"></strong><small x-text="$store.format.placeMeta(poi)"></small></div>
+                <button @click="$store.compare.toggle(poi)">×</button>
               </div>
             </template>
           </div>
+        </aside>
+        <div class="map-stage">
+          <div id="map"></div>
+          <button class="locate-button" @click="$store.atlas.locate()">⌖</button>
+          <div class="map-preview" x-show="$store.atlas.selected" x-transition>
+            <button class="close-button" @click="$store.atlas.selected = null">×</button>
+            <h3 x-text="$store.atlas.selected?.name || $store.atlas.selected?.osm_name"></h3>
+            <p x-text="$store.format.placeMeta($store.atlas.selected || {})"></p>
+            <div>
+              <button class="secondary-button compact" @click="$store.radar.fromPoi($store.atlas.selected)">Near this</button>
+              <button class="primary-button compact" @click="$store.poi.open($store.atlas.selected.osm_id)">Dossier</button>
+            </div>
+          </div>
         </div>
-      </template>
-    </div>
+      </section>
 
+      <section class="dossier" x-show="$store.route.page === 'poi'" x-cloak>
+        <button class="back-button" @click="$store.route.goAtlas()">← Back to Atlas</button>
+        <template x-if="$store.poi.loading">
+          <div class="skeleton-stack dossier-shell"><div class="skeleton block"></div><div class="skeleton block"></div></div>
+        </template>
+        <template x-if="!$store.poi.loading && $store.poi.current">
+          <article class="dossier-shell">
+            <div class="dossier-hero" :style="$store.format.heroStyle($store.poi.current)">
+              <div>
+                <div class="eyebrow" x-text="$store.poi.current.poi_type"></div>
+                <h1 x-text="$store.poi.current.name || $store.poi.current.osm_name"></h1>
+                <p x-text="$store.format.placeMeta($store.poi.current)"></p>
+              </div>
+              <button class="primary-button compact" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
+            </div>
+            <div class="dossier-grid">
+              <section class="dossier-main">
+                <div class="stat-row">
+                  <div><strong x-text="$store.poi.current.google_rating || 'OSM'"></strong><span>rating</span></div>
+                  <div><strong x-text="$store.poi.current.google_review_count || '—'"></strong><span>reviews</span></div>
+                  <div><strong x-text="$store.poi.enrichmentLabel()"></strong><span>data status</span></div>
+                </div>
+                <div class="tabs">
+                  <button :class="{ active: $store.poi.tab === 'overview' }" @click="$store.poi.tab = 'overview'">Overview</button>
+                  <button :class="{ active: $store.poi.tab === 'nearby' }" @click="$store.poi.tab = 'nearby'">Nearby</button>
+                  <button :class="{ active: $store.poi.tab === 'data' }" @click="$store.poi.tab = 'data'">Data</button>
+                </div>
+                <div x-show="$store.poi.tab === 'overview'" class="copy-block">
+                  <p x-text="$store.poi.summary()"></p>
+                  <div class="action-grid">
+                    <a :href="$store.poi.current.website" x-show="$store.poi.current.website" target="_blank">Website</a>
+                    <a :href="$store.poi.mapsUrl()" target="_blank">Maps</a>
+                    <a :href="'tel:' + $store.poi.current.phone" x-show="$store.poi.current.phone">Call</a>
+                    <button @click="$store.radar.fromPoi($store.poi.current); $store.route.goAtlas()">Near this</button>
+                  </div>
+                </div>
+                <div x-show="$store.poi.tab === 'nearby'">
+                  <template x-for="poi in $store.radar.results" :key="poi.osm_id">
+                    <button class="nearby-row" @click="$store.poi.open(poi.osm_id)">
+                      <span x-text="poi.name || poi.osm_name"></span>
+                      <small x-text="$store.format.distance(poi)"></small>
+                    </button>
+                  </template>
+                </div>
+                <pre x-show="$store.poi.tab === 'data'" class="data-pane" x-text="JSON.stringify($store.poi.current, null, 2)"></pre>
+              </section>
+              <aside class="composer-panel">
+                <h2>Trip Composer</h2>
+                <textarea placeholder="Notes for this place" x-model="$store.poi.note" @change="$store.favorites.saveNote($store.poi.current, $store.poi.note)"></textarea>
+                <button class="secondary-button" @click="$store.compare.toggle($store.poi.current)">Toggle compare</button>
+              </aside>
+            </div>
+          </article>
+        </template>
+      </section>
+
+      <section class="composer-page" x-show="$store.route.page === 'composer'" x-cloak x-effect="if ($store.route.page === 'composer') $store.favorites.load()">
+        <div class="composer-header">
+          <div>
+            <div class="eyebrow">Saved planning</div>
+            <h1>Trip Composer</h1>
+          </div>
+          <button class="primary-button compact" @click="$store.route.goAtlas()">Add places</button>
+        </div>
+        <template x-if="!$store.auth.authenticated && $store.auth.checked">
+          <div class="empty-panel wide"><h3>Sign in to compose a trip</h3><p>Your saved places, notes, and comparisons live here.</p><button class="primary-button compact" @click="$store.auth.login()">Sign in</button></div>
+        </template>
+        <template x-if="$store.auth.authenticated">
+          <div class="board">
+            <template x-for="column in $store.favorites.columns()" :key="column.key">
+              <section class="board-column">
+                <h2 x-text="column.label"></h2>
+                <template x-for="fav in column.items" :key="fav.osm_id || fav.poi_osm_id">
+                  <article class="board-card" @click="$store.poi.open(fav.osm_id || fav.poi_osm_id)">
+                    <strong x-text="fav.name || fav.osm_name || 'Unknown place'"></strong>
+                    <small x-text="$store.format.placeMeta(fav)"></small>
+                    <textarea placeholder="Add a note" x-model="fav.favorite_notes" @click.stop @change.stop="$store.favorites.saveNote(fav, fav.favorite_notes)"></textarea>
+                  </article>
+                </template>
+              </section>
+            </template>
+          </div>
+        </template>
+      </section>
+    </main>
   </div>
-
-  <!-- Import api functions for inline usage -->
-  <script type="module">
-    import { apiGet, apiPost, apiDelete } from '/js/api.js';
-    window.apiGet = apiGet;
-    window.apiPost = apiPost;
-    window.apiDelete = apiDelete;
-  </script>
-
 </body>
 </html>

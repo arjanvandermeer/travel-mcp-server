@@ -3,7 +3,7 @@
 /**
  * Import GeoNames data directly into PostgreSQL
  *
- * Downloads and imports:
+ * Downloads and import_log:
  * - Countries (countryInfo.txt)
  * - Cities with population > 1000 (cities1000.txt)
  *
@@ -17,6 +17,9 @@ import { createWriteStream } from 'fs';
 import pg from 'pg';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -67,12 +70,12 @@ async function unzip(zipPath, outputPath) {
 }
 
 /**
- * Clean up stale imports that have been 'running' for more than 24 hours
+ * Clean up stale import_log that have been 'running' for more than 24 hours
  * @param {pg.Pool} pool - PostgreSQL pool
  */
 async function cleanupStaleImports(pool) {
   const result = await pool.query(`
-    UPDATE imports
+    UPDATE import_log
     SET status = 'failed',
         completed_at = CURRENT_TIMESTAMP,
         error_message = 'Job running longer than 24 hours - likely interrupted or crashed'
@@ -110,7 +113,7 @@ async function importCountries(pool) {
 
   // Start import tracking
   const importResult = await pool.query(`
-    INSERT INTO imports (
+    INSERT INTO import_log (
       import_type, source_file, source_url, metadata, status
     ) VALUES ($1, $2, $3, $4, 'running')
     RETURNING id
@@ -175,7 +178,7 @@ async function importCountries(pool) {
     // Check if any records were imported
     if (imported === 0) {
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'failed',
             completed_at = CURRENT_TIMESTAMP,
             records_imported = 0,
@@ -186,7 +189,7 @@ async function importCountries(pool) {
     } else {
       // Mark import as completed
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'completed',
             completed_at = CURRENT_TIMESTAMP,
             records_imported = $2
@@ -200,7 +203,7 @@ async function importCountries(pool) {
     // Mark import as failed
     if (importId) {
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'failed',
             completed_at = CURRENT_TIMESTAMP,
             error_message = $2
@@ -241,7 +244,7 @@ async function importCities(pool) {
 
   // Start import tracking
   const importResult = await pool.query(`
-    INSERT INTO imports (
+    INSERT INTO import_log (
       import_type, source_file, source_url, metadata, status
     ) VALUES ($1, $2, $3, $4, 'running')
     RETURNING id
@@ -314,7 +317,7 @@ async function importCities(pool) {
     // Check if any records were imported
     if (imported === 0) {
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'failed',
             completed_at = CURRENT_TIMESTAMP,
             records_imported = 0,
@@ -325,7 +328,7 @@ async function importCities(pool) {
     } else {
       // Mark import as completed
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'completed',
             completed_at = CURRENT_TIMESTAMP,
             records_imported = $2
@@ -339,7 +342,7 @@ async function importCities(pool) {
     // Mark import as failed
     if (importId) {
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'failed',
             completed_at = CURRENT_TIMESTAMP,
             error_message = $2
@@ -373,7 +376,7 @@ async function importAdmin1Codes(pool) {
 
   // Start import tracking
   const importResult = await pool.query(`
-    INSERT INTO imports (
+    INSERT INTO import_log (
       import_type, source_file, source_url, metadata, status
     ) VALUES ($1, $2, $3, $4, 'running')
     RETURNING id
@@ -426,7 +429,7 @@ async function importAdmin1Codes(pool) {
     // Check if any records were imported
     if (imported === 0) {
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'failed',
             completed_at = CURRENT_TIMESTAMP,
             records_imported = 0,
@@ -437,7 +440,7 @@ async function importAdmin1Codes(pool) {
     } else {
       // Update import status
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'completed',
             completed_at = CURRENT_TIMESTAMP,
             records_imported = $2
@@ -450,7 +453,7 @@ async function importAdmin1Codes(pool) {
 
     if (importId) {
       await pool.query(`
-        UPDATE imports
+        UPDATE import_log
         SET status = 'failed',
             completed_at = CURRENT_TIMESTAMP,
             error_message = $2
@@ -476,7 +479,7 @@ async function main() {
     console.log('GeoNames Import to PostgreSQL');
     console.log('==============================');
 
-    // Clean up stale imports (running > 24 hours)
+    // Clean up stale import_log (running > 24 hours)
     await cleanupStaleImports(pool);
 
     await importCountries(pool);

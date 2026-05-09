@@ -13,6 +13,7 @@ import { validateCoordinates, validateLimit } from './validation.js';
 // Shared constants
 export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
 export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+export const attractionTypes = ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'];
 
 // Default mapping: POI type → what types to show as "nearby"
 const nearbyTypeMap = new Map([

@@ -11,6 +11,7 @@ import { registerSearchRoutes } from '../../src/api/search.js';
 import { registerAutocompleteRoutes } from '../../src/api/autocomplete.js';
 import { registerPOIRoutes } from '../../src/api/poi.js';
 import { registerFavoritesRoutes } from '../../src/api/favorites.js';
+import { registerCityOverviewRoutes } from '../../src/api/city-overview.js';
 import { fakeReq, fakePostReq, fakeRes } from '../mocks/http-helpers.js';
 
 // Mock database with all methods the API handlers need
@@ -34,14 +35,23 @@ function createApiMockDb(overrides = {}) {
       { osm_id: 123, name: 'Grand Palace Hotel', poi_type: 'hotel', google_rating: 4.5, city: 'Bangkok', country_code: 'TH' },
     ],
     getPOIDetails: async (osmId) => {
-      if (osmId === 123) return { osm_id: 123, osm_name: 'Grand Palace Hotel', poi_type: 'hotel' };
+      if (osmId === 123) return { osm_id: 123, osm_name: 'Grand Palace Hotel', poi_type: 'hotel', osm_latitude: 13.75, osm_longitude: 100.5 };
       return null;
     },
+    getCityByName: async (name, countryCode) => {
+      if (name === 'Bangkok') return { name: 'Bangkok', country_code: countryCode, population: 8280925, latitude: 13.75, longitude: 100.5 };
+      return null;
+    },
+    getRadiusForPopulation: () => 30,
+    searchPOIsNearCoordinates: async () => [
+      { osm_id: 124, name: 'Nearby Cafe', poi_type: 'cafe', distance_km: 0.4 },
+    ],
     addFavoriteStatus: async (pois, userId) => pois.map(p => ({ ...p, is_favorite: false })),
     listFavorites: async (userId, opts) => [
       { osm_id: 123, name: 'Grand Palace Hotel', poi_type: 'hotel' },
     ],
     addFavorite: async (userId, osmId, notes) => osmId === 123,
+    updateFavoriteNotes: async (userId, osmId, notes) => osmId === 123,
     removeFavorite: async (userId, osmId) => osmId === 123,
     ...overrides,
   };
@@ -265,6 +275,19 @@ describe('Favorites API', () => {
     assert.strictEqual(data.success, true);
   });
 
+  it('PATCH /api/v1/favorites/:osm_id should update notes', async () => {
+    const router = new ApiRouter();
+    registerFavoritesRoutes(router);
+    const db = createApiMockDb();
+
+    const req = fakePostReq('PATCH', '/api/v1/favorites/123', { notes: 'Near the station' });
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: mockUser });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.json().success, true);
+  });
+
   it('POST /api/v1/favorites should require auth', async () => {
     const router = new ApiRouter();
     registerFavoritesRoutes(router);
@@ -411,6 +434,40 @@ describe('GET /api/v1/poi/:osm_id edge cases', () => {
     await router.handle(req, res, { db, user: mockUser });
 
     assert.strictEqual(capturedUserId, 42);
+  });
+});
+
+describe('GET /api/v1/poi/:osm_id/nearby', () => {
+  it('should return nearby POIs as JSON', async () => {
+    const router = new ApiRouter();
+    registerPOIRoutes(router);
+    const db = createApiMockDb();
+
+    const req = fakeReq('GET', '/api/v1/poi/123/nearby?radius=2&limit=5');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    const data = res.json();
+    assert.strictEqual(data.source.osm_id, 123);
+    assert.strictEqual(data.results.length, 1);
+  });
+});
+
+describe('GET /api/v1/cities/:country_code/:city_name/overview', () => {
+  it('should return a city overview', async () => {
+    const router = new ApiRouter();
+    registerCityOverviewRoutes(router);
+    const db = createApiMockDb();
+
+    const req = fakeReq('GET', '/api/v1/cities/TH/Bangkok/overview');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    const data = res.json();
+    assert.strictEqual(data.city.name, 'Bangkok');
+    assert.strictEqual(data.top.stays.length, 1);
   });
 });
 

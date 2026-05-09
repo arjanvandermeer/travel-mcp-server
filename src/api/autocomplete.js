@@ -2,7 +2,7 @@
  * GET /api/v1/autocomplete — fast POI name search for type-ahead
  */
 
-import { sendJson } from '../api-router.js';
+import { createErrorEnvelope, sendJson } from '../api-router.js';
 import { validateLimit } from '../validation.js';
 
 export function registerAutocompleteRoutes(router) {
@@ -18,14 +18,19 @@ export function registerAutocompleteRoutes(router) {
     const poiTypes = query.poi_types ? query.poi_types.split(',').map(t => t.trim()).filter(Boolean) : undefined;
     const limit = validateLimit(query.limit, 10, 50);
 
-    const suggestions = await db.autocompleteSearch(q, {
-      countryCode,
-      cityGeonameId,
-      poiType,
-      poiTypes,
-      limit,
-    });
+    try {
+      const suggestions = await db.autocompleteSearch(q, {
+        countryCode,
+        cityGeonameId,
+        poiType,
+        poiTypes,
+        limit,
+      });
 
-    sendJson(res, 200, { suggestions });
+      sendJson(res, 200, { suggestions });
+    } catch (err) {
+      console.error('[autocomplete] failed:', err.message);
+      sendJson(res, 500, createErrorEnvelope('autocomplete_failed', 'Autocomplete is temporarily unavailable'));
+    }
   });
 }

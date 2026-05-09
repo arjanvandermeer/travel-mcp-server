@@ -35,6 +35,7 @@ import { registerFavoritesRoutes } from './api/favorites.js';
 import { registerAuthRoutes } from './api/auth.js';
 import { registerHomepageRoutes } from './api/homepage.js';
 import { registerMapRoutes } from './api/map.js';
+import { registerCityOverviewRoutes } from './api/city-overview.js';
 import { SESSION_MAX_AGE_MS, SESSION_CLEANUP_INTERVAL_MS, AUTH_TOKEN_MIN_LENGTH, OAUTH_INTROSPECTION_CACHE_TTL_MS } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -383,6 +384,7 @@ async function main() {
   registerAuthRoutes(apiRouter);
   registerHomepageRoutes(apiRouter);
   registerMapRoutes(apiRouter);
+  registerCityOverviewRoutes(apiRouter);
 
   // Static file MIME types
   const MIME_TYPES = {
@@ -409,7 +411,7 @@ async function main() {
 
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id, MCP-Protocol-Version, Authorization');
     res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
 

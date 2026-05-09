@@ -12,7 +12,7 @@ export class ApiRouter {
 
   /**
    * Register a route handler
-   * @param {string} method - HTTP method (GET, POST, DELETE)
+   * @param {string} method - HTTP method (GET, POST, PATCH, DELETE)
    * @param {string} pattern - URL pattern (supports :param placeholders)
    * @param {Function} handler - async (req, res, { params, query, db, user }) => void
    */
@@ -29,6 +29,7 @@ export class ApiRouter {
 
   get(pattern, handler) { this.add('GET', pattern, handler); }
   post(pattern, handler) { this.add('POST', pattern, handler); }
+  patch(pattern, handler) { this.add('PATCH', pattern, handler); }
   delete(pattern, handler) { this.add('DELETE', pattern, handler); }
 
   /**
@@ -62,9 +63,9 @@ export class ApiRouter {
         telemetry.captureException(err, { context: 'api_route', method, route: route.pattern });
         if (!res.headersSent) {
           if (err.message === 'Request body too large') {
-            sendJson(res, 413, { error: 'Request body too large' });
+            sendJson(res, 413, createErrorEnvelope('body_too_large', 'Request body too large'));
           } else {
-            sendJson(res, 500, { error: 'Internal server error' });
+            sendJson(res, 500, createErrorEnvelope('internal_error', 'Internal server error'));
           }
         }
       }
@@ -81,6 +82,15 @@ export class ApiRouter {
 export function sendJson(res, status, data) {
   res.writeHead(status, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
+}
+
+export function createErrorEnvelope(code, message, extra = {}) {
+  return {
+    error: message,
+    code,
+    message,
+    ...extra,
+  };
 }
 
 /**

@@ -1,57 +1,37 @@
-/**
- * Main app — Alpine.js stores, Leaflet map integration
- */
-
 import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
-import { apiGet, apiPost, apiDelete } from './api.js';
+import { apiDelete, apiGet, apiPatch, apiPost } from './api.js';
 
-// POI category options with icons
-const POI_CATEGORIES = [
-  { value: '',            label: 'All',            icon: '\u{1F30D}', types: [] },
-  { value: 'dining',      label: 'Dining',         icon: '\u{1F37D}', types: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
-  { value: 'accommodation', label: 'Stay',         icon: '\u{1F3E8}', types: ['hotel', 'guest_house', 'hostel', 'resort', 'motel'] },
-  { value: 'attractions', label: 'Attractions',    icon: '\u{1F3DB}', types: ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'] },
+const LAYERS = [
+  { key: 'accommodation', label: 'Stay', color: '#2563eb', types: ['hotel', 'guest_house', 'hostel', 'resort', 'motel', 'apartment', 'bed_and_breakfast'] },
+  { key: 'dining', label: 'Eat', color: '#dc2626', types: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
+  { key: 'attractions', label: 'See', color: '#15803d', types: ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'] },
 ];
 
-// Marker color by POI type
-const MARKER_COLORS = {
-  hotel: '#4285F4', guest_house: '#4285F4', hostel: '#4285F4', resort: '#4285F4', motel: '#4285F4',
-  restaurant: '#EA4335', cafe: '#EA4335', bar: '#EA4335', pub: '#EA4335', fast_food: '#EA4335', food_court: '#EA4335',
-  attraction: '#34A853', monument: '#34A853', museum: '#34A853', park: '#34A853', viewpoint: '#34A853',
-  ruins: '#34A853', castle: '#34A853', zoo: '#34A853', theme_park: '#34A853',
-};
-
-// POI type icons for autocomplete
-const TYPE_ICONS = {
-  hotel: '\u{1F3E8}', guest_house: '\u{1F3E0}', hostel: '\u{1F6CF}', resort: '\u{1F3D6}',
-  restaurant: '\u{1F37D}', cafe: '\u2615', bar: '\u{1F37A}', pub: '\u{1F37A}', fast_food: '\u{1F354}',
-  attraction: '\u{1F3DB}', monument: '\u{1F3DB}', museum: '\u{1F3DB}', park: '\u{1F333}',
-};
+const TYPE_COLORS = new Map(LAYERS.flatMap(layer => layer.types.map(type => [type, layer.color])));
 
 function debounce(fn, ms) {
   let timer;
-  return function (...args) {
+  return (...args) => {
     clearTimeout(timer);
-    timer = setTimeout(() => fn.apply(this, args), ms);
+    timer = setTimeout(() => fn(...args), ms);
   };
 }
 
-function createMarkerIcon(poiType) {
-  const color = MARKER_COLORS[poiType] || '#667eea';
+function markerIcon(poi, selected = false) {
+  const color = TYPE_COLORS.get(poi.poi_type) || '#334155';
+  const label = selected ? '●' : '';
   return L.divIcon({
-    className: '',
-    html: `<div style="width:12px;height:12px;border-radius:50%;background:${color};border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>`,
-    iconSize: [12, 12],
-    iconAnchor: [6, 6],
+    className: 'atlas-marker-wrap',
+    html: `<div class="atlas-marker ${selected ? 'selected' : ''}" style="--marker:${color}">${label}</div>`,
+    iconSize: [selected ? 26 : 18, selected ? 26 : 18],
+    iconAnchor: [selected ? 13 : 9, selected ? 13 : 9],
   });
 }
 
-// ─── Auth Store ───
 Alpine.store('auth', {
   checked: false,
   authenticated: false,
   user: null,
-
   async check() {
     try {
       const data = await apiGet('/auth/me');
@@ -67,345 +47,555 @@ Alpine.store('auth', {
   logout() { window.location.href = '/auth/logout'; },
 });
 
-// ─── Route Store ───
 Alpine.store('route', {
-  page: 'map',   // 'map' | 'poi' | 'favorites'
+  page: 'home',
   poiOsmId: null,
-
   init() {
     this.handleHash();
     window.addEventListener('hashchange', () => this.handleHash());
   },
-
   handleHash() {
     const hash = window.location.hash || '#/';
     if (hash.startsWith('#/poi/')) {
       this.page = 'poi';
       this.poiOsmId = hash.replace('#/poi/', '');
-    } else if (hash === '#/favorites') {
-      this.page = 'favorites';
-    } else {
-      this.page = 'map';
+      Alpine.store('poi').load(this.poiOsmId);
+      return;
     }
+    this.page = hash === '#/composer' ? 'composer' : hash === '#/atlas' ? 'atlas' : 'home';
+    if (this.page === 'atlas') Alpine.store('atlas').activate();
+  },
+  goHome() { window.location.hash = '#/'; },
+  goAtlas() { window.location.hash = '#/atlas'; },
+  goComposer() { window.location.hash = '#/composer'; },
+});
+
+Alpine.store('ui', {
+  railTab: 'places',
+  focusCommand() {
+    document.getElementById('command-search')?.focus();
   },
 });
 
-// ─── Map Store ───
-Alpine.store('map', {
-  leafletMap: null,
-  markerCluster: null,
-  markers: new Map(),  // osm_id -> L.marker
-  selectedPoi: null,
-  activeCategories: new Set(['dining', 'accommodation', 'attractions']),  // all on by default
-  categories: POI_CATEGORIES.filter(c => c.value !== ''),  // exclude "All" — multi-toggle replaces it
+Alpine.store('format', {
+  placeMeta(poi = {}) {
+    const bits = [];
+    if (poi.google_rating) bits.push(`${Number(poi.google_rating).toFixed(1)} rating`);
+    if (poi.google_review_count) bits.push(`${poi.google_review_count} reviews`);
+    if (poi.poi_type) bits.push(String(poi.poi_type).replaceAll('_', ' '));
+    if (poi.city) bits.push(poi.country_code ? `${poi.city}, ${poi.country_code}` : poi.city);
+    return bits.join(' · ') || 'Travel place';
+  },
+  distance(poi = {}) {
+    if (poi.distance_km == null) return this.placeMeta(poi);
+    return `${Number(poi.distance_km).toFixed(1)} km · ${this.placeMeta(poi)}`;
+  },
+  thumbStyle(poi = {}) {
+    const url = poi.photo_url || poi.primary_photo_url;
+    if (url) return `background-image:url("${url}")`;
+    const color = TYPE_COLORS.get(poi.poi_type) || '#475569';
+    return `background:linear-gradient(135deg, ${color}, #f59e0b)`;
+  },
+  heroStyle(poi = {}) {
+    const photos = poi.google_photos || poi.photos || [];
+    const url = poi.photo_url || poi.primary_photo_url || photos?.[0]?.url || photos?.[0]?.url_thumbnail;
+    if (url) return `background-image:linear-gradient(90deg, rgba(15,23,42,.82), rgba(15,23,42,.18)), url("${url}")`;
+    return 'background-image:linear-gradient(135deg, #0f172a, #14532d 54%, #f59e0b)';
+  },
+});
+
+Alpine.store('discovery', {
   loading: false,
-  _fetchDebounced: null,
-  _lastBbox: null,
-
-  initMap() {
-    if (this.leafletMap) return;
-
-    const map = L.map('map', {
-      center: [20, 0],  // World view default
-      zoom: 3,
-      zoomControl: true,
-      attributionControl: true,
-    });
-
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-      maxZoom: 19,
-    }).addTo(map);
-
-    this.markerCluster = L.markerClusterGroup({
-      maxClusterRadius: 50,
-      spiderfyOnMaxZoom: true,
-      showCoverageOnHover: false,
-      disableClusteringAtZoom: 16,
-    });
-    map.addLayer(this.markerCluster);
-
-    // Fetch POIs when map moves
-    this._fetchDebounced = debounce(() => this.fetchPOIs(), 400);
-    map.on('moveend', () => this._fetchDebounced());
-    map.on('zoomend', () => this._fetchDebounced());
-
-    this.leafletMap = map;
-
-    // Request geolocation
-    this.locateMe();
+  error: '',
+  source: 'loading',
+  locationState: 'idle',
+  coords: null,
+  country: null,
+  city: null,
+  hotels: [],
+  overview: null,
+  heroImageUrl: '',
+  heroImageCredit: '',
+  locationError: '',
+  async load() {
+    await this.useLocation();
   },
-
-  locateMe() {
-    if (!navigator.geolocation) return;
-    navigator.geolocation.getCurrentPosition(
-      (pos) => {
-        const { latitude, longitude } = pos.coords;
-        if (this.leafletMap) {
-          // Zoom to 500m radius around current location
-          const center = L.latLng(latitude, longitude);
-          const bounds = center.toBounds(1000); // 1000m = 500m radius
-          this.leafletMap.flyToBounds(bounds, { duration: 1.5, maxZoom: 17 });
-        }
-      },
-      () => {
-        // Denied or unavailable — stay at world view, that's fine
-      },
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  },
-
-  toggleCategory(value) {
-    if (this.activeCategories.has(value)) {
-      this.activeCategories.delete(value);
-    } else {
-      this.activeCategories.add(value);
-    }
-    // Force Alpine reactivity (Set mutations aren't tracked)
-    this.activeCategories = new Set(this.activeCategories);
-    this._lastBbox = null; // force re-fetch
-    this.fetchPOIs();
-  },
-
-  async fetchPOIs() {
-    if (!this.leafletMap) return;
-    const zoom = this.leafletMap.getZoom();
-
-    // Don't fetch at very low zoom — too many results, not useful
-    if (zoom < 8) {
-      this.markerCluster.clearLayers();
-      this.markers.clear();
-      this._lastBbox = null;
-      return;
-    }
-
-    const bounds = this.leafletMap.getBounds();
-    const bbox = {
-      sw_lat: bounds.getSouth().toFixed(4),
-      sw_lng: bounds.getWest().toFixed(4),
-      ne_lat: bounds.getNorth().toFixed(4),
-      ne_lng: bounds.getEast().toFixed(4),
-    };
-
-    // Build types from all active category toggles
-    const activeTypes = [];
-    for (const cat of POI_CATEGORIES) {
-      if (cat.value && this.activeCategories.has(cat.value)) {
-        activeTypes.push(...cat.types);
-      }
-    }
-    const types = activeTypes.length ? activeTypes.join(',') : undefined;
-
-    // If no categories active, clear map
-    if (!types) {
-      this.markerCluster.clearLayers();
-      this.markers.clear();
-      this._lastBbox = null;
-      return;
-    }
-
-    // Skip if bbox hasn't changed meaningfully
-    const bboxKey = `${bbox.sw_lat},${bbox.sw_lng},${bbox.ne_lat},${bbox.ne_lng},${types}`;
-    if (bboxKey === this._lastBbox) return;
-    this._lastBbox = bboxKey;
-
+  async useLocation() {
     this.loading = true;
-    try {
-      const data = await apiGet('/api/v1/map/pois', {
-        ...bbox,
-        types,
-        limit: 300,
-      });
+    this.error = '';
+    this.locationError = '';
+    this.locationState = 'requesting';
+    this.source = 'local';
 
-      this._updateMarkers(data.results || []);
+    if (!window.isSecureContext) {
+      this.locationState = 'blocked';
+      this.locationError = 'Browser location requires a secure context. Use http://localhost:3001 instead of an IP address, or serve the app over HTTPS.';
+      this.error = `${this.locationError} I loaded a fallback city for now.`;
+      await this.loadFallback();
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      this.locationState = 'unsupported';
+      this.locationError = 'This browser does not expose the Geolocation API.';
+      this.error = `${this.locationError} I loaded a fallback city for now.`;
+      await this.loadFallback();
+      return;
+    }
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 9000,
+          maximumAge: 300000,
+        });
+      });
+      const { latitude, longitude } = position.coords;
+      this.coords = { latitude, longitude };
+      this.locationState = 'resolved';
+      await this.loadNearestCity(latitude, longitude);
     } catch (err) {
-      console.error('Map POI fetch failed:', err);
+      this.locationState = 'unavailable';
+      this.locationError = this.describeLocationError(err);
+      this.error = `${this.locationError} I loaded a fallback city for now.`;
+      console.warn('[City Pulse] Geolocation failed:', err);
+      await this.loadFallback();
+      return;
     }
     this.loading = false;
   },
-
-  _updateMarkers(pois) {
-    const newIds = new Set(pois.map(p => p.osm_id));
-
-    // Remove markers no longer in view
-    for (const [id, marker] of this.markers) {
-      if (!newIds.has(id)) {
-        this.markerCluster.removeLayer(marker);
-        this.markers.delete(id);
-      }
+  describeLocationError(err) {
+    if (!err || typeof err.code !== 'number') return 'Location was not available.';
+    if (err.code === 1) return 'Location permission is blocked or was denied for this site.';
+    if (err.code === 2) return 'The browser could not determine your current position.';
+    if (err.code === 3) return 'Location lookup timed out before the browser returned coordinates.';
+    return err.message || 'Location was not available.';
+  },
+  async loadNearestCity(latitude, longitude) {
+    const data = await apiGet('/api/v1/search/cities', {
+      latitude,
+      longitude,
+      limit: 1,
+    });
+    const [nearest] = data.results || [];
+    if (!nearest) {
+      this.error = 'I could not resolve your nearest city, so I loaded a fallback city.';
+      await this.loadFallback();
+      return;
     }
 
-    // Add new markers
-    for (const poi of pois) {
-      if (this.markers.has(poi.osm_id)) continue;
-
-      const marker = L.marker([poi.latitude, poi.longitude], {
-        icon: createMarkerIcon(poi.poi_type),
+    this.city = nearest;
+    this.country = { code: nearest.country_code, name: nearest.country_name || nearest.country_code };
+    await this.loadOverview();
+    await this.loadHeroImage();
+  },
+  async loadFallback() {
+    this.loading = true;
+    this.source = 'fallback';
+    try {
+      const data = await apiGet('/api/v1/search/cities', {
+        q: 'London',
+        country_code: 'GB',
+        limit: 1,
       });
-
-      marker.on('click', () => {
-        this.selectedPoi = poi;
-      });
-
-      this.markers.set(poi.osm_id, marker);
-      this.markerCluster.addLayer(marker);
+      const [city] = data.results || [];
+      if (!city) throw new Error('London is not available in the local database.');
+      this.country = { code: city.country_code, name: city.country_name || 'United Kingdom' };
+      this.city = city;
+      this.hotels = [];
+      this.overview = null;
+      await this.loadOverview();
+      await this.loadHeroImage();
+    } catch (err) {
+      this.error = err.message || 'City discovery is unavailable right now.';
+    }
+    this.loading = false;
+  },
+  async loadOverview() {
+    const countryCode = this.country?.code || this.city?.country_code;
+    if (!countryCode || !this.city?.name) return;
+    try {
+      this.overview = await apiGet(`/api/v1/cities/${encodeURIComponent(countryCode)}/${encodeURIComponent(this.city.name)}/overview`);
+      this.hotels = this.overview?.top?.stays || this.hotels || [];
+    } catch {
+      this.overview = null;
     }
   },
+  async loadHeroImage() {
+    this.heroImageUrl = '';
+    this.heroImageCredit = '';
+    if (!this.city?.name) return;
 
-  async toggleFavorite() {
-    const auth = Alpine.store('auth');
-    if (!auth.authenticated) { auth.login(); return; }
-    if (!this.selectedPoi) return;
+    const search = `${this.city.name} ${this.country?.name || this.city.country_code || ''}`.trim();
+    const url = new URL('https://en.wikipedia.org/w/api.php');
+    url.searchParams.set('action', 'query');
+    url.searchParams.set('origin', '*');
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('generator', 'search');
+    url.searchParams.set('gsrnamespace', '0');
+    url.searchParams.set('gsrlimit', '1');
+    url.searchParams.set('gsrsearch', search);
+    url.searchParams.set('prop', 'pageimages');
+    url.searchParams.set('piprop', 'thumbnail|original|name');
+    url.searchParams.set('pithumbsize', '1800');
 
     try {
-      if (this.selectedPoi.is_favorite) {
-        await apiDelete(`/api/v1/favorites/${this.selectedPoi.osm_id}`);
-        this.selectedPoi.is_favorite = false;
-      } else {
-        await apiPost('/api/v1/favorites', { osm_id: this.selectedPoi.osm_id });
-        this.selectedPoi.is_favorite = true;
-      }
-    } catch (err) {
-      console.error('Favorite toggle failed:', err);
+      const response = await fetch(url);
+      if (!response.ok) return;
+      const data = await response.json();
+      const page = Object.values(data.query?.pages || {})[0];
+      this.heroImageUrl = page?.original?.source || page?.thumbnail?.source || '';
+      this.heroImageCredit = page?.title ? `Image from Wikipedia: ${page.title}` : '';
+    } catch {
+      this.heroImageUrl = '';
     }
   },
-
-  flyTo(lat, lng, zoom = 15) {
-    if (this.leafletMap) {
-      this.leafletMap.flyTo([lat, lng], zoom, { duration: 1 });
-    }
+  heroStyle() {
+    if (!this.heroImageUrl) return '';
+    return `--city-hero: url("${this.heroImageUrl}")`;
+  },
+  eyebrow() {
+    if (this.locationState === 'requesting') return 'Finding your city';
+    return this.source === 'local' ? 'Local discovery' : 'Fallback discovery';
+  },
+  cityTitle() {
+    if (this.locationState === 'requesting') return 'Locating you';
+    return this.city?.name ? `${this.city.name} today` : 'Choose a city';
+  },
+  subtitle() {
+    if (this.locationState === 'requesting') return 'Allow location access and I will resolve the nearest city from the travel database.';
+    if (!this.city?.name) return 'Start with live places from the travel database, then move into the atlas.';
+    const localPrefix = this.source === 'local' ? 'Your nearest city view' : 'A fallback city view';
+    return `${localPrefix} for ${this.city.name}${this.country?.name ? `, ${this.country.name}` : ''}: stays, food leads, anchors, and nearby pivots.`;
+  },
+  countryLabel() {
+    return this.country?.name || 'Global';
+  },
+  featuredPlaces() {
+    return [
+      ...(this.hotels || []),
+      ...(this.overview?.top?.food || []),
+      ...(this.overview?.top?.attractions || []),
+    ].slice(0, 6);
+  },
+  openAtlas(layer = null) {
+    Alpine.store('atlas').seedFromDiscovery(layer);
+    window.location.hash = '#/atlas';
   },
 });
 
-// ─── Search Store (simplified for map overlay) ───
 Alpine.store('search', {
-  poiQuery: '',
-  poiSuggestions: [],
-  poiOpen: false,
-  poiHighlight: -1,
-  loading: false,
-
-  _searchPOIsDebounced: null,
-  searchPOIs(q) {
-    if (!this._searchPOIsDebounced) {
-      this._searchPOIsDebounced = debounce(async (query) => {
-        if (!query || query.length < 2) {
-          this.poiSuggestions = [];
-          this.poiOpen = false;
+  query: '',
+  suggestions: [],
+  open: false,
+  highlight: -1,
+  _debounced: null,
+  autocomplete() {
+    if (!this._debounced) {
+      this._debounced = debounce(async () => {
+        if (!this.query || this.query.length < 2) {
+          this.suggestions = [];
+          this.open = false;
           return;
         }
-        this.loading = true;
         try {
-          const data = await apiGet('/api/v1/autocomplete', {
-            q: query,
-            limit: 10,
-          });
-          this.poiSuggestions = data.suggestions || [];
-          this.poiOpen = this.poiSuggestions.length > 0;
-          this.poiHighlight = -1;
-        } catch (err) {
-          console.error('POI autocomplete failed:', err);
+          const data = await apiGet('/api/v1/autocomplete', { q: this.query, limit: 12 });
+          this.suggestions = data.suggestions || [];
+          this.open = this.suggestions.length > 0;
+          this.highlight = -1;
+        } catch {
+          this.suggestions = [];
+          this.open = false;
         }
-        this.loading = false;
-      }, 300);
+      }, 220);
     }
-    this._searchPOIsDebounced(q);
+    this._debounced();
   },
-
-  selectPOI(poi) {
-    this.poiOpen = false;
-    this.poiQuery = poi.name;
-    // Fly to POI on map
-    const mapStore = Alpine.store('map');
-    mapStore.flyTo(poi.latitude, poi.longitude, 16);
-    mapStore.selectedPoi = poi;
-  },
-
-  search() {
-    // If there's a query but no suggestion selected, search and fly to first result
-    if (this.poiQuery && this.poiSuggestions.length > 0) {
-      this.selectPOI(this.poiSuggestions[0]);
-    }
-  },
-
-  poiKeydown(event) {
-    if (!this.poiOpen) return;
-    if (event.key === 'ArrowDown') {
+  onKeydown(event) {
+    if (event.key === 'Enter') {
       event.preventDefault();
-      this.poiHighlight = Math.min(this.poiHighlight + 1, this.poiSuggestions.length - 1);
+      this.commit();
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.highlight = Math.min(this.highlight + 1, this.suggestions.length - 1);
     } else if (event.key === 'ArrowUp') {
       event.preventDefault();
-      this.poiHighlight = Math.max(this.poiHighlight - 1, -1);
-    } else if (event.key === 'Enter' && this.poiHighlight >= 0) {
-      event.preventDefault();
-      this.selectPOI(this.poiSuggestions[this.poiHighlight]);
+      this.highlight = Math.max(this.highlight - 1, -1);
     } else if (event.key === 'Escape') {
-      this.poiOpen = false;
+      this.open = false;
     }
   },
-
-  poiTypeIcon(type) {
-    return TYPE_ICONS[type] || '\u{1F4CD}';
+  select(poi) {
+    this.query = poi.name;
+    this.open = false;
+    Alpine.store('atlas').focusPoi(poi);
+    window.location.hash = '#/atlas';
+  },
+  commit() {
+    if (this.highlight >= 0 && this.suggestions[this.highlight]) return this.select(this.suggestions[this.highlight]);
+    if (this.suggestions[0]) return this.select(this.suggestions[0]);
+    Alpine.store('atlas').textSearch(this.query);
+    window.location.hash = '#/atlas';
   },
 });
 
-// ─── Favorites Store ───
+Alpine.store('atlas', {
+  layers: LAYERS,
+  activeLayers: new Set(['accommodation', 'dining', 'attractions']),
+  map: null,
+  cluster: null,
+  markers: new Map(),
+  places: [],
+  selected: null,
+  loading: false,
+  city: null,
+  _lastKey: '',
+  _fetchDebounced: null,
+  title() {
+    return this.city?.name ? `${this.city.name} Atlas` : 'Spatial Explorer';
+  },
+  contextLine() {
+    return this.city?.country_code ? `${this.city.country_code} · live map places` : 'Search or move the map to discover places.';
+  },
+  activate() {
+    requestAnimationFrame(() => this.initMap());
+  },
+  initMap() {
+    if (!document.getElementById('map')) return;
+    if (this.map) {
+      this.map.invalidateSize();
+      return;
+    }
+    this.map = L.map('map', { center: [20, 0], zoom: 3, zoomControl: false });
+    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(this.map);
+    this.cluster = L.markerClusterGroup({ maxClusterRadius: 44, showCoverageOnHover: false, disableClusteringAtZoom: 16 });
+    this.map.addLayer(this.cluster);
+    this._fetchDebounced = debounce(() => this.fetchMapPlaces(), 350);
+    this.map.on('moveend zoomend', () => this._fetchDebounced());
+    this.seedFromDiscovery();
+  },
+  seedFromDiscovery(layer = null) {
+    const discovery = Alpine.store('discovery');
+    this.city = discovery.overview?.city || (discovery.city ? { ...discovery.city, country_code: discovery.country?.code } : null);
+    if (layer) this.activeLayers = new Set([layer]);
+    this.activeLayers = new Set(this.activeLayers);
+    if (this.map && discovery.overview?.suggested_focus) {
+      const f = discovery.overview.suggested_focus;
+      this.map.flyTo([f.latitude, f.longitude], f.zoom || 12, { duration: 0.8 });
+    } else if (this.map && discovery.hotels?.[0]) {
+      this.focusPoi(discovery.hotels[0], false);
+    }
+  },
+  toggleLayer(key) {
+    if (this.activeLayers.has(key)) this.activeLayers.delete(key);
+    else this.activeLayers.add(key);
+    this.activeLayers = new Set(this.activeLayers);
+    this._lastKey = '';
+    this.fetchMapPlaces();
+  },
+  activeTypes() {
+    return LAYERS.filter(layer => this.activeLayers.has(layer.key)).flatMap(layer => layer.types);
+  },
+  async fetchMapPlaces() {
+    if (!this.map || this.map.getZoom() < 8 || this.activeTypes().length === 0) {
+      this.places = [];
+      this.cluster?.clearLayers();
+      this.markers.clear();
+      return;
+    }
+    const b = this.map.getBounds();
+    const params = {
+      sw_lat: b.getSouth().toFixed(4),
+      sw_lng: b.getWest().toFixed(4),
+      ne_lat: b.getNorth().toFixed(4),
+      ne_lng: b.getEast().toFixed(4),
+      types: this.activeTypes().join(','),
+      limit: 300,
+    };
+    const key = JSON.stringify(params);
+    if (key === this._lastKey) return;
+    this._lastKey = key;
+    this.loading = true;
+    try {
+      const data = await apiGet('/api/v1/map/pois', params);
+      this.places = data.results || [];
+      this.drawMarkers();
+    } catch {
+      this.places = [];
+      this.drawMarkers();
+    }
+    this.loading = false;
+  },
+  drawMarkers() {
+    this.cluster.clearLayers();
+    this.markers.clear();
+    for (const poi of this.places) {
+      const marker = L.marker([poi.latitude, poi.longitude], { icon: markerIcon(poi, this.selected?.osm_id === poi.osm_id) });
+      marker.on('click', () => this.select(poi));
+      this.markers.set(poi.osm_id, marker);
+      this.cluster.addLayer(marker);
+    }
+  },
+  select(poi) {
+    this.selected = poi;
+    this.drawMarkers();
+  },
+  preview(poi) {
+    if (!this.selected) this.selected = poi;
+  },
+  focusPoi(poi, select = true) {
+    this.activate();
+    requestAnimationFrame(() => {
+      if (!this.map || !poi.latitude || !poi.longitude) return;
+      this.map.flyTo([poi.latitude, poi.longitude], 15, { duration: 0.8 });
+      if (select) this.selected = poi;
+      this.fetchMapPlaces();
+    });
+  },
+  async textSearch(query) {
+    if (!query) return;
+    try {
+      const data = await apiGet('/api/v1/search/pois', { q: query, limit: 20 });
+      this.places = data.results || [];
+      if (this.places[0]) this.focusPoi(this.places[0]);
+    } catch {
+      this.places = [];
+    }
+  },
+  locate() {
+    navigator.geolocation?.getCurrentPosition(pos => {
+      this.map?.flyTo([pos.coords.latitude, pos.coords.longitude], 14);
+    });
+  },
+});
+
+Alpine.store('radar', {
+  source: null,
+  results: [],
+  loading: false,
+  title() {
+    return this.source ? `Near ${this.source.name || this.source.osm_name}` : 'Pick a place to start';
+  },
+  async fromPoi(poi) {
+    if (!poi) return;
+    this.source = poi;
+    Alpine.store('ui').railTab = 'radar';
+    this.loading = true;
+    try {
+      const data = await apiGet(`/api/v1/poi/${poi.osm_id}/nearby`, { radius: 2, limit: 12 });
+      this.results = data.results || [];
+    } catch {
+      this.results = [];
+    }
+    this.loading = false;
+  },
+});
+
+Alpine.store('poi', {
+  current: null,
+  loading: false,
+  tab: 'overview',
+  note: '',
+  async open(osmId) {
+    window.location.hash = `#/poi/${osmId}`;
+  },
+  async load(osmId) {
+    this.loading = true;
+    this.tab = 'overview';
+    try {
+      this.current = await apiGet(`/api/v1/poi/${osmId}`);
+      this.note = this.current.favorite_notes || '';
+      await Alpine.store('radar').fromPoi(this.current);
+    } catch {
+      this.current = null;
+    }
+    this.loading = false;
+  },
+  enrichmentLabel() {
+    return this.current?._enrichment?.status || 'base';
+  },
+  summary() {
+    if (!this.current) return '';
+    const name = this.current.name || this.current.osm_name || 'This place';
+    const city = this.current.city ? ` in ${this.current.city}` : '';
+    const rating = this.current.google_rating ? ` It carries a ${this.current.google_rating} Google rating.` : '';
+    return `${name}${city} is listed as ${String(this.current.poi_type || 'a point of interest').replaceAll('_', ' ')}.${rating}`;
+  },
+  mapsUrl() {
+    const p = this.current || {};
+    const lat = p.osm_latitude || p.latitude;
+    const lng = p.osm_longitude || p.longitude;
+    return lat && lng ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name || p.osm_name || '')}`;
+  },
+});
+
 Alpine.store('favorites', {
   items: [],
   loading: false,
-
   async load() {
+    if (!Alpine.store('auth').authenticated) return;
     this.loading = true;
     try {
       const data = await apiGet('/api/v1/favorites');
       this.items = data.favorites || [];
-    } catch (err) {
-      console.error('Failed to load favorites:', err);
+    } catch {
+      this.items = [];
     }
     this.loading = false;
   },
-
-  async remove(osmId) {
-    try {
-      await apiDelete(`/api/v1/favorites/${osmId}`);
-      this.items = this.items.filter(f => f.poi_osm_id !== osmId && f.osm_id !== osmId);
-    } catch (err) {
-      console.error('Failed to remove favorite:', err);
+  async toggle(poi) {
+    if (!Alpine.store('auth').authenticated) return Alpine.store('auth').login();
+    if (poi.is_favorite) {
+      await apiDelete(`/api/v1/favorites/${poi.osm_id}`);
+      poi.is_favorite = false;
+    } else {
+      await apiPost('/api/v1/favorites', { osm_id: poi.osm_id, notes: poi.favorite_notes || null });
+      poi.is_favorite = true;
     }
+    this.load();
+  },
+  async saveNote(poi, notes) {
+    if (!poi || !Alpine.store('auth').authenticated) return;
+    const osmId = poi.osm_id || poi.poi_osm_id;
+    if (!poi.is_favorite) await apiPost('/api/v1/favorites', { osm_id: osmId, notes });
+    else await apiPatch(`/api/v1/favorites/${osmId}`, { notes });
+    poi.is_favorite = true;
+  },
+  columns() {
+    const groups = [
+      { key: 'stay', label: 'Stay', match: p => ['hotel', 'guest_house', 'hostel', 'resort', 'motel', 'apartment', 'bed_and_breakfast'].includes(p.poi_type) },
+      { key: 'eat', label: 'Eat', match: p => ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'].includes(p.poi_type) },
+      { key: 'see', label: 'See', match: p => ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'].includes(p.poi_type) },
+      { key: 'shortlist', label: 'Shortlist', match: () => true },
+    ];
+    const used = new Set();
+    return groups.map(group => {
+      const items = this.items.filter(item => !used.has(item.osm_id || item.poi_osm_id) && group.match(item));
+      items.forEach(item => used.add(item.osm_id || item.poi_osm_id));
+      return { ...group, items };
+    });
   },
 });
 
-// Bootstrap
-Alpine.store('auth').check();
-Alpine.store('route').init();
-
-// Initialize map when on map page
-const initMapWhenReady = () => {
-  if (Alpine.store('route').page === 'map') {
-    // Small delay to ensure DOM is ready
-    requestAnimationFrame(() => {
-      Alpine.store('map').initMap();
-    });
-  }
-};
-
-// Re-init map when navigating back to it
-window.addEventListener('hashchange', () => {
-  requestAnimationFrame(() => {
-    if (Alpine.store('route').page === 'map') {
-      const mapStore = Alpine.store('map');
-      if (!mapStore.leafletMap) {
-        mapStore.initMap();
-      } else {
-        // Invalidate size in case container was hidden
-        mapStore.leafletMap.invalidateSize();
-      }
-    }
-  });
+Alpine.store('compare', {
+  items: [],
+  has(poi) {
+    return this.items.some(item => item.osm_id === poi.osm_id);
+  },
+  toggle(poi) {
+    if (!poi) return;
+    if (this.has(poi)) this.items = this.items.filter(item => item.osm_id !== poi.osm_id);
+    else this.items = [...this.items, poi].slice(-4);
+  },
 });
 
 window.Alpine = Alpine;
+Alpine.store('auth').check();
+Alpine.store('route').init();
+Alpine.store('discovery').load();
 Alpine.start();
-
-// Init map after Alpine has started and DOM is ready
-requestAnimationFrame(initMapWhenReady);

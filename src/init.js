@@ -112,7 +112,7 @@ async function initializeDatabase() {
       client.query('SELECT COUNT(*) FROM geonames_cities'),
       client.query('SELECT COUNT(*) FROM osm_pois'),
       client.query('SELECT COUNT(*) FROM regions'),
-      client.query('SELECT COUNT(*) FROM imports'),
+      client.query('SELECT COUNT(*) FROM import_log'),
     ]);
 
     console.log(`  - Countries: ${stats[0].rows[0].count}`);

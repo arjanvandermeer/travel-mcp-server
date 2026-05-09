@@ -2498,7 +2498,11 @@ export class TravelDatabase {
         p.osm_id,
         COALESCE(g.name, p.name) as name,
         p.poi_type,
+        p.latitude,
+        p.longitude,
         g.rating as google_rating,
+        g.user_rating_count as google_review_count,
+        g.photos->0->>'url_thumbnail' as photo_url,
         c.name as city,
         c.country_code
       FROM osm_pois p
@@ -2511,6 +2515,16 @@ export class TravelDatabase {
     `, params);
 
     return result.rows;
+  }
+
+  async updateFavoriteNotes(userId, osmId, notes = null) {
+    const result = await this.pool.query(`
+      UPDATE user_favorites
+      SET notes = $3
+      WHERE user_id = $1 AND poi_osm_id = $2
+    `, [userId, osmId, notes]);
+
+    return result.rowCount > 0;
   }
 }
 

@@ -30,9 +30,12 @@ import pg from 'pg';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import dotenv from 'dotenv';
 import * as telemetry from './telemetry.js';
 import { parseRefreshArgs } from './lib/arg-parsers.js';
 import { TravelDatabase } from './database.js';
+
+dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

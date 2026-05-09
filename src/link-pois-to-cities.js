@@ -19,6 +19,9 @@
  */
 
 import pg from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const PG_CONNECTION = process.env.DATABASE_URL ||
   'postgresql://<user>:<password>@localhost:5432/travel';

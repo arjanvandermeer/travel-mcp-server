@@ -28,8 +28,11 @@
  */
 
 import pg from 'pg';
+import dotenv from 'dotenv';
 import * as telemetry from './telemetry.js';
 import { parseOptimizeArgs } from './lib/arg-parsers.js';
+
+dotenv.config();
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 
