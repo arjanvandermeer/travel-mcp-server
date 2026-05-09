@@ -13,6 +13,73 @@ if (!process.env.DATABASE_URL && process.env.NODE_ENV === 'production') {
 const CONNECTION_STRING = process.env.DATABASE_URL ||
   'postgresql://<user>:<password>@localhost:5432/travel';
 
+const IMPORT_SOURCE_COUNTRY_CODES = {
+  thailand: ['TH'],
+  vietnam: ['VN'],
+  cambodia: ['KH'],
+  laos: ['LA'],
+  myanmar: ['MM'],
+  'malaysia-singapore-brunei': ['MY', 'SG', 'BN'],
+  indonesia: ['ID'],
+  philippines: ['PH'],
+  japan: ['JP'],
+  'south-korea': ['KR'],
+  china: ['CN'],
+  india: ['IN'],
+  nepal: ['NP'],
+  taiwan: ['TW'],
+  'sri-lanka': ['LK'],
+  bangladesh: ['BD'],
+  pakistan: ['PK'],
+  maldives: ['MV'],
+  germany: ['DE'],
+  france: ['FR'],
+  italy: ['IT'],
+  spain: ['ES'],
+  'great-britain': ['GB'],
+  netherlands: ['NL'],
+  belgium: ['BE'],
+  switzerland: ['CH'],
+  austria: ['AT'],
+  poland: ['PL'],
+  'czech-republic': ['CZ'],
+  greece: ['GR'],
+  portugal: ['PT'],
+  'ireland-and-northern-ireland': ['IE', 'GB'],
+  sweden: ['SE'],
+  norway: ['NO'],
+  finland: ['FI'],
+  denmark: ['DK'],
+  hungary: ['HU'],
+  romania: ['RO'],
+  croatia: ['HR'],
+  turkey: ['TR'],
+  us: ['US'],
+  canada: ['CA'],
+  mexico: ['MX'],
+  brazil: ['BR'],
+  argentina: ['AR'],
+  chile: ['CL'],
+  colombia: ['CO'],
+  peru: ['PE'],
+  australia: ['AU'],
+  'new-zealand': ['NZ'],
+  'south-africa': ['ZA'],
+  egypt: ['EG'],
+  morocco: ['MA'],
+  kenya: ['KE'],
+  tanzania: ['TZ'],
+  ethiopia: ['ET'],
+  nigeria: ['NG'],
+};
+
+function normalizeImportKeyword(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/-latest$/, '')
+    .replace(/\.osm\.pbf$/, '');
+}
+
 /**
  * Recursively removes null and undefined fields from objects and arrays
  * @param {*} obj - Object, array, or primitive value to clean
@@ -470,6 +537,28 @@ export class TravelDatabase {
    * @returns {Promise<Object|null>} City object with country metadata and POI count
    */
   async getRandomCityWithData() {
+    const loadedResult = await this.pool.query(`
+      SELECT DISTINCT
+        COALESCE(s.keyword, REPLACE(l.region_name, '-latest', '')) as keyword,
+        l.region_name
+      FROM import_log l
+      LEFT JOIN import_sources s ON s.last_import_id = l.id
+        OR s.keyword = REPLACE(l.region_name, '-latest', '')
+      WHERE l.status = 'completed'
+        AND l.records_imported > 0
+        AND l.region_name IS NOT NULL
+    `);
+
+    const loadedCountryCodes = [...new Set(loadedResult.rows.flatMap(row => {
+      const keyword = normalizeImportKeyword(row.keyword || row.region_name);
+      return IMPORT_SOURCE_COUNTRY_CODES[keyword] || [];
+    }))];
+
+    const params = [];
+    const countryFilter = loadedCountryCodes.length > 0
+      ? `AND c.country_code = ANY($${params.push(loadedCountryCodes)}::text[])`
+      : '';
+
     const result = await this.pool.query(`
       SELECT
         c.geoname_id,
@@ -490,10 +579,13 @@ export class TravelDatabase {
       LEFT JOIN geonames_admin1_codes a
         ON c.country_code = a.country_code
         AND c.admin1_code = a.admin1_code
+      WHERE 1=1
+        ${countryFilter}
       GROUP BY c.geoname_id, co.country, a.name
+      HAVING COUNT(p.osm_id) > 0
       ORDER BY RANDOM()
       LIMIT 1
-    `);
+    `, params);
 
     const city = result.rows[0] || null;
     return city ? removeNullFields(city) : null;
