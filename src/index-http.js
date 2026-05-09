@@ -85,10 +85,22 @@ function renderGoogleAnalyticsTag(measurementId) {
 }
 
 async function renderWebIndex(filePath) {
-  const html = fs.readFileSync(filePath, 'utf8');
+  let html = fs.readFileSync(filePath, 'utf8');
+  const assetVersion = encodeURIComponent(versionInfo.gitCommitShort || versionInfo.version);
+  html = html
+    .replace('href="/css/style.css"', `href="/css/style.css?v=${assetVersion}"`)
+    .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`);
   const tag = renderGoogleAnalyticsTag(await db.getConfigCached('google_analytics_measurement_id'));
   if (!tag) return html;
   return html.replace('</head>', `${tag}\n</head>`);
+}
+
+function getStaticHeaders(contentType, filePath) {
+  const headers = { 'Content-Type': contentType };
+  if (path.basename(filePath) === 'index.html' || filePath.startsWith(WEB_DIR)) {
+    headers['Cache-Control'] = 'no-cache';
+  }
+  return headers;
 }
 
 /**
@@ -617,7 +629,7 @@ async function main() {
         if (stat.isFile()) {
           const ext = path.extname(filePath);
           const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-          res.writeHead(200, { 'Content-Type': contentType });
+          res.writeHead(200, getStaticHeaders(contentType, filePath));
           if (path.basename(filePath) === 'index.html') {
             res.end(await renderWebIndex(filePath));
             return;
