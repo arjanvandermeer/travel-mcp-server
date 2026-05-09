@@ -61,12 +61,35 @@ try {
   process.exit(1);
 }
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
+const GOOGLE_ANALYTICS_ID_PATTERN = /^(G|GT|GTM)-[A-Z0-9-]+$/i;
 
 // Store active sessions: sessionId -> { server, transport, user }
 const sessions = new Map();
 
 // Cache OAuth introspection results: token -> { user, expiry }
 const introspectionCache = new Map();
+
+function renderGoogleAnalyticsTag(measurementId) {
+  const id = String(measurementId || '').trim();
+  if (!id || !GOOGLE_ANALYTICS_ID_PATTERN.test(id)) return '';
+
+  return `
+  <!-- Google tag (gtag.js) -->
+  <script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>
+  <script>
+    window.dataLayer = window.dataLayer || [];
+    function gtag(){dataLayer.push(arguments);}
+    gtag('js', new Date());
+    gtag('config', '${id}');
+  </script>`;
+}
+
+async function renderWebIndex(filePath) {
+  const html = fs.readFileSync(filePath, 'utf8');
+  const tag = renderGoogleAnalyticsTag(await db.getConfigCached('google_analytics_measurement_id'));
+  if (!tag) return html;
+  return html.replace('</head>', `${tag}\n</head>`);
+}
 
 /**
  * Extract user from Authorization header
@@ -595,6 +618,10 @@ async function main() {
           const ext = path.extname(filePath);
           const contentType = MIME_TYPES[ext] || 'application/octet-stream';
           res.writeHead(200, { 'Content-Type': contentType });
+          if (path.basename(filePath) === 'index.html') {
+            res.end(await renderWebIndex(filePath));
+            return;
+          }
           fs.createReadStream(filePath).pipe(res);
           return;
         }

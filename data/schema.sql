@@ -74,6 +74,7 @@ INSERT INTO app_config (key, value, encrypted, description) VALUES
     ('google_places_api_key', NULL, TRUE, 'Google Places API key'),
     ('google_places_enabled', 'true', FALSE, 'Enable/disable Google Places enrichment'),
     ('google_places_cache_hours', '168', FALSE, 'Hours to cache Google Places data (default: 7 days)'),
+    ('google_analytics_measurement_id', NULL, FALSE, 'Google Analytics measurement ID for optional gtag.js web analytics'),
     ('google_api_daily_limit', '100', FALSE, 'Daily limit for Google Places API calls (default: 100)'),
     ('sentry_dsn', NULL, TRUE, 'Sentry DSN for error tracking and performance monitoring'),
     ('telemetry_enabled', 'true', FALSE, 'Enable/disable telemetry (errors + performance)'),

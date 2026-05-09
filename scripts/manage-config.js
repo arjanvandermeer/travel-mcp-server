@@ -26,6 +26,7 @@ async function main() {
     console.log('  node manage-config.js get google_places_api_key');
     console.log('  node manage-config.js set google_places_enabled false');
     console.log('  node manage-config.js set google_places_cache_hours 336 "Cache for 2 weeks"');
+    console.log('  node manage-config.js set google_analytics_measurement_id G-XXXXXXXXXX "Google Analytics measurement ID"');
     process.exit(0);
   }
 
