@@ -15,7 +15,7 @@
 <body x-data>
   <div class="app-shell">
     <header class="topbar">
-      <a href="#/" class="brand" @click="$store.route.goHome()">
+      <a href="/" class="brand" @click.prevent="$store.route.goHome()">
         <span class="brand-mark">A</span>
         <span>Travel</span>
       </a>
@@ -67,7 +67,7 @@
           </div>
           <div class="pulse-actions">
             <button class="secondary-button" @click="$store.discovery.useLocation()">Use my location</button>
-            <button class="secondary-button" @click="$store.discovery.loadFallback()">Fallback city</button>
+            <button class="secondary-button" @click="$store.discovery.loadRandomCity()">Random city</button>
             <button class="secondary-button" @click="$store.discovery.openAtlas()">Open map</button>
           </div>
         </div>

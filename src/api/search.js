@@ -7,6 +7,14 @@ import { sendJson } from '../api-router.js';
 import { validateCoordinates, validateLimit } from '../validation.js';
 
 export function registerSearchRoutes(router) {
+  router.get('/api/v1/search/cities/random', async (req, res, { db }) => {
+    const city = await db.getRandomCityWithData();
+    if (!city) {
+      return sendJson(res, 404, { error: 'No loaded cities available' });
+    }
+    sendJson(res, 200, { city });
+  });
+
   router.get('/api/v1/search/cities', async (req, res, { db, query }) => {
     const countryCode = query.country_code;
     const state = query.state || null;

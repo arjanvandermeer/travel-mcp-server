@@ -51,23 +51,76 @@ Alpine.store('route', {
   page: 'home',
   poiOsmId: null,
   init() {
-    this.handleHash();
-    window.addEventListener('hashchange', () => this.handleHash());
+    if (!this.normalizeHashRoute()) this.handleRoute();
+    window.addEventListener('popstate', () => this.handleRoute());
+    window.addEventListener('hashchange', () => {
+      if (this.normalizeHashRoute()) return;
+      this.handleRoute();
+    });
   },
-  handleHash() {
-    const hash = window.location.hash || '#/';
-    if (hash.startsWith('#/poi/')) {
+  pathFor(page, osmId = null) {
+    if (page === 'poi') return `/poi/${encodeURIComponent(osmId)}`;
+    if (page === 'atlas') return '/map';
+    if (page === 'composer') return '/composer';
+    return '/';
+  },
+  poiPath(osmId) {
+    return this.pathFor('poi', osmId);
+  },
+  locationPath(countryCode, cityName) {
+    if (!countryCode || !cityName) return this.pathFor('home');
+    return `/location/${encodeURIComponent(String(countryCode).toUpperCase())}/${encodeURIComponent(cityName)}`;
+  },
+  setLocation(city, mode = 'replace') {
+    const path = this.locationPath(city?.country_code, city?.name);
+    if (window.location.pathname === path && !window.location.hash) return;
+    if (mode === 'push') history.pushState({}, '', path);
+    else history.replaceState({}, '', path);
+  },
+  navigate(path) {
+    if (window.location.pathname === path && !window.location.hash) {
+      this.handleRoute();
+      return;
+    }
+    history.pushState({}, '', path);
+    this.handleRoute();
+  },
+  normalizeHashRoute() {
+    const hash = window.location.hash || '';
+    if (!hash.startsWith('#/')) return false;
+    const target = hash.startsWith('#/poi/')
+      ? this.pathFor('poi', hash.replace('#/poi/', ''))
+      : hash === '#/composer'
+        ? this.pathFor('composer')
+        : hash === '#/atlas'
+          ? this.pathFor('atlas')
+          : this.pathFor('home');
+    history.replaceState({}, '', target);
+    this.handleRoute();
+    return true;
+  },
+  handleRoute() {
+    const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+    const poiMatch = pathname.match(/^\/poi\/([^/]+)$/);
+    const locationMatch = pathname.match(/^\/location\/([^/]+)\/([^/]+)$/);
+    if (poiMatch) {
       this.page = 'poi';
-      this.poiOsmId = hash.replace('#/poi/', '');
+      this.poiOsmId = decodeURIComponent(poiMatch[1]);
       Alpine.store('poi').load(this.poiOsmId);
       return;
     }
-    this.page = hash === '#/composer' ? 'composer' : hash === '#/atlas' ? 'atlas' : 'home';
+    this.poiOsmId = null;
+    if (locationMatch) {
+      this.page = 'home';
+      Alpine.store('discovery').loadLocation(decodeURIComponent(locationMatch[1]), decodeURIComponent(locationMatch[2]));
+      return;
+    }
+    this.page = pathname === '/composer' ? 'composer' : ['/map', '/atlas'].includes(pathname) ? 'atlas' : 'home';
     if (this.page === 'atlas') Alpine.store('atlas').activate();
   },
-  goHome() { window.location.hash = '#/'; },
-  goAtlas() { window.location.hash = '#/atlas'; },
-  goComposer() { window.location.hash = '#/composer'; },
+  goHome() { this.navigate(this.pathFor('home')); },
+  goAtlas() { this.navigate(this.pathFor('atlas')); },
+  goComposer() { this.navigate(this.pathFor('composer')); },
 });
 
 Alpine.store('ui', {
@@ -118,6 +171,7 @@ Alpine.store('discovery', {
   heroImageCredit: '',
   locationError: '',
   async load() {
+    if (Alpine.store('route').page !== 'home' || this.city || this.loading) return;
     await this.useLocation();
   },
   async useLocation() {
@@ -130,16 +184,16 @@ Alpine.store('discovery', {
     if (!window.isSecureContext) {
       this.locationState = 'blocked';
       this.locationError = 'Browser location requires a secure context. Use http://localhost:3001 instead of an IP address, or serve the app over HTTPS.';
-      this.error = `${this.locationError} I loaded a fallback city for now.`;
-      await this.loadFallback();
+      this.error = `${this.locationError} I loaded a random loaded city for now.`;
+      await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
 
     if (!navigator.geolocation) {
       this.locationState = 'unsupported';
       this.locationError = 'This browser does not expose the Geolocation API.';
-      this.error = `${this.locationError} I loaded a fallback city for now.`;
-      await this.loadFallback();
+      this.error = `${this.locationError} I loaded a random loaded city for now.`;
+      await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
 
@@ -158,9 +212,9 @@ Alpine.store('discovery', {
     } catch (err) {
       this.locationState = 'unavailable';
       this.locationError = this.describeLocationError(err);
-      this.error = `${this.locationError} I loaded a fallback city for now.`;
+      this.error = `${this.locationError} I loaded a random loaded city for now.`;
       console.warn('[City Pulse] Geolocation failed:', err);
-      await this.loadFallback();
+      await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
     this.loading = false;
@@ -180,8 +234,8 @@ Alpine.store('discovery', {
     });
     const [nearest] = data.results || [];
     if (!nearest) {
-      this.error = 'I could not resolve your nearest city, so I loaded a fallback city.';
-      await this.loadFallback();
+      this.error = 'I could not resolve your nearest city, so I loaded a random loaded city.';
+      await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
 
@@ -189,24 +243,50 @@ Alpine.store('discovery', {
     this.country = { code: nearest.country_code, name: nearest.country_name || nearest.country_code };
     await this.loadOverview();
     await this.loadHeroImage();
+    Alpine.store('route').setLocation(this.city, 'replace');
   },
-  async loadFallback() {
+  async loadLocation(countryCode, cityName) {
     this.loading = true;
-    this.source = 'fallback';
+    this.error = '';
+    this.locationError = '';
+    this.locationState = 'resolved';
+    this.source = 'location';
     try {
       const data = await apiGet('/api/v1/search/cities', {
-        q: 'London',
-        country_code: 'GB',
-        limit: 1,
+        q: cityName,
+        country_code: countryCode,
+        limit: 10,
       });
-      const [city] = data.results || [];
-      if (!city) throw new Error('London is not available in the local database.');
-      this.country = { code: city.country_code, name: city.country_name || 'United Kingdom' };
+      const cities = data.results || [];
+      const normalizedName = String(cityName).replaceAll('-', ' ').toLowerCase();
+      const city = cities.find(item => String(item.name || item.ascii_name || '').toLowerCase() === normalizedName) || cities[0];
+      if (!city) throw new Error(`${cityName} is not available in the loaded travel database.`);
+      this.country = { code: city.country_code, name: city.country_name || city.country_code };
       this.city = city;
       this.hotels = [];
       this.overview = null;
       await this.loadOverview();
       await this.loadHeroImage();
+    } catch (err) {
+      this.error = err.message || 'That city is not available right now.';
+      await this.loadRandomCity({ historyMode: 'replace' });
+    }
+    this.loading = false;
+  },
+  async loadRandomCity({ historyMode = 'push' } = {}) {
+    this.loading = true;
+    this.source = 'random';
+    try {
+      const data = await apiGet('/api/v1/search/cities/random');
+      const city = data.city;
+      if (!city) throw new Error('No loaded cities are available in the travel database.');
+      this.country = { code: city.country_code, name: city.country_name || city.country_code };
+      this.city = city;
+      this.hotels = [];
+      this.overview = null;
+      await this.loadOverview();
+      await this.loadHeroImage();
+      Alpine.store('route').setLocation(this.city, historyMode);
     } catch (err) {
       this.error = err.message || 'City discovery is unavailable right now.';
     }
@@ -257,7 +337,8 @@ Alpine.store('discovery', {
   },
   eyebrow() {
     if (this.locationState === 'requesting') return 'Finding your city';
-    return this.source === 'local' ? 'Local discovery' : 'Fallback discovery';
+    if (this.source === 'location') return 'Location discovery';
+    return this.source === 'local' ? 'Local discovery' : 'Random discovery';
   },
   cityTitle() {
     if (this.locationState === 'requesting') return 'Locating you';
@@ -266,7 +347,11 @@ Alpine.store('discovery', {
   subtitle() {
     if (this.locationState === 'requesting') return 'Allow location access and I will resolve the nearest city from the travel database.';
     if (!this.city?.name) return 'Start with live places from the travel database, then move into the atlas.';
-    const localPrefix = this.source === 'local' ? 'Your nearest city view' : 'A fallback city view';
+    const localPrefix = this.source === 'local'
+      ? 'Your nearest city view'
+      : this.source === 'location'
+        ? 'A loaded city view'
+        : 'A random loaded city view';
     return `${localPrefix} for ${this.city.name}${this.country?.name ? `, ${this.country.name}` : ''}: stays, food leads, anchors, and nearby pivots.`;
   },
   countryLabel() {
@@ -281,7 +366,7 @@ Alpine.store('discovery', {
   },
   openAtlas(layer = null) {
     Alpine.store('atlas').seedFromDiscovery(layer);
-    window.location.hash = '#/atlas';
+    Alpine.store('route').goAtlas();
   },
 });
 
@@ -330,13 +415,13 @@ Alpine.store('search', {
     this.query = poi.name;
     this.open = false;
     Alpine.store('atlas').focusPoi(poi);
-    window.location.hash = '#/atlas';
+    Alpine.store('route').goAtlas();
   },
   commit() {
     if (this.highlight >= 0 && this.suggestions[this.highlight]) return this.select(this.suggestions[this.highlight]);
     if (this.suggestions[0]) return this.select(this.suggestions[0]);
     Alpine.store('atlas').textSearch(this.query);
-    window.location.hash = '#/atlas';
+    Alpine.store('route').goAtlas();
   },
 });
 
@@ -502,7 +587,7 @@ Alpine.store('poi', {
   tab: 'overview',
   note: '',
   async open(osmId) {
-    window.location.hash = `#/poi/${osmId}`;
+    Alpine.store('route').navigate(Alpine.store('route').poiPath(osmId));
   },
   async load(osmId) {
     this.loading = true;

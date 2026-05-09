@@ -28,6 +28,9 @@ function createApiMockDb(overrides = {}) {
     searchCities: async (opts) => [
       { geoname_id: 1, name: 'Bangkok', country_code: 'TH', population: 8280925 },
     ],
+    getRandomCityWithData: async () => (
+      { geoname_id: 1, name: 'Bangkok', country_code: 'TH', country_name: 'Thailand', population: 8280925, poi_count: 42 }
+    ),
     searchPOIs: async (params) => [
       { osm_id: 123, name: 'Grand Palace Hotel', poi_type: 'hotel', google_rating: 4.5 },
     ],
@@ -104,6 +107,36 @@ describe('GET /api/v1/states', () => {
 });
 
 describe('GET /api/v1/search/cities', () => {
+  it('should return a random city from loaded areas', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    const db = createApiMockDb();
+
+    const req = fakeReq('GET', '/api/v1/search/cities/random');
+    const res = fakeRes();
+    await router.handle(req, res, { db });
+
+    assert.strictEqual(res.statusCode, 200);
+    const data = res.json();
+    assert.strictEqual(data.city.name, 'Bangkok');
+    assert.strictEqual(data.city.poi_count, 42);
+  });
+
+  it('should return 404 when no loaded random city is available', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    const db = createApiMockDb({
+      getRandomCityWithData: async () => null,
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/cities/random');
+    const res = fakeRes();
+    await router.handle(req, res, { db });
+
+    assert.strictEqual(res.statusCode, 404);
+    assert.strictEqual(res.json().error, 'No loaded cities available');
+  });
+
   it('should search cities by country and query', async () => {
     const router = new ApiRouter();
     registerSearchRoutes(router);

@@ -465,6 +465,40 @@ export class TravelDatabase {
     return city ? removeNullFields(city) : null;
   }
 
+  /**
+   * Pick a random city from loaded areas, limited to cities with imported POIs.
+   * @returns {Promise<Object|null>} City object with country metadata and POI count
+   */
+  async getRandomCityWithData() {
+    const result = await this.pool.query(`
+      SELECT
+        c.geoname_id,
+        c.name,
+        c.ascii_name,
+        c.country_code,
+        co.country as country_name,
+        c.admin1_code as state_code,
+        a.name as state_name,
+        c.population,
+        ST_Y(c.location) as latitude,
+        ST_X(c.location) as longitude,
+        c.timezone,
+        COUNT(p.osm_id)::int as poi_count
+      FROM geonames_cities c
+      JOIN osm_pois p ON p.nearest_city_id = c.geoname_id
+      LEFT JOIN geonames_countries co ON c.country_code = co.iso_alpha2
+      LEFT JOIN geonames_admin1_codes a
+        ON c.country_code = a.country_code
+        AND c.admin1_code = a.admin1_code
+      GROUP BY c.geoname_id, co.country, a.name
+      ORDER BY RANDOM()
+      LIMIT 1
+    `);
+
+    const city = result.rows[0] || null;
+    return city ? removeNullFields(city) : null;
+  }
+
   // =========================================================================
   // Google Data Enrichment Helper
   // =========================================================================

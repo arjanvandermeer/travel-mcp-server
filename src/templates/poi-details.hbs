@@ -601,7 +601,7 @@
               // If inside an iframe (SPA), navigate the parent page so its state updates
               var osmIdMatch = previewUrl.match(/\/preview\/poi\/(\d+)/);
               if (window.parent !== window && osmIdMatch) {
-                window.parent.location.hash = '#/poi/' + osmIdMatch[1];
+                window.parent.location.href = '/poi/' + osmIdMatch[1];
               } else {
                 window.location.href = previewUrl;
               }
