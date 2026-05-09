@@ -50,6 +50,7 @@ Alpine.store('auth', {
 Alpine.store('route', {
   page: 'home',
   poiOsmId: null,
+  _lastPath: '',
   init() {
     if (!this.normalizeHashRoute()) this.handleRoute();
     window.addEventListener('popstate', () => this.handleRoute());
@@ -101,6 +102,8 @@ Alpine.store('route', {
   },
   handleRoute() {
     const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (pathname === this._lastPath) return;
+    this._lastPath = pathname;
     const poiMatch = pathname.match(/^\/poi\/([^/]+)$/);
     const locationMatch = pathname.match(/^\/location\/([^/]+)\/([^/]+)$/);
     if (poiMatch) {
@@ -170,6 +173,7 @@ Alpine.store('discovery', {
   heroImageUrl: '',
   heroImageCredit: '',
   locationError: '',
+  _loadKey: '',
   async load() {
     if (Alpine.store('route').page !== 'home' || this.city || this.loading) return;
     await this.useLocation();
@@ -246,6 +250,9 @@ Alpine.store('discovery', {
     Alpine.store('route').setLocation(this.city, 'replace');
   },
   async loadLocation(countryCode, cityName) {
+    const loadKey = `location:${String(countryCode).toUpperCase()}:${cityName}`;
+    if (this.loading && this._loadKey === loadKey) return;
+    this._loadKey = loadKey;
     this.loading = true;
     this.error = '';
     this.locationError = '';
@@ -274,6 +281,9 @@ Alpine.store('discovery', {
     this.loading = false;
   },
   async loadRandomCity({ historyMode = 'push' } = {}) {
+    const loadKey = 'random';
+    if (this.loading && this._loadKey === loadKey) return;
+    this._loadKey = loadKey;
     this.loading = true;
     this.source = 'random';
     try {
@@ -586,10 +596,13 @@ Alpine.store('poi', {
   loading: false,
   tab: 'overview',
   note: '',
+  _loadId: null,
   async open(osmId) {
     Alpine.store('route').navigate(Alpine.store('route').poiPath(osmId));
   },
   async load(osmId) {
+    if (this.loading && String(this._loadId) === String(osmId)) return;
+    this._loadId = osmId;
     this.loading = true;
     this.tab = 'overview';
     try {
@@ -683,7 +696,10 @@ Alpine.store('compare', {
 });
 
 window.Alpine = Alpine;
-Alpine.store('auth').check();
-Alpine.store('route').init();
-Alpine.store('discovery').load();
 Alpine.start();
+
+requestAnimationFrame(() => {
+  Alpine.store('auth').check();
+  Alpine.store('route').init();
+  Alpine.store('discovery').load();
+});
