@@ -1337,7 +1337,7 @@ export class TravelDatabase {
         const checkBackAt = new Date(startedAt.getTime() + 60000);
         enrichment_message = `Google Places enrichment in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()}.`;
       }
-    } else if (poi.mapping_status === 'not_found' || poi.mapping_status === 'no_match') {
+    } else if (poi.mapping_status === 'not_found') {
       enrichment_status = 'failed';
       const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
       enrichment_message = `Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
@@ -1663,7 +1663,7 @@ export class TravelDatabase {
           }
         }
         // Throttle retries for terminal non-match statuses — no point hammering the API
-        if (mapping.mapping_status === 'not_found' || mapping.mapping_status === 'no_match') {
+        if (mapping.mapping_status === 'not_found') {
           const daysSinceCheck = (Date.now() - new Date(mapping.mapped_at).getTime()) / (1000 * 60 * 60 * 24);
           if (daysSinceCheck < 7) {
             return; // Don't retry yet
@@ -1723,11 +1723,12 @@ export class TravelDatabase {
         placeDetails.location.longitude
       );
 
-      // Reject matches that are too far away (> 500m is likely a wrong match)
+      // Safety check: reject if coordinates diverge > 500m (shouldn't happen with
+      // locationRestriction=500m in searchText, but guards against API edge cases).
       if (distanceMeters > 500) {
         await this.createMapping(osmId, null, {
-          mapping_status: 'no_match',
-          mapping_notes: `Match too far away (${Math.round(distanceMeters)}m > 500m limit)`
+          mapping_status: 'not_found',
+          mapping_notes: `Candidate too far away (${Math.round(distanceMeters)}m > 500m limit)`
         });
         return;
       }
@@ -1926,7 +1927,7 @@ export class TravelDatabase {
 
     if (!googlePlaceId) {
       // Insert mapping with NULL google_place_id for non-active statuses
-      if (['not_found', 'no_match', 'error', 'pending'].includes(mapping_status)) {
+      if (['not_found', 'error', 'pending'].includes(mapping_status)) {
         await this.pool.query(`
           INSERT INTO osm_google_mappings (
             osm_id,
