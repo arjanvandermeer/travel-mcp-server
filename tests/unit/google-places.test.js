@@ -368,23 +368,24 @@ describe('GooglePlacesClient', () => {
       assert.deepStrictEqual(result, places);
     });
 
-    it('should add locationBias when coordinates provided', async () => {
+    it('should add locationRestriction when coordinates provided', async () => {
       const client = new GooglePlacesClient('key', true);
       let capturedBody;
       client.makeRequest = async (_url, body) => { capturedBody = body; return { places: [] }; };
 
       await client.searchText('Hotel', 40.7, -73.9);
-      assert.ok(capturedBody.locationBias);
-      assert.strictEqual(capturedBody.locationBias.circle.center.latitude, 40.7);
+      assert.ok(capturedBody.locationRestriction);
+      assert.strictEqual(capturedBody.locationRestriction.circle.center.latitude, 40.7);
+      assert.strictEqual(capturedBody.locationBias, undefined);
     });
 
-    it('should not add locationBias without coordinates', async () => {
+    it('should not add locationRestriction without coordinates', async () => {
       const client = new GooglePlacesClient('key', true);
       let capturedBody;
       client.makeRequest = async (_url, body) => { capturedBody = body; return { places: [] }; };
 
       await client.searchText('Hotel');
-      assert.strictEqual(capturedBody.locationBias, undefined);
+      assert.strictEqual(capturedBody.locationRestriction, undefined);
     });
 
     it('should return empty array on error', async () => {

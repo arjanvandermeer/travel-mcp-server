@@ -1662,8 +1662,8 @@ export class TravelDatabase {
             return; // Still cached
           }
         }
-        // If 'not_found', retry after 7 days
-        if (mapping.mapping_status === 'not_found') {
+        // Throttle retries for terminal non-match statuses — no point hammering the API
+        if (mapping.mapping_status === 'not_found' || mapping.mapping_status === 'no_match') {
           const daysSinceCheck = (Date.now() - new Date(mapping.mapped_at).getTime()) / (1000 * 60 * 60 * 24);
           if (daysSinceCheck < 7) {
             return; // Don't retry yet

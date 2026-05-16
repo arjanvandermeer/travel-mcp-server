@@ -223,7 +223,9 @@ export class GooglePlacesClient {
     };
 
     if (latitude && longitude) {
-      body.locationBias = {
+      // Use locationRestriction (hard filter) not locationBias (soft hint) so results
+      // from a different neighbourhood or city can't slip through name-matching.
+      body.locationRestriction = {
         circle: {
           center: {
             latitude: latitude,

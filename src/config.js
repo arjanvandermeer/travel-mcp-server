@@ -42,7 +42,7 @@ export const EARTH_RADIUS_METERS = 6371000;
 
 // --- Google Places ---
 export const GOOGLE_PLACES_MIN_CONFIDENCE = 0.7;
-export const GOOGLE_PLACES_TEXT_SEARCH_RADIUS = 1000;              // meters
+export const GOOGLE_PLACES_TEXT_SEARCH_RADIUS = 500;               // meters — hard locationRestriction, aligned with 500m post-match distance check
 export const GOOGLE_PLACES_NEARBY_SEARCH_RADIUS = 50;             // meters (default)
 export const GOOGLE_PLACES_MATCH_SEARCH_RADIUS = 100;             // meters (for findMatchingPlace)
 export const GOOGLE_PLACES_MAX_RESULTS = 20;
