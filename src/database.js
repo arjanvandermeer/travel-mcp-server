@@ -417,6 +417,7 @@ export class TravelDatabase {
    * @param {number|null} options.latitude - Center latitude for proximity search
    * @param {number|null} options.longitude - Center longitude for proximity search
    * @param {number} options.radiusKm - Search radius in km (default 50)
+   * @param {number} options.minPoiCount - Require cities to have at least this many linked POIs
    * @param {number} options.limit - Max results to return (default 10)
    * @returns {Promise<Array<Object>>} Array of city objects with geoname_id, name, country_code, coordinates, and distance
    */
@@ -428,6 +429,7 @@ export class TravelDatabase {
       latitude = null,
       longitude = null,
       radiusKm = 50,
+      minPoiCount = 0,
       limit = 10,
     } = options;
 
@@ -460,14 +462,31 @@ export class TravelDatabase {
       queryText += `, ST_Distance(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0 as distance_km`;
     }
 
+    if (minPoiCount > 0) {
+      queryText += `, pc.poi_count`;
+    }
+
     queryText += `
       FROM geonames_cities c
+      ${minPoiCount > 0 ? `
+      JOIN (
+        SELECT nearest_city_id, COUNT(*)::int as poi_count
+        FROM osm_pois
+        WHERE nearest_city_id IS NOT NULL
+        GROUP BY nearest_city_id
+        HAVING COUNT(*) >= $${params.length + 1}
+      ) pc ON pc.nearest_city_id = c.geoname_id
+      ` : ''}
       LEFT JOIN geonames_countries co ON c.country_code = co.iso_alpha2
       LEFT JOIN geonames_admin1_codes a
         ON c.country_code = a.country_code
         AND c.admin1_code = a.admin1_code
       WHERE 1=1
     `;
+
+    if (minPoiCount > 0) {
+      params.push(minPoiCount);
+    }
 
     // Add query filter if provided
     if (hasQuery) {
@@ -477,7 +496,7 @@ export class TravelDatabase {
 
     // Add coordinate radius filter
     if (hasCoords) {
-      const maxRadius = Math.min(radiusKm, 100);
+      const maxRadius = Math.min(radiusKm, 1000);
       queryText += ` AND ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $${params.length + 1}::float8 * 1000)`;
       params.push(maxRadius);
     }
@@ -533,10 +552,16 @@ export class TravelDatabase {
   }
 
   /**
-   * Pick a random city from loaded areas, limited to cities with imported POIs.
+   * Pick a random city from loaded areas, limited to substantial cities with imported POIs.
+   * @param {Object} [options]
+   * @param {number} [options.minPoiCount=25] - Minimum linked POIs required
+   * @param {number} [options.minPopulation=50000] - Minimum city population preferred
    * @returns {Promise<Object|null>} City object with country metadata and POI count
    */
-  async getRandomCityWithData() {
+  async getRandomCityWithData(options = {}) {
+    const minPoiCount = Number.isFinite(options.minPoiCount) ? Math.max(1, Math.floor(options.minPoiCount)) : 25;
+    const minPopulation = Number.isFinite(options.minPopulation) ? Math.max(0, Math.floor(options.minPopulation)) : 50000;
+
     const loadedResult = await this.pool.query(`
       SELECT DISTINCT
         COALESCE(s.keyword, REPLACE(l.region_name, '-latest', '')) as keyword,
@@ -581,8 +606,9 @@ export class TravelDatabase {
         AND c.admin1_code = a.admin1_code
       WHERE 1=1
         ${countryFilter}
+        AND COALESCE(c.population, 0) >= $${params.push(minPopulation)}
       GROUP BY c.geoname_id, co.country, a.name
-      HAVING COUNT(p.osm_id) > 0
+      HAVING COUNT(p.osm_id) >= $${params.push(minPoiCount)}
       ORDER BY RANDOM()
       LIMIT 1
     `, params);
@@ -791,6 +817,7 @@ export class TravelDatabase {
       dietary = null,     // Dietary restriction filter (e.g., ["vegan", "halal"])
       openNow = false,    // Filter to only currently open POIs
       limit: rawLimit = SEARCH_LIMIT_DEFAULT,
+      offset = 0,
       userId = null,    // For including favorite status in results
     } = params;
     const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
@@ -881,6 +908,7 @@ export class TravelDatabase {
           null,
           extraFilters,
           openNow,
+          offset,
         );
       } else {
         const searchRadius = radius || 10; // Default 10km
@@ -894,6 +922,7 @@ export class TravelDatabase {
           null,
           extraFilters,
           openNow,
+          offset,
         );
       }
     }
@@ -1080,7 +1109,7 @@ export class TravelDatabase {
    * @param {boolean} openNow - Filter to only currently open POIs
    * @returns {Promise<Array<Object>>} Array of POI objects with distance_km included
    */
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null, extraFilters = null, openNow = false) {
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null, extraFilters = null, openNow = false, offset = 0) {
     const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
     // Debug logging
     const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
@@ -1130,10 +1159,11 @@ export class TravelDatabase {
       );
     }
 
-    // For openNow, over-fetch and post-filter
+    // For openNow, over-fetch and post-filter (offset not applied when openNow since post-filtering changes counts)
     const fetchLimit = openNow ? limit * 3 : limit;
-    query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1}`;
-    params.push(fetchLimit);
+    const fetchOffset = openNow ? 0 : offset;
+    query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
+    params.push(fetchLimit, fetchOffset);
 
     const result = await this.pool.query(query, params);
     const enriched = await this.enrichWithGoogleData(result.rows);
@@ -1277,17 +1307,44 @@ export class TravelDatabase {
       // Already enriched - complete
       enrichment_status = 'complete';
     } else if (poi.mapping_status === 'pending') {
-      // Enrichment already in progress
-      enrichment_status = 'pending';
       const startedAt = poi.mapped_at ? new Date(poi.mapped_at) : new Date();
-      const checkBackAt = new Date(startedAt.getTime() + 60000);
-      enrichment_message = `Google Places enrichment already in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()} for complete information.`;
-    } else if (poi.mapping_status === 'not_found') {
+      const ageMs = Date.now() - startedAt.getTime();
+      const isStale = ageMs > 5 * 60 * 1000 && !this._enrichmentLock.has(osmId);
+      if (isStale) {
+        // Server restart (or crash) left a stale pending row.
+        // Reset mapped_at so it looks fresh, then re-trigger enrichment immediately.
+        await this.pool.query(
+          `UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP WHERE osm_id = $1`, [osmId]
+        ).catch(() => {});
+
+        const newStartedAt = new Date();
+        const checkBackAt  = new Date(newStartedAt.getTime() + 60000);
+        enrichment_status  = 'pending';
+        enrichment_message = `Enrichment restarted at ${newStartedAt.toISOString()}. Check back after ${checkBackAt.toISOString()}.`;
+
+        const enrichmentPromise = Promise.race([
+          this.enrichOSMPOI(osmId),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('Enrichment timeout after 2 minutes')), 120000)),
+        ]).catch(err => {
+          this.pool.query(
+            `UPDATE osm_google_mappings SET mapping_status = 'error', mapping_notes = $1 WHERE osm_id = $2`,
+            [err.message, osmId]
+          ).catch(() => {});
+        }).finally(() => { this._enrichmentLock.delete(osmId); });
+        this._enrichmentLock.set(osmId, enrichmentPromise);
+      } else {
+        enrichment_status = 'pending';
+        const checkBackAt = new Date(startedAt.getTime() + 60000);
+        enrichment_message = `Google Places enrichment in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()}.`;
+      }
+    } else if (poi.mapping_status === 'not_found' || poi.mapping_status === 'no_match') {
       enrichment_status = 'failed';
-      enrichment_message = 'Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.';
+      const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
+      enrichment_message = `Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
     } else if (poi.mapping_status === 'error') {
       enrichment_status = 'failed';
-      enrichment_message = 'Google Places enrichment failed due to an error. Only OpenStreetMap data is available.';
+      const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
+      enrichment_message = `Google Places enrichment failed due to an error. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
     } else if (!poi.mapping_status) {
       // No enrichment attempt yet - trigger it
       await this.ensureGooglePlacesReady();
@@ -1869,7 +1926,7 @@ export class TravelDatabase {
 
     if (!googlePlaceId) {
       // Insert mapping with NULL google_place_id for non-active statuses
-      if (mapping_status === 'not_found' || mapping_status === 'error' || mapping_status === 'pending') {
+      if (['not_found', 'no_match', 'error', 'pending'].includes(mapping_status)) {
         await this.pool.query(`
           INSERT INTO osm_google_mappings (
             osm_id,
@@ -1940,12 +1997,12 @@ export class TravelDatabase {
       return;
     }
 
-    // Limit to top results to control API costs
-    const idsToEnrich = osmIds.slice(0, 10);
+    // Skip any POI already being enriched (lock held by getPOIDetails stale handler or null handler).
+    // enrichOSMPOI itself enforces skip-if-active and daily quota limits.
+    const toEnrich = osmIds.filter(id => !this._enrichmentLock.has(id));
 
-    // Enrich in batches to control concurrency
-    for (let i = 0; i < idsToEnrich.length; i += maxConcurrent) {
-      const batch = idsToEnrich.slice(i, i + maxConcurrent);
+    for (let i = 0; i < toEnrich.length; i += maxConcurrent) {
+      const batch = toEnrich.slice(i, i + maxConcurrent);
       await Promise.all(batch.map(osmId => this.enrichOSMPOI(osmId).catch(err => {
         console.error(`Background enrichment error for OSM ${osmId}:`, err.message);
         telemetry.captureException(err, { context: 'batch_enrichment', osmId });

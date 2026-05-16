@@ -6,9 +6,23 @@
 import { sendJson } from '../api-router.js';
 import { validateCoordinates, validateLimit } from '../validation.js';
 
+function parsePositiveInt(value, defaultValue, maxValue) {
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+  return Math.min(parsed, maxValue);
+}
+
+function parsePositiveFloat(value, defaultValue, maxValue) {
+  const parsed = Number.parseFloat(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+  return Math.min(parsed, maxValue);
+}
+
 export function registerSearchRoutes(router) {
-  router.get('/api/v1/search/cities/random', async (req, res, { db }) => {
-    const city = await db.getRandomCityWithData();
+  router.get('/api/v1/search/cities/random', async (req, res, { db, query }) => {
+    const minPoiCount = parsePositiveInt(query.min_pois, 25, 1000);
+    const minPopulation = parsePositiveInt(query.min_population, 50000, 10000000);
+    const city = await db.getRandomCityWithData({ minPoiCount, minPopulation });
     if (!city) {
       return sendJson(res, 404, { error: 'No loaded cities available' });
     }
@@ -20,6 +34,8 @@ export function registerSearchRoutes(router) {
     const state = query.state || null;
     const q = query.q || null;
     const limit = validateLimit(query.limit, 10, 50);
+    const radiusKm = parsePositiveFloat(query.radius_km, 50, 1000);
+    const minPoiCount = parsePositiveInt(query.min_pois, 0, 1000);
 
     // searchCities requires either country_code or coordinates
     if (!countryCode && !query.latitude) {
@@ -43,6 +59,8 @@ export function registerSearchRoutes(router) {
       state,
       latitude,
       longitude,
+      radiusKm,
+      minPoiCount,
       limit,
     });
 
@@ -57,6 +75,7 @@ export function registerSearchRoutes(router) {
     const poiTypes = query.poi_types ? query.poi_types.split(',').map(t => t.trim()).filter(Boolean) : null;
     const name = query.q || null;
     const limit = validateLimit(query.limit, 50, 100);
+    const offset = Math.max(0, parseInt(query.offset ?? '0', 10) || 0);
 
     let latitude = null;
     let longitude = null;
@@ -84,9 +103,16 @@ export function registerSearchRoutes(router) {
       poiTypes,
       name,
       limit,
+      offset,
       userId: user?.id || null,
     });
 
     sendJson(res, 200, { results, count: results.length });
+
+    // Fire-and-forget: enrich any returned POIs that haven't been enriched yet.
+    // enrichOSMPOI skips already-active entries and enforces daily quota, so this is safe unconditionally.
+    if (results.length > 0) {
+      db.batchEnrichPOIs(results.map(r => r.osm_id)).catch(() => {});
+    }
   });
 }

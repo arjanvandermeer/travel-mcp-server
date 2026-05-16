@@ -236,7 +236,6 @@
                 <div class="stat-row">
                   <div><strong x-text="$store.poi.current.google_rating || 'OSM'"></strong><span>rating</span></div>
                   <div><strong x-text="$store.poi.current.google_review_count || '—'"></strong><span>reviews</span></div>
-                  <div><strong x-text="$store.poi.enrichmentLabel()"></strong><span>data status</span></div>
                 </div>
                 <div class="tabs">
                   <button :class="{ active: $store.poi.tab === 'overview' }" @click="$store.poi.tab = 'overview'">Overview</button>
@@ -245,7 +244,10 @@
                 </div>
                 <div x-show="$store.poi.tab === 'overview'" class="copy-block">
                   <p x-text="$store.poi.summary()"></p>
-                  <p class="state-callout compact" x-show="$store.poi.enrichmentMessage()" x-text="$store.poi.enrichmentMessage()"></p>
+                  <div class="inline-loading" x-show="$store.poi.isEnriching()" aria-live="polite">
+                    <span class="tiny-spinner" aria-hidden="true"></span>
+                    <span>Refreshing place details</span>
+                  </div>
                   <div class="action-grid">
                     <a :href="$store.poi.current.website" x-show="$store.poi.current.website" target="_blank">Website</a>
                     <a :href="$store.poi.mapsUrl()" target="_blank">Maps</a>

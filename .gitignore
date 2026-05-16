@@ -11,6 +11,9 @@ data/*.gz
 data/*.pbf
 data/*.downloading
 
+# Internal thoughts
+ideas/
+
 # Coverage
 coverage/
 
@@ -37,4 +40,4 @@ TODO-NOW.md
 
 # OS
 .DS_Store
-Thumbs.db
+Thumbs.dbideas/

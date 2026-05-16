@@ -414,6 +414,19 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(result._enrichment.message?.includes('no matching location'));
     });
 
+    it('should report failed enrichment for no_match status', async () => {
+      const noMatchPOI = { ...samplePOIDetail, mapping_status: 'no_match', google_place_id: null };
+      mockPool.setResponse('enriched_pois', dbResult([noMatchPOI]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getPOIDetails(12345);
+
+      assert.ok(result);
+      assert.ok(result._enrichment, 'Should have _enrichment object');
+      assert.strictEqual(result._enrichment.status, 'failed');
+      assert.ok(result._enrichment.message?.includes('no matching location'));
+    });
+
     it('should preserve Date fields (not convert to empty objects)', async () => {
       const enrichedAt = new Date('2025-06-15T12:00:00Z');
       const cacheExpires = new Date('2025-06-22T12:00:00Z');

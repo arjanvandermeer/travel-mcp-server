@@ -6,6 +6,13 @@
 - [x] Fix `Promise.all()` not being awaited in `batchEnrichPOIs()` — added `await`
 - [x] Error logging was already in place via `.catch()` handler
 
+### Bug: Enrichment Can Get Stuck After Long Pending Runs
+- [ ] If Google Places enrichment stays `pending` longer than 5 minutes, automatically cancel,
+  expire, or restart the job instead of leaving the POI in an indefinite pending state
+- [ ] Add stale-pending detection around `osm_google_mappings.mapping_status = 'pending'`
+  using `mapped_at`/started timestamp
+- [ ] Return a clean user-facing status while logging the raw stale/retry details for operators
+
 ### Fix Google Places Matching Algorithm
 - [x] Raised MIN_CONFIDENCE from 0.4 to 0.7
 - [x] Added distance validation: reject matches >500m

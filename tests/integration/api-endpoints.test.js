@@ -122,6 +122,25 @@ describe('GET /api/v1/search/cities', () => {
     assert.strictEqual(data.city.poi_count, 42);
   });
 
+  it('should pass city quality thresholds to random city search', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedOpts;
+    const db = createApiMockDb({
+      getRandomCityWithData: async (opts) => {
+        capturedOpts = opts;
+        return { geoname_id: 1, name: 'Bangkok', country_code: 'TH', poi_count: 80 };
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/cities/random?min_pois=40&min_population=100000');
+    const res = fakeRes();
+    await router.handle(req, res, { db });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(capturedOpts, { minPoiCount: 40, minPopulation: 100000 });
+  });
+
   it('should return 404 when no loaded random city is available', async () => {
     const router = new ApiRouter();
     registerSearchRoutes(router);
@@ -523,6 +542,26 @@ describe('Search API edge cases', () => {
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(capturedOpts.latitude, 13.75);
     assert.strictEqual(capturedOpts.longitude, 100.5);
+  });
+
+  it('GET /api/v1/search/cities should accept radius and POI thresholds', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedOpts;
+    const db = createApiMockDb({
+      searchCities: async (opts) => {
+        capturedOpts = opts;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/cities?latitude=13.75&longitude=100.5&radius_km=150&min_pois=25');
+    const res = fakeRes();
+    await router.handle(req, res, { db });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedOpts.radiusKm, 150);
+    assert.strictEqual(capturedOpts.minPoiCount, 25);
   });
 
   it('GET /api/v1/search/pois should accept query-only search', async () => {

@@ -8,6 +8,10 @@ const LAYERS = [
 ];
 
 const TYPE_COLORS = new Map(LAYERS.flatMap(layer => layer.types.map(type => [type, layer.color])));
+const DISCOVERY_MIN_POIS = 25;
+const LOCATION_SEARCH_RADII_KM = [50, 150, 500, 1000];
+const ENRICHMENT_POLL_INTERVAL_MS = 5000;
+const ENRICHMENT_POLL_MAX_MS = 5 * 60 * 1000;
 
 function debounce(fn, ms) {
   let timer;
@@ -51,7 +55,10 @@ Alpine.store('route', {
   page: 'home',
   poiOsmId: null,
   _lastPath: '',
-  init() {
+  _booted: false,
+  boot() {
+    if (this._booted) return;
+    this._booted = true;
     if (!this.normalizeHashRoute()) this.handleRoute();
     window.addEventListener('popstate', () => this.handleRoute());
     window.addEventListener('hashchange', () => {
@@ -188,7 +195,7 @@ Alpine.store('discovery', {
     if (!window.isSecureContext) {
       this.locationState = 'blocked';
       this.locationError = 'Browser location requires a secure context. Use http://localhost:3001 instead of an IP address, or serve the app over HTTPS.';
-      this.error = `${this.locationError} I loaded a random loaded city for now.`;
+      console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
       await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
@@ -196,7 +203,7 @@ Alpine.store('discovery', {
     if (!navigator.geolocation) {
       this.locationState = 'unsupported';
       this.locationError = 'This browser does not expose the Geolocation API.';
-      this.error = `${this.locationError} I loaded a random loaded city for now.`;
+      console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
       await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
@@ -216,8 +223,7 @@ Alpine.store('discovery', {
     } catch (err) {
       this.locationState = 'unavailable';
       this.locationError = this.describeLocationError(err);
-      this.error = `${this.locationError} I loaded a random loaded city for now.`;
-      console.warn('[City Pulse] Geolocation failed:', err);
+      console.warn('[City Pulse] Geolocation failed:', this.locationError, err);
       await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
@@ -231,14 +237,21 @@ Alpine.store('discovery', {
     return err.message || 'Location was not available.';
   },
   async loadNearestCity(latitude, longitude) {
-    const data = await apiGet('/api/v1/search/cities', {
-      latitude,
-      longitude,
-      limit: 1,
-    });
-    const [nearest] = data.results || [];
+    let nearest = null;
+    for (const radiusKm of LOCATION_SEARCH_RADII_KM) {
+      const data = await apiGet('/api/v1/search/cities', {
+        latitude,
+        longitude,
+        radius_km: radiusKm,
+        min_pois: DISCOVERY_MIN_POIS,
+        limit: 1,
+      });
+      [nearest] = data.results || [];
+      if (nearest) break;
+    }
+
     if (!nearest) {
-      this.error = 'I could not resolve your nearest city, so I loaded a random loaded city.';
+      console.info('[City Pulse] No loaded city with enough POIs near coordinates; loading random city.');
       await this.loadRandomCity({ historyMode: 'replace' });
       return;
     }
@@ -285,9 +298,13 @@ Alpine.store('discovery', {
     if (this.loading && this._loadKey === loadKey) return;
     this._loadKey = loadKey;
     this.loading = true;
+    this.error = '';
     this.source = 'random';
     try {
-      const data = await apiGet('/api/v1/search/cities/random');
+      const data = await apiGet('/api/v1/search/cities/random', {
+        min_pois: DISCOVERY_MIN_POIS,
+        min_population: 50000,
+      });
       const city = data.city;
       if (!city) throw new Error('No loaded cities are available in the travel database.');
       this.country = { code: city.country_code, name: city.country_name || city.country_code };
@@ -594,21 +611,28 @@ Alpine.store('radar', {
 Alpine.store('poi', {
   current: null,
   loading: false,
+  enrichmentPolling: false,
   tab: 'overview',
   note: '',
   _loadId: null,
+  _pollTimer: null,
+  _pollStartedAt: 0,
   async open(osmId) {
     Alpine.store('route').navigate(Alpine.store('route').poiPath(osmId));
   },
   async load(osmId) {
     if (this.loading && String(this._loadId) === String(osmId)) return;
+    this.stopEnrichmentPoll();
     this._loadId = osmId;
     this.loading = true;
     this.tab = 'overview';
     try {
       this.current = await apiGet(`/api/v1/poi/${osmId}`);
       this.note = this.current.favorite_notes || '';
+      const enrichmentMessage = this.current?._enrichment?.message;
+      if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
       await Alpine.store('radar').fromPoi(this.current);
+      this.startEnrichmentPollIfNeeded();
     } catch {
       this.current = null;
     }
@@ -619,6 +643,58 @@ Alpine.store('poi', {
   },
   enrichmentMessage() {
     return this.current?._enrichment?.message || '';
+  },
+  isEnriching() {
+    return this.current?._enrichment?.status === 'pending' && this.enrichmentPolling;
+  },
+  startEnrichmentPollIfNeeded() {
+    if (this.current?._enrichment?.status !== 'pending') {
+      this.stopEnrichmentPoll();
+      return;
+    }
+    if (this._pollTimer) return;
+    this.enrichmentPolling = true;
+    this._pollStartedAt = Date.now();
+    this._pollTimer = window.setTimeout(() => this.pollEnrichment(), ENRICHMENT_POLL_INTERVAL_MS);
+  },
+  stopEnrichmentPoll() {
+    if (this._pollTimer) window.clearTimeout(this._pollTimer);
+    this._pollTimer = null;
+    this._pollStartedAt = 0;
+    this.enrichmentPolling = false;
+  },
+  async pollEnrichment() {
+    this._pollTimer = null;
+    const osmId = this.current?.osm_id;
+    if (!osmId || String(this._loadId) !== String(osmId)) {
+      this.stopEnrichmentPoll();
+      return;
+    }
+    if (Date.now() - this._pollStartedAt > ENRICHMENT_POLL_MAX_MS) {
+      console.warn('[Travel] POI enrichment polling timed out after 5 minutes:', osmId);
+      this.stopEnrichmentPoll();
+      return;
+    }
+
+    try {
+      const updated = await apiGet(`/api/v1/poi/${osmId}`);
+      if (String(this._loadId) !== String(osmId)) return;
+      this.current = updated;
+      this.note = updated.favorite_notes || this.note || '';
+      const enrichmentMessage = updated?._enrichment?.message;
+      if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
+      if (updated?._enrichment?.status === 'pending') {
+        this.enrichmentPolling = true;
+        this._pollTimer = window.setTimeout(() => this.pollEnrichment(), ENRICHMENT_POLL_INTERVAL_MS);
+        return;
+      }
+      this.stopEnrichmentPoll();
+      await Alpine.store('radar').fromPoi(updated);
+    } catch (err) {
+      console.warn('[Travel] POI enrichment poll failed:', err);
+      this.enrichmentPolling = true;
+      this._pollTimer = window.setTimeout(() => this.pollEnrichment(), ENRICHMENT_POLL_INTERVAL_MS);
+    }
   },
   summary() {
     if (!this.current) return '';
@@ -696,10 +772,11 @@ Alpine.store('compare', {
 });
 
 window.Alpine = Alpine;
+
+Alpine.store('route').boot();
 Alpine.start();
 
-requestAnimationFrame(() => {
+queueMicrotask(() => {
   Alpine.store('auth').check();
-  Alpine.store('route').init();
   Alpine.store('discovery').load();
 });

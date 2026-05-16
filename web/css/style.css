@@ -361,6 +361,23 @@ textarea {
   padding: 16px;
   font-size: 12px;
 }
+.inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+}
+.tiny-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid #cbd5e1;
+  border-top-color: var(--ink);
+  border-radius: 50%;
+  animation: spin .8s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
 
 .composer-header { margin-bottom: 18px; }
 .composer-header h1 { font-size: clamp(36px, 6vw, 64px); }

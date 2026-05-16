@@ -220,8 +220,8 @@ describe('TravelDatabase with Mock Pool', () => {
 
       assert.strictEqual(city, null);
       const cityQuery = mockPool.getCalls().find(call => call.sql.includes('FROM geonames_cities c'));
-      assert.ok(cityQuery.sql.includes('HAVING COUNT(p.osm_id) > 0'));
-      assert.deepStrictEqual(cityQuery.params, []);
+      assert.ok(cityQuery.sql.includes('HAVING COUNT(p.osm_id) >='));
+      assert.deepStrictEqual(cityQuery.params, [50000, 25]);
     });
   });
 
