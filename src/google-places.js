@@ -214,13 +214,17 @@ export class GooglePlacesClient {
    * @param {number|null} longitude - Optional longitude for location bias
    * @returns {Promise<Array<Object>>} Array of Google Place objects with id, displayName, rating, location, types
    */
-  async searchText(query, latitude = null, longitude = null) {
+  async searchText(query, latitude = null, longitude = null, includedType = null) {
     const url = 'https://places.googleapis.com/v1/places:searchText';
 
     const body = {
       textQuery: query,
       maxResultCount: GOOGLE_PLACES_MAX_RESULTS,
     };
+
+    if (includedType) {
+      body.includedType = includedType;
+    }
 
     if (latitude && longitude) {
       // Use locationRestriction (hard filter) not locationBias (soft hint) so results
@@ -401,10 +405,11 @@ export class GooglePlacesClient {
       }
     }
 
-    // Fallback to text search (use English name if available for better Google results)
+    // Fallback to text search (use English name if available for better Google results).
+    // Location filtering is handled by locationRestriction in the request body — do NOT
+    // include raw coordinates in the text query because Google treats them literally.
     const searchName = name_en || name;
-    const textQuery = `${searchName}, ${latitude}, ${longitude}`;
-    const textResults = await this.searchText(textQuery, latitude, longitude);
+    const textResults = await this.searchText(searchName, latitude, longitude, googleType);
 
     if (textResults.length > 0) {
       // Also validate text search results with name matching

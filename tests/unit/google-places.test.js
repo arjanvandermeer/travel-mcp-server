@@ -474,15 +474,20 @@ describe('GooglePlacesClient', () => {
     it('should fallback to text search when nearby finds no match', async () => {
       const client = new GooglePlacesClient('key', true);
       client.searchNearby = async () => [];
-      client.searchText = async () => [
-        { id: 'place2', displayName: { text: 'Grand Hotel' }, rating: 4.0, userRatingCount: 50, types: ['lodging'] },
-      ];
+      let textQuery, textType;
+      client.searchText = async (q, _lat, _lon, type) => {
+        textQuery = q; textType = type;
+        return [{ id: 'place2', displayName: { text: 'Grand Hotel' }, rating: 4.0, userRatingCount: 50, types: ['lodging'] }];
+      };
 
       const result = await client.findMatchingPlace({
         name: 'Grand Hotel', latitude: 40.7, longitude: -73.9, poi_type: 'hotel',
       });
       assert.ok(result);
       assert.strictEqual(result.place_id, 'place2');
+      // Text query must be just the name — no raw coordinates in query string
+      assert.strictEqual(textQuery, 'Grand Hotel');
+      assert.strictEqual(textType, 'lodging');
     });
 
     it('should return null when no confident match from either search', async () => {
