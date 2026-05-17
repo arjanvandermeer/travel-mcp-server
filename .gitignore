@@ -20,6 +20,7 @@ coverage/
 # Logs
 *.log
 npm-debug.log*
+slm/test-results.json
 
 # Environment
 .env
