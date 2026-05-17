@@ -82,6 +82,11 @@ button { cursor: pointer; }
   min-height: 36px;
 }
 .nav-link { padding: 0 12px; }
+.nav-link.active {
+  border-color: var(--accent);
+  background: #eef7f4;
+  color: var(--accent);
+}
 .icon-button { width: 36px; }
 .primary-button {
   background: var(--accent);
@@ -199,6 +204,37 @@ button { cursor: pointer; }
 .mini-place { text-align: left; padding: 12px; }
 .mini-place span, .mini-place small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-place small { color: var(--muted); margin-top: 4px; }
+.data-status-grid, .atlas-status-grid {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+.data-status-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.data-status-grid div, .atlas-status-grid div {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,.78);
+  padding: 11px 12px;
+}
+.data-status-grid span, .atlas-status-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.data-status-grid strong, .atlas-status-grid strong {
+  display: block;
+  margin-top: 3px;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .atlas {
   height: calc(100vh - 64px);
@@ -216,6 +252,11 @@ button { cursor: pointer; }
 .rail-section { padding: 18px 18px 10px; }
 .rail-section h2 { margin: 4px 0; font-size: 28px; }
 .rail-section p { margin: 0; color: var(--muted); }
+.atlas-status-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+  align-items: stretch;
+}
+.atlas-status-grid .secondary-button { height: 100%; min-height: 48px; }
 .rail-command { margin: 8px 18px 12px; }
 .rail-command .suggestions { right: 0; }
 .layer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 18px 14px; }
@@ -354,12 +395,13 @@ button { cursor: pointer; }
   .topbar { height: auto; min-height: 64px; align-items: flex-start; gap: 10px; padding: 12px; flex-direction: column; }
   .build-chip { margin: -4px 0 0 42px; }
   .nav-actions { width: 100%; overflow-x: auto; padding-bottom: 2px; }
+  .nav-link { white-space: nowrap; }
   .workspace { min-height: calc(100vh - 100px); }
   .city-pulse { padding: 22px 14px; }
   .pulse-panel h1 { font-size: 42px; }
   .command-wrap { display: grid; }
   .suggestions { right: 0; }
-  .signal-grid { grid-template-columns: 1fr; }
+  .signal-grid, .data-status-grid, .atlas-status-grid { grid-template-columns: 1fr; }
   .atlas { min-height: calc(100vh - 100px); }
   .atlas-rail { min-height: 45vh; }
   .layer-grid { grid-template-columns: 1fr; }

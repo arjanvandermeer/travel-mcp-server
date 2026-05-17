@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appJs = fs.readFileSync(path.join(__dirname, '../../web/js/app.js'), 'utf8');
+const indexHtml = fs.readFileSync(path.join(__dirname, '../../web/index.html'), 'utf8');
+const styleCss = fs.readFileSync(path.join(__dirname, '../../web/css/style.css'), 'utf8');
 
 describe('frontend regressions', () => {
   it('forces random city fallback from geolocation failure paths', () => {
@@ -17,5 +19,18 @@ describe('frontend regressions', () => {
       /if \(!force && this\.loading && this\._loadKey === loadKey\) return;/,
       'Random city guard should be bypassable for recovery paths'
     );
+  });
+
+  it('keeps the redesigned web product surface wired across pages', () => {
+    assert.match(indexHtml, /aria-label="Primary"/, 'Primary navigation should be exposed as navigation');
+    assert.match(indexHtml, /\$store\.route\.page === 'atlas'/, 'Navigation should expose the atlas as a first-class page');
+    assert.match(indexHtml, /data-status-grid/, 'City Pulse should surface live discovery status');
+    assert.match(indexHtml, /atlas-status-grid/, 'Atlas should surface result and layer status');
+    assert.match(indexHtml, /\$store\.atlas\.resetView\(\)/, 'Atlas should provide a reset control');
+    assert.match(appJs, /statusItems\(\)/, 'Discovery store should provide home status items');
+    assert.match(appJs, /resultsLabel\(\)/, 'Atlas store should provide result status text');
+    assert.match(appJs, /resetView\(\)/, 'Atlas store should provide a reset action');
+    assert.match(styleCss, /\.nav-link\.active/, 'Active navigation state should be styled');
+    assert.match(styleCss, /\.data-status-grid, \.atlas-status-grid/, 'Status grids should share stable layout styles');
   });
 });

@@ -344,6 +344,23 @@ Alpine.store('discovery', {
   countryLabel() {
     return this.country?.name || 'Global';
   },
+  statusItems() {
+    const counts = this.overview?.counts || {};
+    const placeCount = Number(counts.total_pois || counts.stays + counts.food + counts.attractions || 0);
+    const source = this.source === 'local'
+      ? 'Nearest city'
+      : this.source === 'location'
+        ? 'Saved route'
+        : 'Random city';
+    const items = [
+      { label: 'Loaded place graph', value: placeCount ? `${placeCount.toLocaleString()} places` : 'Awaiting data' },
+      { label: 'Discovery mode', value: source },
+      { label: 'Country', value: this.country?.name || this.city?.country_code || 'Not selected' },
+    ];
+    if (this.locationError) items.push({ label: 'Location fallback', value: this.locationError });
+    else if (this.heroImageCredit) items.push({ label: 'Hero image', value: this.heroImageCredit });
+    return items.slice(0, 4);
+  },
   featuredPlaces() {
     return [
       ...(this.hotels || []),
@@ -430,6 +447,15 @@ Alpine.store('atlas', {
   contextLine() {
     return this.city?.country_code ? `${this.city.country_code} · live map places` : 'Search or move the map to discover places.';
   },
+  resultsLabel() {
+    if (this.loading) return 'Loading';
+    if (this.map && this.map.getZoom() < 8) return 'Zoom in';
+    return `${this.places.length.toLocaleString()} visible`;
+  },
+  layerCountLabel() {
+    const count = this.activeLayers.size;
+    return `${count} ${count === 1 ? 'layer' : 'layers'}`;
+  },
   activate() {
     requestAnimationFrame(() => this.initMap());
   },
@@ -468,6 +494,13 @@ Alpine.store('atlas', {
     else this.activeLayers.add(key);
     this.activeLayers = new Set(this.activeLayers);
     this._lastKey = '';
+    this.fetchMapPlaces();
+  },
+  resetView() {
+    this.activeLayers = new Set(['accommodation', 'dining', 'attractions']);
+    this.selected = null;
+    this._lastKey = '';
+    this.seedFromDiscovery();
     this.fetchMapPlaces();
   },
   activeTypes() {

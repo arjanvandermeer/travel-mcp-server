@@ -23,10 +23,11 @@
         <span>Travel</span>
       </a>
       <a class="build-chip" href="__APP_COMMIT_URL__" target="_blank" rel="noopener" title="View running build on GitHub">Build __APP_COMMIT__</a>
-      <nav class="nav-actions">
+      <nav class="nav-actions" aria-label="Primary">
         <button class="icon-button" title="Command search" @click="$store.ui.focusCommand()">⌘</button>
-        <button class="nav-link" @click="$store.route.goHome()">City Pulse</button>
-        <button class="nav-link" @click="$store.route.goComposer()">Trip Composer</button>
+        <button class="nav-link" :class="{ active: $store.route.page === 'home' }" @click="$store.route.goHome()">City Pulse</button>
+        <button class="nav-link" :class="{ active: $store.route.page === 'atlas' }" @click="$store.route.goAtlas()">Atlas</button>
+        <button class="nav-link" :class="{ active: $store.route.page === 'composer' }" @click="$store.route.goComposer()">Trip Composer</button>
         <template x-if="$store.auth.checked && !$store.auth.authenticated">
           <button class="primary-button compact" @click="$store.auth.login()">Sign in</button>
         </template>
@@ -112,6 +113,14 @@
                   </button>
                 </template>
               </div>
+              <div class="data-status-grid">
+                <template x-for="item in $store.discovery.statusItems()" :key="item.label">
+                  <div>
+                    <span x-text="item.label"></span>
+                    <strong x-text="item.value"></strong>
+                  </div>
+                </template>
+              </div>
             </div>
           </template>
           <div class="state-callout" x-show="$store.discovery.error" x-text="$store.discovery.error"></div>
@@ -124,6 +133,17 @@
             <div class="eyebrow">Travel</div>
             <h2 x-text="$store.atlas.title()"></h2>
             <p x-text="$store.atlas.contextLine()"></p>
+            <div class="atlas-status-grid">
+              <div>
+                <span>Results</span>
+                <strong x-text="$store.atlas.resultsLabel()"></strong>
+              </div>
+              <div>
+                <span>Layers</span>
+                <strong x-text="$store.atlas.layerCountLabel()"></strong>
+              </div>
+              <button class="secondary-button compact" @click="$store.atlas.resetView()">Reset</button>
+            </div>
           </div>
           <div class="command-wrap rail-command">
             <input class="command-input" type="search" placeholder="Search inside the atlas"
@@ -186,6 +206,12 @@
                 <span>5 min</span><span>15 min</span><span>30 min</span>
               </div>
             </div>
+            <template x-if="$store.radar.loading">
+              <div class="skeleton-stack"><div class="skeleton card"></div><div class="skeleton card"></div></div>
+            </template>
+            <template x-if="!$store.radar.loading && $store.radar.source && $store.radar.results.length === 0">
+              <div class="empty-panel"><h3>No nearby matches</h3><p>Try another place or move back to the Places tab.</p></div>
+            </template>
             <template x-for="poi in $store.radar.results" :key="poi.osm_id">
               <button class="nearby-row" @click="$store.poi.open(poi.osm_id)">
                 <span x-text="poi.name || poi.osm_name"></span>
