@@ -1,0 +1,63 @@
+{
+  "stateFile": "/var/lib/ec2-pull-deploy/state.json",
+  "lockFile": "/var/lock/ec2-pull-deploy.lock",
+  "githubTokenEnv": "GITHUB_TOKEN",
+  "repos": [
+    {
+      "name": "travel-mcp-server",
+      "github": "arjanvandermeer/travel-mcp-server",
+      "path": "/home/ubuntu/travel-mcp-server",
+      "runAs": "ubuntu",
+      "remote": "origin",
+      "branch": "main",
+      "ci": {
+        "required": true,
+        "workflow": "CI"
+      },
+      "install": [
+        ["npm", "ci"]
+      ],
+      "service": "travel-mcp-server.service",
+      "healthCheck": {
+        "command": ["curl", "-fsS", "http://127.0.0.1:3000/health"],
+        "retries": 12,
+        "delayMs": 5000
+      }
+    },
+    {
+      "name": "thai-transliterate",
+      "github": "arjanvandermeer/thai-transliterate-js",
+      "path": "/home/ubuntu/Development/thai-transliterate",
+      "runAs": "ubuntu",
+      "remote": "origin",
+      "branch": "main",
+      "ci": {
+        "required": false
+      },
+      "install": [
+        ["npm", "ci"],
+        ["npm", "test"]
+      ]
+    },
+    {
+      "name": "thai-transliterate-mcp",
+      "github": "arjanvandermeer/thai-transliterate-mcp",
+      "path": "/home/ubuntu/thai-transliterate-mcp",
+      "runAs": "ubuntu",
+      "remote": "origin",
+      "branch": "main",
+      "ci": {
+        "required": false
+      },
+      "install": [
+        ["npm", "ci"]
+      ],
+      "service": "thai-transliterate-mcp.service",
+      "healthCheck": {
+        "command": ["curl", "-fsS", "http://127.0.0.1:3001/health"],
+        "retries": 12,
+        "delayMs": 5000
+      }
+    }
+  ]
+}

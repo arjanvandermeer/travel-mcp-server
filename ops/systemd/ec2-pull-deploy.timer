@@ -1,0 +1,12 @@
+[Unit]
+Description=Check GitHub for approved deploys every minute
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1min
+AccuracySec=15s
+Persistent=true
+Unit=ec2-pull-deploy.service
+
+[Install]
+WantedBy=timers.target

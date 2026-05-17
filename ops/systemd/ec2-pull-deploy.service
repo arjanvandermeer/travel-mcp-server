@@ -1,0 +1,11 @@
+[Unit]
+Description=Pull approved GitHub changes and deploy local EC2 services
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/home/ubuntu/travel-mcp-server
+ExecStart=/usr/bin/node /home/ubuntu/travel-mcp-server/scripts/ec2-pull-deploy.js --config /home/ubuntu/travel-mcp-server/ops/ec2-pull-deploy.config.json
+EnvironmentFile=-/etc/ec2-pull-deploy.env
