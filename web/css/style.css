@@ -28,11 +28,12 @@ button { cursor: pointer; }
 
 .app-shell { min-height: 100vh; }
 .topbar {
-  height: 64px;
+  height: 52px;
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 0 20px;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 7px 14px;
   border-bottom: 1px solid var(--line);
   background: rgba(251, 250, 247, .94);
   backdrop-filter: blur(16px);
@@ -40,26 +41,8 @@ button { cursor: pointer; }
   top: 0;
   z-index: 2000;
 }
-.brand {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--ink);
-  text-decoration: none;
-  font-weight: 800;
-}
-.brand-mark {
-  width: 32px;
-  height: 32px;
-  display: grid;
-  place-items: center;
-  background: var(--ink);
-  color: white;
-  border-radius: 8px;
-}
 .build-chip {
-  margin-left: 10px;
-  margin-right: auto;
+  flex: 0 0 auto;
   min-height: 26px;
   display: inline-flex;
   align-items: center;
@@ -73,7 +56,16 @@ button { cursor: pointer; }
   text-decoration: none;
 }
 .build-chip:hover { color: var(--ink); border-color: var(--accent); }
-.nav-actions { display: flex; align-items: center; gap: 10px; }
+.nav-actions {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.nav-actions::-webkit-scrollbar { display: none; }
 .nav-link, .icon-button, .secondary-button, .primary-button, .account-button {
   border: 1px solid var(--line);
   background: var(--panel);
@@ -112,7 +104,7 @@ button { cursor: pointer; }
   overflow: hidden;
 }
 .account-menu button { display: block; width: 100%; border: 0; background: white; text-align: left; padding: 12px; }
-.workspace { min-height: calc(100vh - 64px); }
+.workspace { min-height: calc(100vh - 52px); }
 
 .city-pulse {
   position: relative;
@@ -208,7 +200,7 @@ button { cursor: pointer; }
 }
 .home-category-strip {
   position: sticky;
-  top: 64px;
+  top: 52px;
   z-index: 1200;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -356,7 +348,7 @@ button { cursor: pointer; }
 }
 
 .atlas {
-  height: calc(100vh - 64px);
+  height: calc(100vh - 52px);
   display: grid;
   grid-template-columns: 430px minmax(0, 1fr);
   overflow: hidden;
@@ -494,17 +486,17 @@ button { cursor: pointer; }
 
 @media (max-width: 980px) {
   .atlas, .board { grid-template-columns: 1fr; }
-  .atlas { height: auto; min-height: calc(100vh - 64px); }
+  .atlas { height: auto; min-height: calc(100vh - 52px); }
   .atlas-rail { max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
   .map-stage { height: 62vh; }
 }
 
 @media (max-width: 680px) {
-  .topbar { height: auto; min-height: 64px; align-items: flex-start; gap: 10px; padding: 12px; flex-direction: column; }
-  .build-chip { margin: -4px 0 0 42px; }
-  .nav-actions { width: 100%; overflow-x: auto; padding-bottom: 2px; }
+  .topbar { height: 48px; gap: 8px; padding: 6px 10px; }
+  .build-chip { font-size: 10px; padding: 0 7px; }
+  .nav-actions { gap: 7px; }
   .nav-link { white-space: nowrap; }
-  .workspace { min-height: calc(100vh - 100px); }
+  .workspace { min-height: calc(100vh - 48px); }
   .city-pulse {
     min-height: 280px;
     padding: 14px 14px 22px;
@@ -518,7 +510,7 @@ button { cursor: pointer; }
   .pulse-panel h1 { font-size: 42px; }
   .command-wrap { display: grid; }
   .suggestions { right: 0; }
-  .home-category-strip { top: 113px; gap: 6px; padding: 10px 0; }
+  .home-category-strip { top: 48px; gap: 6px; padding: 10px 0; }
   .home-category-strip button { min-height: 48px; font-size: 18px; }
   .home-place-card {
     grid-template-columns: 86px minmax(0, 1fr);
@@ -531,7 +523,7 @@ button { cursor: pointer; }
   .home-place-card .place-body p { font-size: 13px; margin-bottom: 10px; }
   .home-place-card .place-actions button { width: 34px; height: 34px; font-size: 16px; }
   .signal-grid, .data-status-grid, .atlas-status-grid { grid-template-columns: 1fr; }
-  .atlas { min-height: calc(100vh - 100px); }
+  .atlas { min-height: calc(100vh - 48px); }
   .atlas-rail { min-height: 45vh; }
   .layer-grid { grid-template-columns: 1fr; }
 }

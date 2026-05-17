@@ -18,11 +18,6 @@
 <body x-data>
   <div class="app-shell">
     <header class="topbar">
-      <a href="/" class="brand" @click.prevent="$store.route.goHome()">
-        <span class="brand-mark">A</span>
-        <span>Travel</span>
-      </a>
-      <a class="build-chip" href="__APP_COMMIT_URL__" target="_blank" rel="noopener" title="View running build on GitHub">Build __APP_COMMIT__</a>
       <nav class="nav-actions" aria-label="Primary">
         <button class="icon-button" title="Command search" @click="$store.ui.focusCommand()">⌘</button>
         <button class="nav-link" :class="{ active: $store.route.page === 'home' }" @click="$store.route.goHome()">City Pulse</button>
@@ -44,6 +39,7 @@
           </div>
         </template>
       </nav>
+      <a class="build-chip" href="__APP_COMMIT_URL__" target="_blank" rel="noopener" title="View running build on GitHub">Build __APP_COMMIT__</a>
     </header>
 
     <main class="workspace" :class="'page-' + $store.route.page">
