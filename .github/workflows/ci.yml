@@ -23,4 +23,7 @@ jobs:
       - name: Credential scan
         run: node scripts/credential-scan.js
 
+      - name: Maintenance review gate smoke
+        run: npm run test:maintenance-gate-smoke
+
       - run: npm test
