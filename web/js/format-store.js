@@ -31,7 +31,7 @@ export function createFormatStore() {
       return photos
         .map(photo => photo?.url || photo?.url_thumbnail)
         .filter(Boolean)
-        .slice(0, 4);
+        .slice(0, 10);
     },
     bestAddress(poi = {}) {
       return poi.google_short_address || poi.google_address || poi.osm_address || [poi.city, poi.country_code].filter(Boolean).join(', ');
@@ -53,8 +53,24 @@ export function createFormatStore() {
     openStatus(poi = {}) {
       if (poi.google_business_status === 'CLOSED_PERMANENTLY') return 'Permanently closed';
       if (poi.google_business_status === 'CLOSED_TEMPORARILY') return 'Temporarily closed';
-      if (poi.osm_opening_hours) return poi.osm_opening_hours;
+      const googleHours = poi.google_current_opening_hours || poi.google_opening_hours;
+      if (googleHours?.openNow === true) return 'Open now';
+      if (googleHours?.openNow === false) return 'Closed now';
+      if (poi.osm_opening_hours) return 'Hours listed';
       return 'Hours not listed';
+    },
+    openStatusClass(poi = {}) {
+      const label = this.openStatus(poi);
+      if (/open/i.test(label)) return 'is-open';
+      if (/closed/i.test(label)) return 'is-closed';
+      return 'is-muted';
+    },
+    hoursDetail(poi = {}) {
+      const googleHours = poi.google_current_opening_hours || poi.google_opening_hours;
+      if (googleHours?.nextCloseTime && googleHours?.openNow) return `Until ${new Date(googleHours.nextCloseTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+      if (googleHours?.nextOpenTime && googleHours?.openNow === false) return `Opens ${new Date(googleHours.nextOpenTime).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}`;
+      if (Array.isArray(googleHours?.weekdayDescriptions)) return googleHours.weekdayDescriptions[0] || '';
+      return poi.osm_opening_hours || '';
     },
     priceLabel(poi = {}) {
       if (!poi.google_price_level) return '';
@@ -69,13 +85,31 @@ export function createFormatStore() {
     },
     propertyFacts(poi = {}) {
       const facts = [];
+      if (poi.google_rating) facts.push({ label: 'Rating', value: `${Number(poi.google_rating).toFixed(1)} ★` });
+      if (poi.google_price_level) facts.push({ label: 'Price', value: this.priceLabel(poi) });
+      if (poi.osm_cuisine) facts.push({ label: 'Cuisine', value: String(poi.osm_cuisine).replaceAll(';', ', ') });
+      if (poi.osm_wheelchair) facts.push({ label: 'Access', value: String(poi.osm_wheelchair).replaceAll('_', ' ') });
       if (poi.osm_stars) facts.push({ label: 'Class', value: `${poi.osm_stars} stars` });
       if (poi.osm_rooms) facts.push({ label: 'Rooms', value: poi.osm_rooms });
       if (poi.osm_beds) facts.push({ label: 'Beds', value: poi.osm_beds });
-      if (poi.osm_cuisine) facts.push({ label: 'Cuisine', value: String(poi.osm_cuisine).replaceAll(';', ', ') });
-      if (poi.osm_wheelchair) facts.push({ label: 'Access', value: String(poi.osm_wheelchair).replaceAll('_', ' ') });
-      if (poi.google_price_level) facts.push({ label: 'Price', value: this.priceLabel(poi) });
       return facts.slice(0, 6);
+    },
+    contactLinks(poi = {}) {
+      const links = [];
+      const address = this.bestAddress(poi);
+      if (address) links.push({ label: 'Address', value: address, href: this.bestMapsUrl(poi), kind: 'map' });
+      const phone = this.bestPhone(poi);
+      if (phone) links.push({ label: 'Phone', value: phone, href: `tel:${phone}`, kind: 'phone' });
+      const website = this.bestWebsite(poi);
+      if (website) links.push({ label: 'Website', value: this.websiteLabel(website), href: website, kind: 'website' });
+      return links;
+    },
+    websiteLabel(url) {
+      try {
+        return new URL(url).hostname.replace(/^www\./, '');
+      } catch {
+        return url;
+      }
     },
   };
 }

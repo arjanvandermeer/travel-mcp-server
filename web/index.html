@@ -77,19 +77,21 @@
             </button>
           </div>
           <form class="feed-search-panel" x-show="$store.discovery.placeSearchOpen" x-transition @submit.prevent="$store.discovery.searchPlacesByName()">
-            <input
-              id="place-name-search"
-              class="command-input"
-              type="search"
-              placeholder="Name..."
-              x-model="$store.discovery.placeSearchQuery">
+            <div class="feed-search-row">
+              <input
+                id="place-name-search"
+                class="command-input"
+                type="search"
+                placeholder="Name..."
+                x-model="$store.discovery.placeSearchQuery">
+              <button class="primary-button compact feed-search-submit" type="submit" :disabled="$store.discovery.placeSearchLoading">
+                <span x-text="$store.discovery.placeSearchLoading ? 'Searching' : 'Search'"></span>
+              </button>
+            </div>
             <label class="option-toggle">
               <input type="checkbox" x-model="$store.discovery.placeOpenNow" @change="$store.discovery.refreshFeedForOptions()">
               <span>Open now</span>
             </label>
-            <button class="primary-button" type="submit" :disabled="$store.discovery.placeSearchLoading">
-              <span x-text="$store.discovery.placeSearchLoading ? 'Searching' : 'Search'"></span>
-            </button>
           </form>
           <p class="state-callout" x-show="$store.discovery.placeSearchError" x-text="$store.discovery.placeSearchError"></p>
 
@@ -132,46 +134,58 @@
       </section>
 
       <section class="atlas" x-show="$store.route.page === 'atlas'" x-cloak>
-        <aside class="atlas-rail">
-          <div class="rail-section">
-            <div class="eyebrow">Travel</div>
-            <h2 x-text="$store.atlas.title()"></h2>
-            <p x-text="$store.atlas.contextLine()"></p>
-            <div class="atlas-status-grid">
-              <div>
-                <span>Results</span>
-                <strong x-text="$store.atlas.resultsLabel()"></strong>
-              </div>
-              <div>
-                <span>Layers</span>
-                <strong x-text="$store.atlas.layerCountLabel()"></strong>
-              </div>
-              <button class="secondary-button compact" @click="$store.atlas.resetView()">Reset</button>
+        <div class="map-stage">
+          <div id="map"></div>
+          <button class="locate-button" @click="$store.atlas.locate()">⌖</button>
+          <div class="map-preview" x-show="$store.atlas.selected" x-transition>
+            <button class="close-button" @click="$store.atlas.selected = null">×</button>
+            <h3 x-text="$store.atlas.selected?.name || $store.atlas.selected?.osm_name"></h3>
+            <p x-text="$store.format.placeMeta($store.atlas.selected || {})"></p>
+            <div>
+              <button class="primary-button compact" @click="$store.poi.open($store.atlas.selected.osm_id)">Dossier</button>
             </div>
           </div>
-          <div class="command-wrap rail-command">
-            <input id="command-search" class="command-input" type="search" placeholder="Search inside the atlas"
+        </div>
+        <aside class="atlas-rail">
+          <div class="rail-section">
+            <div class="eyebrow">DISCOVER</div>
+            <h2 x-text="$store.atlas.title()"></h2>
+            <p x-text="$store.atlas.contextLine()"></p>
+          </div>
+          <div class="home-category-strip atlas-category-strip" role="group" aria-label="Map place category filters">
+            <template x-for="layer in $store.atlas.layers" :key="layer.key">
+              <button type="button" :aria-pressed="$store.atlas.activeLayers.has(layer.key)" :class="{ active: $store.atlas.activeLayers.has(layer.key) }" @click="$store.atlas.toggleLayer(layer.key)">
+                <span class="layer-dot" :style="'--dot:' + layer.color"></span>
+                <span x-text="layer.label"></span>
+                <small x-show="$store.atlas.activeLayers.has(layer.key)" x-text="$store.atlas.feedCount(layer.key)"></small>
+              </button>
+            </template>
+            <button
+              type="button"
+              class="feed-search-toggle"
+              :class="{ active: $store.atlas.searchOpen }"
+              aria-label="Search map places by name"
+              :aria-expanded="$store.atlas.searchOpen"
+              @click="$store.atlas.toggleSearch()">
+              ⌘
+            </button>
+          </div>
+          <form class="feed-search-panel atlas-search-panel" x-show="$store.atlas.searchOpen" x-transition @submit.prevent="$store.atlas.textSearch($store.search.query)">
+            <input id="command-search" class="command-input" type="search" placeholder="Name..."
               x-model="$store.search.query"
               @input="$store.search.autocomplete()"
               @keydown="$store.search.onKeydown($event)"
               @focus="$store.search.open = $store.search.suggestions.length > 0">
+            <button class="primary-button" type="submit">Search</button>
             <div class="suggestions" x-show="$store.search.open" x-transition @click.outside="$store.search.open = false">
               <template x-for="(item, index) in $store.search.suggestions" :key="item.osm_id">
-                <button class="suggestion" :class="{ active: index === $store.search.highlight }" @click="$store.search.select(item)">
+                <button class="suggestion" type="button" :class="{ active: index === $store.search.highlight }" @click="$store.search.select(item)">
                   <span class="suggestion-name" x-text="item.name"></span>
                   <span class="suggestion-meta" x-text="$store.format.placeMeta(item)"></span>
                 </button>
               </template>
             </div>
-          </div>
-          <div class="layer-grid">
-            <template x-for="layer in $store.atlas.layers" :key="layer.key">
-              <button class="layer-toggle" :class="{ active: $store.atlas.activeLayers.has(layer.key) }" @click="$store.atlas.toggleLayer(layer.key)">
-                <span class="layer-dot" :style="'--dot:' + layer.color"></span>
-                <span x-text="layer.label"></span>
-              </button>
-            </template>
-          </div>
+          </form>
           <div class="rail-scroll">
             <template x-if="$store.atlas.loading">
               <div class="skeleton-stack"><div class="skeleton card"></div><div class="skeleton card"></div><div class="skeleton card"></div></div>
@@ -186,7 +200,7 @@
               <article class="place-card" :class="{ selected: $store.atlas.selected?.osm_id === poi.osm_id }" @mouseenter="$store.atlas.preview(poi)" @click="$store.atlas.select(poi)">
                 <div class="thumb" :style="$store.format.thumbStyle(poi)"></div>
                 <div class="place-body">
-                  <h3 x-text="poi.name || poi.osm_name"></h3>
+                  <h3><button type="button" @click.stop="$store.poi.open(poi.osm_id)" x-text="poi.name || poi.osm_name"></button></h3>
                   <p x-text="$store.format.placeMeta(poi)"></p>
                   <div class="place-actions" @click.stop>
                     <button title="Save" @click="$store.favorites.toggle(poi)" :class="{ active: poi.is_favorite }">♡</button>
@@ -197,18 +211,6 @@
             </template>
           </div>
         </aside>
-        <div class="map-stage">
-          <div id="map"></div>
-          <button class="locate-button" @click="$store.atlas.locate()">⌖</button>
-          <div class="map-preview" x-show="$store.atlas.selected" x-transition>
-            <button class="close-button" @click="$store.atlas.selected = null">×</button>
-            <h3 x-text="$store.atlas.selected?.name || $store.atlas.selected?.osm_name"></h3>
-            <p x-text="$store.format.placeMeta($store.atlas.selected || {})"></p>
-            <div>
-              <button class="primary-button compact" @click="$store.poi.open($store.atlas.selected.osm_id)">Dossier</button>
-            </div>
-          </div>
-        </div>
       </section>
 
       <section class="dossier" x-show="$store.route.page === 'poi'" x-cloak>
@@ -224,10 +226,10 @@
                 <h1 x-text="$store.poi.current.name || $store.poi.current.osm_name"></h1>
                 <p x-text="$store.format.bestAddress($store.poi.current) || $store.format.placeMeta($store.poi.current)"></p>
                 <div class="hero-pills">
-                  <span x-show="$store.poi.current.google_rating"><strong x-text="Number($store.poi.current.google_rating).toFixed(1)"></strong> rating</span>
+                  <span class="status-pill" :class="$store.format.openStatusClass($store.poi.current)" x-text="$store.format.openStatus($store.poi.current)"></span>
+                  <span x-show="$store.format.priceLabel($store.poi.current)" class="price-pill" x-text="$store.format.priceLabel($store.poi.current)"></span>
+                  <span x-show="$store.poi.current.google_rating"><strong x-text="Number($store.poi.current.google_rating).toFixed(1)"></strong> ★</span>
                   <span x-show="$store.poi.current.google_review_count" x-text="$store.poi.current.google_review_count + ' reviews'"></span>
-                  <span x-show="$store.poi.current.osm_stars" x-text="$store.poi.current.osm_stars + ' stars'"></span>
-                  <span x-show="$store.format.priceLabel($store.poi.current)" x-text="$store.format.priceLabel($store.poi.current)"></span>
                 </div>
               </div>
               <div class="hero-actions">
@@ -237,7 +239,7 @@
             </div>
             <div class="photo-strip" x-show="$store.format.detailPhotos($store.poi.current).length">
               <template x-for="photo in $store.format.detailPhotos($store.poi.current)" :key="photo">
-                <div class="photo-tile" :style="'background-image:url(&quot;' + photo + '&quot;)'"></div>
+                <img class="photo-tile" :src="photo" alt="" loading="lazy">
               </template>
             </div>
             <div class="dossier-grid">
@@ -256,24 +258,19 @@
                     <span class="tiny-spinner" aria-hidden="true"></span>
                     <span>Refreshing place details</span>
                   </div>
-                  <div class="detail-list">
-                    <div>
-                      <span>Address</span>
-                      <strong x-text="$store.format.bestAddress($store.poi.current) || 'Not listed'"></strong>
+                  <div class="visitor-details">
+                    <div class="open-compact" :class="$store.format.openStatusClass($store.poi.current)">
+                      <span x-text="$store.format.openStatus($store.poi.current)"></span>
+                      <small x-show="$store.format.hoursDetail($store.poi.current)" x-text="$store.format.hoursDetail($store.poi.current)"></small>
                     </div>
-                    <div>
-                      <span>Hours</span>
-                      <strong x-text="$store.format.openStatus($store.poi.current)"></strong>
+                    <div class="contact-card">
+                      <template x-for="item in $store.format.contactLinks($store.poi.current)" :key="item.kind">
+                        <a :href="item.href" :target="item.kind === 'phone' ? null : '_blank'" :class="'contact-link ' + item.kind">
+                          <span x-text="item.label"></span>
+                          <strong x-text="item.value"></strong>
+                        </a>
+                      </template>
                     </div>
-                    <div>
-                      <span>Phone</span>
-                      <strong x-text="$store.format.bestPhone($store.poi.current) || 'Not listed'"></strong>
-                    </div>
-                  </div>
-                  <div class="action-grid">
-                    <a :href="$store.format.bestWebsite($store.poi.current)" x-show="$store.format.bestWebsite($store.poi.current)" target="_blank">Website</a>
-                    <a :href="$store.poi.mapsUrl()" target="_blank">Maps</a>
-                    <a :href="'tel:' + $store.format.bestPhone($store.poi.current)" x-show="$store.format.bestPhone($store.poi.current)">Call</a>
                   </div>
                 </div>
               </section>

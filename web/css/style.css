@@ -257,10 +257,19 @@ button { cursor: pointer; }
 }
 .feed-search-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
-  align-items: center;
+  grid-template-columns: 1fr;
   gap: 8px;
   margin: -2px 0 12px;
+}
+.feed-search-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.feed-search-submit {
+  min-width: 86px;
+  height: 48px;
 }
 .option-toggle {
   min-height: 48px;
@@ -275,6 +284,7 @@ button { cursor: pointer; }
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
+  justify-content: flex-start;
 }
 .option-toggle input {
   width: 16px;
@@ -349,7 +359,7 @@ button { cursor: pointer; }
 .mini-place { text-align: left; padding: 12px; }
 .mini-place span, .mini-place small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mini-place small { color: var(--muted); margin-top: 4px; }
-.data-status-grid, .atlas-status-grid {
+.data-status-grid {
   display: grid;
   gap: 10px;
   margin-top: 16px;
@@ -357,21 +367,21 @@ button { cursor: pointer; }
 .data-status-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.data-status-grid div, .atlas-status-grid div {
+.data-status-grid div {
   min-width: 0;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: rgba(255,255,255,.78);
   padding: 11px 12px;
 }
-.data-status-grid span, .atlas-status-grid span {
+.data-status-grid span {
   display: block;
   color: var(--muted);
   font-size: 11px;
   font-weight: 800;
   text-transform: uppercase;
 }
-.data-status-grid strong, .atlas-status-grid strong {
+.data-status-grid strong {
   display: block;
   margin-top: 3px;
   overflow: hidden;
@@ -382,45 +392,55 @@ button { cursor: pointer; }
 }
 
 .atlas {
-  height: calc(100vh - 52px);
-  display: grid;
-  grid-template-columns: 430px minmax(0, 1fr);
-  overflow: hidden;
+  min-height: calc(100vh - 52px);
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
 }
 .atlas-rail {
   background: var(--panel);
-  border-right: 1px solid var(--line);
+  border-top: 1px solid var(--line);
   display: flex;
   flex-direction: column;
   min-height: 0;
 }
-.rail-section { padding: 18px 18px 10px; }
+.rail-section {
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 18px 18px 8px;
+}
 .rail-section h2 { margin: 4px 0; font-size: 28px; }
 .rail-section p { margin: 0; color: var(--muted); }
-.atlas-status-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
-  align-items: stretch;
+.atlas-category-strip {
+  max-width: 1240px;
+  width: calc(100% - 36px);
+  margin: 0 auto;
+  top: 52px;
 }
-.atlas-status-grid .secondary-button { height: 100%; min-height: 48px; }
-.rail-command { margin: 8px 18px 12px; }
-.rail-command .suggestions { right: 0; }
-.layer-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; padding: 0 18px 14px; }
-.layer-toggle {
-  min-height: 42px;
-  display: flex;
+.atlas-search-panel {
+  max-width: 1240px;
+  width: calc(100% - 36px);
+  margin: 0 auto 12px;
+  position: relative;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  background: white;
-  border-radius: 8px;
 }
-.layer-toggle.active { border-color: var(--accent); background: #eef7f4; }
+.atlas-search-panel .suggestions { left: 0; right: auto; top: calc(100% + 6px); width: min(520px, 100%); }
 .layer-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dot); }
 .rail-tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .rail-tabs button { height: 42px; border: 0; background: white; color: var(--muted); }
 .rail-tabs button.active { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
-.rail-scroll { min-height: 0; overflow: auto; padding: 12px 18px 18px; display: grid; gap: 10px; align-content: start; }
+.rail-scroll {
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  padding: 12px 18px 24px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px;
+  align-content: start;
+}
 .place-card { display: grid; grid-template-columns: 78px minmax(0, 1fr); gap: 12px; padding: 10px; text-align: left; }
 .place-card.selected { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(15,118,110,.12); }
 .thumb {
@@ -432,6 +452,18 @@ button { cursor: pointer; }
 }
 .place-body { min-width: 0; }
 .place-body h3 { margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.place-body h3 button {
+  max-width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 .place-body p { margin: 4px 0 10px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-actions { display: flex; gap: 6px; }
 .place-actions button, .close-button {
@@ -442,7 +474,7 @@ button { cursor: pointer; }
   background: white;
 }
 .place-actions button.active { color: var(--danger); border-color: var(--danger); }
-.map-stage { position: relative; min-width: 0; }
+.map-stage { position: relative; min-width: 0; height: clamp(340px, 52vh, 620px); }
 #map { width: 100%; height: 100%; background: #e6ece8; }
 .leaflet-container { font-family: var(--font); }
 .atlas-marker {
@@ -551,8 +583,8 @@ button { cursor: pointer; }
     padding: 10px 0;
   }
   .home-category-strip button { min-height: 48px; font-size: 18px; }
-  .feed-search-panel { grid-template-columns: 1fr; }
-  .option-toggle { justify-content: center; }
+  .feed-search-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .feed-search-submit { min-width: 78px; padding: 0 10px; }
   .home-place-card {
     grid-template-columns: 86px minmax(0, 1fr);
     min-height: 120px;
@@ -563,8 +595,7 @@ button { cursor: pointer; }
   .home-place-card .place-body h3 { font-size: 18px; white-space: normal; }
   .home-place-card .place-body p { font-size: 13px; margin-bottom: 10px; }
   .home-place-card .place-actions button { width: 34px; height: 34px; font-size: 16px; }
-  .signal-grid, .data-status-grid, .atlas-status-grid { grid-template-columns: 1fr; }
+  .signal-grid, .data-status-grid { grid-template-columns: 1fr; }
   .atlas { min-height: calc(100vh - 48px); }
   .atlas-rail { min-height: 45vh; }
-  .layer-grid { grid-template-columns: 1fr; }
 }

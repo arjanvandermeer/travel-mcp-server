@@ -657,23 +657,15 @@ Alpine.store('atlas', {
   places: [],
   selected: null,
   loading: false,
+  searchOpen: false,
   city: null,
   _lastKey: '',
   _fetchDebounced: null,
   title() {
-    return this.city?.name ? `${this.city.name} map` : 'Travel map';
+    return this.city?.name ? `${this.city.name} map` : 'Map';
   },
   contextLine() {
     return this.city?.country_code ? `${this.city.country_code} · live map places` : 'Search or move the map to discover places.';
-  },
-  resultsLabel() {
-    if (this.loading) return 'Loading';
-    if (this.map && this.map.getZoom() < 8) return 'Zoom in';
-    return `${this.places.length.toLocaleString()} visible`;
-  },
-  layerCountLabel() {
-    const count = this.activeLayers.size;
-    return `${count} ${count === 1 ? 'layer' : 'layers'}`;
   },
   activate() {
     requestAnimationFrame(() => this.initMap());
@@ -715,12 +707,16 @@ Alpine.store('atlas', {
     this._lastKey = '';
     this.fetchMapPlaces();
   },
-  resetView() {
-    this.activeLayers = new Set(['accommodation', 'dining', 'attractions']);
-    this.selected = null;
-    this._lastKey = '';
-    this.seedFromDiscovery();
-    this.fetchMapPlaces();
+  toggleSearch() {
+    this.searchOpen = !this.searchOpen;
+    if (this.searchOpen) {
+      requestAnimationFrame(() => document.getElementById('command-search')?.focus());
+    }
+  },
+  feedCount(key) {
+    const types = this.layers.find(layer => layer.key === key)?.types || [];
+    const typeSet = new Set(types);
+    return this.places.filter(poi => typeSet.has(poi.poi_type)).length;
   },
   activeTypes() {
     return LAYERS.filter(layer => this.activeLayers.has(layer.key)).flatMap(layer => layer.types);
@@ -739,7 +735,7 @@ Alpine.store('atlas', {
       ne_lat: b.getNorth().toFixed(4),
       ne_lng: b.getEast().toFixed(4),
       types: this.activeTypes().join(','),
-      limit: 300,
+      limit: 500,
     };
     const key = JSON.stringify(params);
     if (key === this._lastKey) return;
