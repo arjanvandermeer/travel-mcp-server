@@ -443,7 +443,7 @@ Alpine.store('discovery', {
   eyebrow() {
     if (this.locationState === 'requesting') return 'Finding your city';
     if (this.source === 'location') return 'Location discovery';
-    return this.source === 'local' ? 'Discover' : 'Random discovery';
+    return this.source === 'local' ? 'DISCOVER' : 'Random discovery';
   },
   cityTitle() {
     if (this.locationState === 'requesting') return 'Locating you';
