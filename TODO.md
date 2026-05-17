@@ -278,7 +278,7 @@ already store but don't yet expose through search parameters.
 ### 2026-05-17
 
 #### Approval Needed
-- [ ] **High** `.github/workflows/codebase-maintenance.yml`: Confirm the repository is allowed to run `openai/codex-action@v1` with `OPENAI_API_KEY` and to create automated TODO update PRs via `peter-evans/create-pull-request@v7`. Recommended next action: add the secret, verify branch protection permits PR creation, and run the workflow manually with `force=true` before relying on automated runs.
+- [ ] **Deferred** `.github/workflows/codebase-maintenance.yml`: Owner prefers not to enable cloud-based TODO mutation for now. Keep the workflow unverified/unused and run maintenance audits locally; future direction may be GitHub issue creation instead of direct `TODO.md` updates.
 - [x] **High** `.github/workflows/ci.yml`: CI now blocks on `npm audit --audit-level=high`; fixed current dependency advisories with `npm audit fix` and confirmed `npm audit --audit-level=moderate` reports 0 vulnerabilities.
 
 #### Fixes And Risks
@@ -287,17 +287,17 @@ already store but don't yet expose through search parameters.
 - [x] **Medium** `src/api/search.js`: Guarded optional background enrichment so route tests and partial DB mocks no longer emit noisy `batchEnrichPOIs` errors.
 
 #### Test Coverage
-- [ ] **Medium** `.github/workflows/codebase-maintenance.yml`: The new maintenance workflow has unit coverage for the gate script but has not been exercised end-to-end in GitHub Actions. Recommended next action: use `workflow_dispatch` with `force=true` after secrets are configured and confirm it opens a PR containing only `TODO.md`.
+- [ ] **Deferred** `.github/workflows/codebase-maintenance.yml`: End-to-end GitHub Actions verification is intentionally paused while maintenance review remains local-first.
 - [ ] **Medium** `scripts/maintenance-review-gate.js`: Gate tests cover actor, age, force, and path filters, but not the real GitHub `workflow_run` checkout/diff behavior. Recommended next action: add a lightweight CI smoke check or document the manual verification result after the first run.
 
 #### Code Sprawl And Maintainability
-- [ ] **Medium** `src/database.js`: File is about 2,668 lines and remains the broadest ownership hotspot in the repo. Progress: response shaping helpers were extracted to `src/response-utils.js` with focused unit coverage. Recommended next action: split by domain when touching related code, starting with POI search/enrichment and import/logging helpers.
-- [ ] **Medium** `src/tools-config.js`: File is about 1,694 lines and combines MCP schemas, descriptions, and handler wiring. Recommended next action: split large tool groups into focused modules while preserving the exported contract.
+- [ ] **Medium** `src/database.js`: File is about 2,683 lines and remains the broadest ownership hotspot in the repo. Progress: response shaping helpers were extracted to `src/response-utils.js`, and stale pending enrichment restarts now have a cooldown with regression coverage. Recommended next action: split by domain when touching related code, starting with POI search/enrichment and import/logging helpers.
+- [ ] **Medium** `src/tools-config.js`: File is about 1,413 lines after extracting POI view/nearby helpers to `src/poi-view-utils.js`. Recommended next action: split large tool schema groups and handler wiring into focused modules while preserving the exported contract.
 - [x] **Medium** `web/js/app.js`, `web/css/style.css`: Split frontend map constants, marker utilities, format store logic, and dossier-specific CSS into focused modules while preserving the existing `web/*` UI changes. Verified syntax, lint, audit, and full tests.
-- [ ] **Medium** `src/index-http.js`, `src/google-places.js`: These files are still near/over 800 lines and are likely to keep accumulating responsibilities. Recommended next action: avoid adding new feature work directly to these files without extracting route/client/enrichment helpers first.
+- [x] **Medium** `src/index-http.js`, `src/google-places.js`: Reduced both below 800 lines by extracting HTTP static helpers and Google Places matching helpers, with focused unit coverage. Verified syntax, lint, audit, and full tests.
 
 #### Performance And Operations
-- [ ] **Medium** `.github/workflows/codebase-maintenance.yml`: The long-running review job captures lint, tests, and audit output before invoking Codex, which is useful but can become expensive once the suite grows. Recommended next action: after the first GitHub run, review runtime and consider targeted test subsets plus a manual full-suite mode if necessary.
+- [ ] **Deferred** `.github/workflows/codebase-maintenance.yml`: Cloud review runtime/cost tuning is paused while audits run locally.
 - [x] **Low** `src/import-geonames-postgres.js`: Converted the three `importId` bindings to `const`; `npm run lint` now reports no warnings.
 
 #### Dependency Audit
