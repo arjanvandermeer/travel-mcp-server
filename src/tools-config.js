@@ -337,6 +337,42 @@ const baseToolsConfig = [
     },
   },
   {
+    name: 'find_food_districts',
+    description: 'Find restaurant-dense food districts in a city using spatial clustering. Returns cluster centroid, restaurant count, top cuisines, price levels where available, and a district name based on nearest landmark or city fallback.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        city_name: {
+          type: 'string',
+          description: 'City name to search in.',
+        },
+        country_code: {
+          type: 'string',
+          description: 'Optional 2-letter country code to disambiguate the city.',
+        },
+        state: {
+          type: 'string',
+          description: 'Optional state/province code or full name.',
+        },
+        radius_km: {
+          type: 'number',
+          description: 'Optional search radius around the city center. Defaults from city population.',
+        },
+        min_restaurants: {
+          type: 'number',
+          description: 'Minimum restaurants required in a cluster (default: 5, min used by query: 3).',
+          default: 5,
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum districts to return (default: 10, max: 100).',
+          default: 10,
+        },
+      },
+      required: ['city_name'],
+    },
+  },
+  {
     name: 'search_pois',
     description: 'Search for Points of Interest (attractions, monuments, museums, landmarks, buildings, etc.). Returns JSON results with coordinates (osm_latitude, osm_longitude), ratings, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location. IMPORTANT: Use this tool to get coordinates of landmarks, then use those coordinates with search_hotels or search_restaurants to find places nearby. Example workflow: search_pois(query="Empire State Building") returns coordinates, then search_restaurants(latitude=40.748, longitude=-73.985, query="Starbucks") finds nearby Starbucks.',
     inputSchema: {
@@ -1057,6 +1093,34 @@ export async function executeToolHandler(name, args, db, options = {}) {
           };
         }
         return { content: [{ type: 'text', text: JSON.stringify(budget, null, 2) }] };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+        };
+      }
+    }
+
+    case 'find_food_districts': {
+      try {
+        const districts = await db.findFoodDistricts({
+          cityName: args.city_name,
+          countryCode: args.country_code,
+          state: args.state,
+          radiusKm: args.radius_km,
+          minRestaurants: args.min_restaurants,
+          limit: validateLimit(args.limit, 10, 100),
+        });
+        if (!districts) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify({ error: 'City not found' }, null, 2) }],
+          };
+        }
+        return {
+          content: [{ type: 'text', text: JSON.stringify(districts, null, 2) }],
+          structuredContent: districts,
+        };
       } catch (error) {
         return {
           isError: true,

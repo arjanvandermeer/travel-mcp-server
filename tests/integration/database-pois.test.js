@@ -1118,6 +1118,56 @@ describe('TravelDatabase POI Search Functions', () => {
     });
   });
 
+  describe('findFoodDistricts', () => {
+    it('should build a PostGIS clustering query for food districts', async () => {
+      mockPool.setResponse('geonames_cities', dbResult([{
+        geoname_id: 1609350,
+        name: 'Bangkok',
+        country_code: 'TH',
+        latitude: 13.75,
+        longitude: 100.5,
+        population: 8000000,
+      }]));
+      mockPool.setResponse('ST_ClusterDBSCAN', dbResult([{
+        cluster_id: 0,
+        name: 'Sukhumvit',
+        restaurant_count: 12,
+        centroid_latitude: 13.74,
+        centroid_longitude: 100.56,
+        top_cuisines: ['thai', 'japanese'],
+        price_range: ['PRICE_LEVEL_MODERATE'],
+        name_source: 'nearest_landmark',
+      }]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.findFoodDistricts({
+        cityName: 'Bangkok',
+        countryCode: 'TH',
+        minRestaurants: 6,
+        limit: 4,
+      });
+
+      const calls = mockPool.getCalls();
+      const clusterCall = calls.find(c => c.sql.includes('ST_ClusterDBSCAN'));
+      assert.ok(clusterCall, 'Should use ST_ClusterDBSCAN');
+      assert.ok(clusterCall.sql.includes('ST_Transform(location, 3857)'), 'Should cluster in projected meters');
+      assert.ok(clusterCall.sql.includes('array_agg(DISTINCT cuisine)'), 'Should aggregate cuisines');
+      assert.ok(clusterCall.sql.includes('google_price_level'), 'Should include price levels');
+      assert.strictEqual(clusterCall.params[3], 350, 'Should use meter-based cluster radius');
+      assert.strictEqual(clusterCall.params[4], 6, 'Should bind min restaurant count');
+      assert.deepStrictEqual(result.districts[0].top_cuisines, ['thai', 'japanese']);
+    });
+
+    it('should return null when city is not found for food districts', async () => {
+      mockPool.setResponse('geonames_cities', emptyResult());
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.findFoodDistricts({ cityName: 'Atlantis' });
+
+      assert.strictEqual(result, null);
+    });
+  });
+
   describe('addFavoriteStatus', () => {
     it('should return POIs unchanged when no userId', async () => {
       db = new TravelDatabase({ pool: mockPool });

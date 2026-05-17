@@ -20,6 +20,7 @@ function createMockDb(overrides = {}) {
     searchPOIs: async () => [],
     searchPOIsNearCoordinates: async () => [],
     getDiningBudget: async () => null,
+    findFoodDistricts: async () => null,
     getPOIDetails: async () => null,
     getStats: async () => ({ total_pois: 100, total_cities: 50 }),
     batchEnrichPOIs: async () => {},
@@ -562,6 +563,58 @@ describe('executeToolHandler: get_dining_budget', () => {
     assert.ok(tool);
     assert.deepStrictEqual(tool.inputSchema.required, ['city_name']);
     assert.ok(tool.inputSchema.properties.cuisine);
+  });
+});
+
+// =============================================================================
+// find_food_districts
+// =============================================================================
+
+describe('executeToolHandler: find_food_districts', () => {
+  it('should return food districts with structured content', async () => {
+    let capturedArgs;
+    const districts = {
+      city: 'Bangkok',
+      country_code: 'TH',
+      districts: [{ name: 'Sukhumvit', restaurant_count: 12 }],
+    };
+    const db = createMockDb({
+      findFoodDistricts: async (args) => { capturedArgs = args; return districts; },
+    });
+
+    const result = await executeToolHandler('find_food_districts', {
+      city_name: 'Bangkok',
+      country_code: 'TH',
+      min_restaurants: 6,
+      limit: 200,
+    }, db);
+
+    assert.deepStrictEqual(parseResponse(result), districts);
+    assert.deepStrictEqual(result.structuredContent, districts);
+    assert.deepStrictEqual(capturedArgs, {
+      cityName: 'Bangkok',
+      countryCode: 'TH',
+      state: undefined,
+      radiusKm: undefined,
+      minRestaurants: 6,
+      limit: 100,
+    });
+  });
+
+  it('should return an error when food district city is not found', async () => {
+    const db = createMockDb({ findFoodDistricts: async () => null });
+    const result = await executeToolHandler('find_food_districts', { city_name: 'Atlantis' }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /City not found/);
+  });
+
+  it('should expose find_food_districts schema', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    const tool = tools.find(t => t.name === 'find_food_districts');
+    assert.ok(tool);
+    assert.deepStrictEqual(tool.inputSchema.required, ['city_name']);
+    assert.ok(tool.inputSchema.properties.min_restaurants);
+    assert.ok(tool.inputSchema.properties.radius_km);
   });
 });
 

@@ -101,6 +101,7 @@ const DINING_PRICE_ESTIMATES_USD = {
 };
 
 const DINING_POI_TYPES = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+const attractionTypesForClusterNames = ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle'];
 
 function normalizeImportKeyword(value) {
   return String(value || '')
@@ -1494,6 +1495,104 @@ export class TravelDatabase {
     `, params);
 
     return this.buildDiningBudgetSummary(result.rows, city, cuisine);
+  }
+
+  async findFoodDistricts({ cityName, countryCode = null, state = null, radiusKm = null, minRestaurants = 5, limit = 10 }) {
+    if (!cityName) {
+      throw new Error('cityName is required');
+    }
+
+    const city = await this.getCityByName(cityName, countryCode, state);
+    if (!city) {
+      return null;
+    }
+
+    const searchRadius = radiusKm || this.getRadiusForPopulation(city.population || 100000);
+    const clusterRadiusMeters = 350;
+    const minPoints = Math.max(3, Math.min(Number(minRestaurants) || 5, 25));
+    const resultLimit = Math.min(Number(limit) || 10, SEARCH_LIMIT_MAX);
+    const params = [
+      city.latitude,
+      city.longitude,
+      searchRadius,
+      clusterRadiusMeters,
+      minPoints,
+      DINING_POI_TYPES,
+      attractionTypesForClusterNames,
+      resultLimit,
+    ];
+
+    const result = await this.pool.query(`
+      WITH food AS (
+        SELECT
+          p.osm_id,
+          p.name,
+          p.poi_type,
+          p.cuisine,
+          p.location,
+          g.price_level as google_price_level
+        FROM osm_pois p
+        LEFT JOIN osm_google_mappings m ON p.osm_id = m.osm_id AND m.mapping_status = 'active'
+        LEFT JOIN google_places g ON m.google_place_id = g.google_place_id
+        WHERE p.name IS NOT NULL
+          AND p.poi_type = ANY($6)
+          AND ST_DWithin(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
+            $3::float8 * 1000
+          )
+      ),
+      clustered AS (
+        SELECT
+          *,
+          ST_ClusterDBSCAN(ST_Transform(location, 3857), eps := $4, minpoints := $5) OVER () as cluster_id
+        FROM food
+      ),
+      aggregated AS (
+        SELECT
+          cluster_id,
+          COUNT(*)::int as restaurant_count,
+          ST_Y(ST_Centroid(ST_Collect(location))) as centroid_latitude,
+          ST_X(ST_Centroid(ST_Collect(location))) as centroid_longitude,
+          array_remove(array_agg(DISTINCT cuisine), NULL) as cuisines,
+          array_remove(array_agg(DISTINCT google_price_level), NULL) as price_levels
+        FROM clustered
+        WHERE cluster_id IS NOT NULL
+        GROUP BY cluster_id
+        HAVING COUNT(*) >= $5
+      )
+      SELECT
+        a.cluster_id,
+        COALESCE(landmark.name, $${params.length + 1} || ' food district ' || (a.cluster_id + 1)) as name,
+        a.restaurant_count,
+        a.centroid_latitude,
+        a.centroid_longitude,
+        a.cuisines[1:5] as top_cuisines,
+        a.price_levels as price_range,
+        CASE
+          WHEN landmark.name IS NOT NULL THEN 'nearest_landmark'
+          ELSE 'city_cluster'
+        END as name_source
+      FROM aggregated a
+      LEFT JOIN LATERAL (
+        SELECT p.name
+        FROM osm_pois p
+        WHERE p.name IS NOT NULL
+          AND p.poi_type = ANY($7)
+        ORDER BY p.location <-> ST_SetSRID(ST_MakePoint(a.centroid_longitude, a.centroid_latitude), 4326)
+        LIMIT 1
+      ) landmark ON true
+      ORDER BY a.restaurant_count DESC
+      LIMIT $8
+    `, [...params, city.name]);
+
+    return {
+      city: city.name,
+      country_code: city.country_code,
+      radius_km: searchRadius,
+      min_restaurants: minPoints,
+      districts: removeNullFields(result.rows),
+    };
   }
 
   /**
