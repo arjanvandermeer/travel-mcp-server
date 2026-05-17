@@ -313,7 +313,7 @@ button { cursor: pointer; }
   gap: 16px;
 }
 .signal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 16px 0; }
-.signal, .mini-place, .place-card, .nearby-row, .compare-row, .board-card, .empty-panel {
+.signal, .mini-place, .place-card, .board-card, .empty-panel {
   border: 1px solid var(--line);
   background: white;
   border-radius: 8px;
@@ -410,7 +410,7 @@ button { cursor: pointer; }
 .place-body h3 { margin: 0; font-size: 15px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-body p { margin: 4px 0 10px; color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .place-actions { display: flex; gap: 6px; }
-.place-actions button, .compare-row button, .close-button {
+.place-actions button, .close-button {
   width: 30px;
   height: 30px;
   border: 1px solid var(--line);
@@ -462,17 +462,6 @@ button { cursor: pointer; }
 .map-preview p { margin: 0 0 12px; color: var(--muted); }
 .close-button { position: absolute; right: 10px; top: 10px; }
 
-.radar-card {
-  border-radius: 8px;
-  padding: 16px;
-  background: radial-gradient(circle, transparent 0 28%, rgba(15,118,110,.15) 29% 30%, transparent 31% 54%, rgba(180,83,9,.18) 55% 56%, transparent 57%), #f8fafc;
-  border: 1px solid var(--line);
-  min-height: 160px;
-}
-.radar-target { font-weight: 800; }
-.radar-rings { display: flex; justify-content: space-between; margin-top: 96px; color: var(--muted); font-size: 12px; }
-.nearby-row, .compare-row { padding: 12px; display: flex; justify-content: space-between; gap: 12px; text-align: left; }
-.nearby-row small, .compare-row small { color: var(--muted); display: block; }
 .empty-panel { padding: 18px; color: var(--muted); }
 .empty-panel h3 { margin: 0 0 6px; color: var(--ink); }
 

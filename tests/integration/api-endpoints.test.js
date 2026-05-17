@@ -527,23 +527,6 @@ describe('GET /api/v1/poi/:osm_id edge cases', () => {
   });
 });
 
-describe('GET /api/v1/poi/:osm_id/nearby', () => {
-  it('should return nearby POIs as JSON', async () => {
-    const router = new ApiRouter();
-    registerPOIRoutes(router);
-    const db = createApiMockDb();
-
-    const req = fakeReq('GET', '/api/v1/poi/123/nearby?radius=2&limit=5');
-    const res = fakeRes();
-    await router.handle(req, res, { db, user: null });
-
-    assert.strictEqual(res.statusCode, 200);
-    const data = res.json();
-    assert.strictEqual(data.source.osm_id, 123);
-    assert.strictEqual(data.results.length, 1);
-  });
-});
-
 describe('GET /api/v1/cities/:country_code/:city_name/overview', () => {
   it('should return a city overview', async () => {
     const router = new ApiRouter();

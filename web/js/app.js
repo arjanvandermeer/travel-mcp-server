@@ -120,7 +120,6 @@ Alpine.store('route', {
 });
 
 Alpine.store('ui', {
-  railTab: 'places',
   focusCommand() {
     document.getElementById('command-search')?.focus();
   },
@@ -683,33 +682,10 @@ Alpine.store('atlas', {
   },
 });
 
-Alpine.store('radar', {
-  source: null,
-  results: [],
-  loading: false,
-  title() {
-    return this.source ? `Near ${this.source.name || this.source.osm_name}` : 'Pick a place to start';
-  },
-  async fromPoi(poi) {
-    if (!poi) return;
-    this.source = poi;
-    Alpine.store('ui').railTab = 'radar';
-    this.loading = true;
-    try {
-      const data = await apiGet(`/api/v1/poi/${poi.osm_id}/nearby`, { radius: 2, limit: 12 });
-      this.results = data.results || [];
-    } catch {
-      this.results = [];
-    }
-    this.loading = false;
-  },
-});
-
 Alpine.store('poi', {
   current: null,
   loading: false,
   enrichmentPolling: false,
-  tab: 'overview',
   note: '',
   _loadId: null,
   _pollTimer: null,
@@ -722,13 +698,11 @@ Alpine.store('poi', {
     this.stopEnrichmentPoll();
     this._loadId = osmId;
     this.loading = true;
-    this.tab = 'overview';
     try {
       this.current = await apiGet(`/api/v1/poi/${osmId}`);
       this.note = this.current.favorite_notes || '';
       const enrichmentMessage = this.current?._enrichment?.message;
       if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
-      await Alpine.store('radar').fromPoi(this.current);
       this.startEnrichmentPollIfNeeded();
     } catch {
       this.current = null;
@@ -786,7 +760,6 @@ Alpine.store('poi', {
         return;
       }
       this.stopEnrichmentPoll();
-      await Alpine.store('radar').fromPoi(updated);
     } catch (err) {
       console.warn('[Travel] POI enrichment poll failed:', err);
       this.enrichmentPolling = true;
@@ -853,18 +826,6 @@ Alpine.store('favorites', {
       items.forEach(item => used.add(item.osm_id || item.poi_osm_id));
       return { ...group, items };
     });
-  },
-});
-
-Alpine.store('compare', {
-  items: [],
-  has(poi) {
-    return this.items.some(item => item.osm_id === poi.osm_id);
-  },
-  toggle(poi) {
-    if (!poi) return;
-    if (this.has(poi)) this.items = this.items.filter(item => item.osm_id !== poi.osm_id);
-    else this.items = [...this.items, poi].slice(-4);
   },
 });
 

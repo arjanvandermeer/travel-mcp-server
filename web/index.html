@@ -134,8 +134,6 @@
                   <p x-text="$store.format.distance(poi)"></p>
                   <div class="place-actions" @click.stop>
                     <button title="Save" @click="$store.favorites.toggle(poi)" :class="{ active: poi.is_favorite }">♡</button>
-                    <button title="Compare" @click="$store.compare.toggle(poi)" :class="{ active: $store.compare.has(poi) }">⇄</button>
-                    <button title="Nearby radar" @click="$store.radar.fromPoi(poi); $store.route.goAtlas()">⌖</button>
                     <button title="Inspect" @click="$store.poi.open(poi.osm_id)">↗</button>
                   </div>
                 </div>
@@ -191,12 +189,7 @@
               </button>
             </template>
           </div>
-          <div class="rail-tabs">
-            <button :class="{ active: $store.ui.railTab === 'places' }" @click="$store.ui.railTab = 'places'">Places</button>
-            <button :class="{ active: $store.ui.railTab === 'radar' }" @click="$store.ui.railTab = 'radar'">Radar</button>
-            <button :class="{ active: $store.ui.railTab === 'compare' }" @click="$store.ui.railTab = 'compare'">Compare</button>
-          </div>
-          <div class="rail-scroll" x-show="$store.ui.railTab === 'places'">
+          <div class="rail-scroll">
             <template x-if="$store.atlas.loading">
               <div class="skeleton-stack"><div class="skeleton card"></div><div class="skeleton card"></div><div class="skeleton card"></div></div>
             </template>
@@ -214,43 +207,10 @@
                   <p x-text="$store.format.placeMeta(poi)"></p>
                   <div class="place-actions" @click.stop>
                     <button title="Save" @click="$store.favorites.toggle(poi)" :class="{ active: poi.is_favorite }">♡</button>
-                    <button title="Compare" @click="$store.compare.toggle(poi)" :class="{ active: $store.compare.has(poi) }">⇄</button>
-                    <button title="Nearby radar" @click="$store.radar.fromPoi(poi)">⌖</button>
                     <button title="Inspect" @click="$store.poi.open(poi.osm_id)">↗</button>
                   </div>
                 </div>
               </article>
-            </template>
-          </div>
-          <div class="rail-scroll" x-show="$store.ui.railTab === 'radar'">
-            <div class="radar-card">
-              <div class="radar-target" x-text="$store.radar.title()"></div>
-              <div class="radar-rings">
-                <span>5 min</span><span>15 min</span><span>30 min</span>
-              </div>
-            </div>
-            <template x-if="$store.radar.loading">
-              <div class="skeleton-stack"><div class="skeleton card"></div><div class="skeleton card"></div></div>
-            </template>
-            <template x-if="!$store.radar.loading && $store.radar.source && $store.radar.results.length === 0">
-              <div class="empty-panel"><h3>No nearby matches</h3><p>Try another place or move back to the Places tab.</p></div>
-            </template>
-            <template x-for="poi in $store.radar.results" :key="poi.osm_id">
-              <button class="nearby-row" @click="$store.poi.open(poi.osm_id)">
-                <span x-text="poi.name || poi.osm_name"></span>
-                <small x-text="$store.format.distance(poi)"></small>
-              </button>
-            </template>
-          </div>
-          <div class="rail-scroll" x-show="$store.ui.railTab === 'compare'">
-            <template x-if="$store.compare.items.length === 0">
-              <div class="empty-panel"><h3>Compare places</h3><p>Add places from cards or markers to see them side by side.</p></div>
-            </template>
-            <template x-for="poi in $store.compare.items" :key="poi.osm_id">
-              <div class="compare-row">
-                <div><strong x-text="poi.name || poi.osm_name"></strong><small x-text="$store.format.placeMeta(poi)"></small></div>
-                <button @click="$store.compare.toggle(poi)">×</button>
-              </div>
             </template>
           </div>
         </aside>
@@ -262,7 +222,6 @@
             <h3 x-text="$store.atlas.selected?.name || $store.atlas.selected?.osm_name"></h3>
             <p x-text="$store.format.placeMeta($store.atlas.selected || {})"></p>
             <div>
-              <button class="secondary-button compact" @click="$store.radar.fromPoi($store.atlas.selected)">Near this</button>
               <button class="primary-button compact" @click="$store.poi.open($store.atlas.selected.osm_id)">Dossier</button>
             </div>
           </div>
@@ -308,12 +267,7 @@
                     </div>
                   </template>
                 </div>
-                <div class="tabs">
-                  <button :class="{ active: $store.poi.tab === 'overview' }" @click="$store.poi.tab = 'overview'">Overview</button>
-                  <button :class="{ active: $store.poi.tab === 'nearby' }" @click="$store.poi.tab = 'nearby'">Nearby</button>
-                  <button :class="{ active: $store.poi.tab === 'data' }" @click="$store.poi.tab = 'data'">Data</button>
-                </div>
-                <div x-show="$store.poi.tab === 'overview'" class="copy-block">
+                <div class="copy-block">
                   <p x-text="$store.poi.summary()"></p>
                   <div class="inline-loading" x-show="$store.poi.isEnriching()" aria-live="polite">
                     <span class="tiny-spinner" aria-hidden="true"></span>
@@ -337,26 +291,15 @@
                     <a :href="$store.format.bestWebsite($store.poi.current)" x-show="$store.format.bestWebsite($store.poi.current)" target="_blank">Website</a>
                     <a :href="$store.poi.mapsUrl()" target="_blank">Maps</a>
                     <a :href="'tel:' + $store.format.bestPhone($store.poi.current)" x-show="$store.format.bestPhone($store.poi.current)">Call</a>
-                    <button @click="$store.radar.fromPoi($store.poi.current); $store.route.goAtlas()">Near this</button>
                   </div>
                 </div>
-                <div x-show="$store.poi.tab === 'nearby'" class="nearby-grid">
-                  <template x-for="poi in $store.radar.results" :key="poi.osm_id">
-                    <button class="nearby-row" @click="$store.poi.open(poi.osm_id)">
-                      <span x-text="poi.name || poi.osm_name"></span>
-                      <small x-text="$store.format.distance(poi)"></small>
-                    </button>
-                  </template>
-                </div>
-                <pre x-show="$store.poi.tab === 'data'" class="data-pane" x-text="JSON.stringify($store.poi.current, null, 2)"></pre>
               </section>
               <aside class="composer-panel">
                 <div class="panel-kicker">Planning</div>
                 <h2>Trip Composer</h2>
-                <p>Save private notes and keep this property ready for comparison.</p>
+                <p>Save private notes and keep this place handy for planning.</p>
                 <textarea placeholder="Notes for this place" x-model="$store.poi.note" @change="$store.favorites.saveNote($store.poi.current, $store.poi.note)"></textarea>
                 <div class="composer-actions">
-                  <button class="secondary-button" @click="$store.compare.toggle($store.poi.current)">Toggle compare</button>
                   <button class="primary-button" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
                 </div>
               </aside>
