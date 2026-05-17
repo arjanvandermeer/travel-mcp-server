@@ -3,24 +3,16 @@
 
 -- Enable PostGIS extension (should already be enabled, but ensures it)
 CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
--- Drop existing tables if they exist (for development)
-DROP TABLE IF EXISTS osm_google_mappings CASCADE;
-DROP TABLE IF EXISTS google_places CASCADE;
-DROP TABLE IF EXISTS import_sources CASCADE;
-DROP TABLE IF EXISTS import_log CASCADE;
-DROP TABLE IF EXISTS imports CASCADE;
-DROP TABLE IF EXISTS osm_pois CASCADE;
-DROP TABLE IF EXISTS hotels CASCADE;
-DROP TABLE IF EXISTS geonames_cities CASCADE;
-DROP TABLE IF EXISTS geonames_admin1_codes CASCADE;
-DROP TABLE IF EXISTS geonames_countries CASCADE;
-DROP TABLE IF EXISTS regions CASCADE;
+-- This schema is intentionally non-destructive. It creates missing tables,
+-- indexes, functions, and views without dropping existing data. Use
+-- `npm run db:reset` for an explicit destructive local reset.
 
 -- ============================================================================
 -- Import Tracking
 -- ============================================================================
-CREATE TABLE import_log (
+CREATE TABLE IF NOT EXISTS import_log (
     id SERIAL PRIMARY KEY,
     import_type VARCHAR(50) NOT NULL,        -- 'geonames_countries', 'geonames_cities', 'osm_all', 'osm_hotel', etc.
     source_file VARCHAR(500),                -- e.g., 'thailand-latest.osm.pbf', 'allCountries.txt'
@@ -39,7 +31,7 @@ CREATE TABLE import_log (
 -- Import Sources (Region Registry)
 -- Pre-seeded with 65 regions for automatic Geofabrik downloads
 -- ============================================================================
-CREATE TABLE import_sources (
+CREATE TABLE IF NOT EXISTS import_sources (
     id SERIAL PRIMARY KEY,
     keyword VARCHAR(100) UNIQUE NOT NULL,           -- Short name (e.g., 'france', 'thailand')
     source_url VARCHAR(500) NOT NULL,               -- Geofabrik download URL
@@ -54,14 +46,13 @@ CREATE TABLE import_sources (
     FOREIGN KEY (last_import_id) REFERENCES import_log(id)
 );
 
-CREATE INDEX idx_import_sources_enabled ON import_sources(enabled);
+CREATE INDEX IF NOT EXISTS idx_import_sources_enabled ON import_sources(enabled);
 
 -- ============================================================================
 -- Application Configuration
 -- Stores API keys and settings that can be managed via database
 -- ============================================================================
-DROP TABLE IF EXISTS app_config CASCADE;
-CREATE TABLE app_config (
+CREATE TABLE IF NOT EXISTS app_config (
     key VARCHAR(100) PRIMARY KEY,
     value TEXT,
     encrypted BOOLEAN DEFAULT FALSE,  -- Flag if value is encrypted
@@ -87,8 +78,7 @@ ON CONFLICT (key) DO NOTHING;
 -- Google API Usage Tracking
 -- Tracks daily API call counts for rate limiting
 -- ============================================================================
-DROP TABLE IF EXISTS google_api_usage CASCADE;
-CREATE TABLE google_api_usage (
+CREATE TABLE IF NOT EXISTS google_api_usage (
     date_key VARCHAR(10) PRIMARY KEY,    -- YYYY-MM-DD format
     call_count INTEGER NOT NULL DEFAULT 0,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
@@ -97,7 +87,7 @@ CREATE TABLE google_api_usage (
 -- ============================================================================
 -- GeoNames Countries
 -- ============================================================================
-CREATE TABLE geonames_countries (
+CREATE TABLE IF NOT EXISTS geonames_countries (
     iso_alpha2 VARCHAR(2) PRIMARY KEY,
     iso_alpha3 VARCHAR(3) NOT NULL,
     iso_numeric INTEGER,
@@ -119,12 +109,12 @@ CREATE TABLE geonames_countries (
     equivalent_fips_code VARCHAR(10)
 );
 
-CREATE INDEX idx_countries_name ON geonames_countries(country);
+CREATE INDEX IF NOT EXISTS idx_countries_name ON geonames_countries(country);
 
 -- ============================================================================
 -- GeoNames Admin1 Codes (States/Provinces)
 -- ============================================================================
-CREATE TABLE geonames_admin1_codes (
+CREATE TABLE IF NOT EXISTS geonames_admin1_codes (
     code VARCHAR(20) PRIMARY KEY,           -- e.g., 'US.NY', 'GB.ENG'
     country_code VARCHAR(2) NOT NULL,       -- ISO country code
     admin1_code VARCHAR(20) NOT NULL,       -- Admin1 code (e.g., 'NY', 'ENG')
@@ -134,14 +124,14 @@ CREATE TABLE geonames_admin1_codes (
     FOREIGN KEY (country_code) REFERENCES geonames_countries(iso_alpha2)
 );
 
-CREATE INDEX idx_admin1_country ON geonames_admin1_codes(country_code);
-CREATE INDEX idx_admin1_code ON geonames_admin1_codes(admin1_code);
-CREATE INDEX idx_admin1_name ON geonames_admin1_codes(name);
+CREATE INDEX IF NOT EXISTS idx_admin1_country ON geonames_admin1_codes(country_code);
+CREATE INDEX IF NOT EXISTS idx_admin1_code ON geonames_admin1_codes(admin1_code);
+CREATE INDEX IF NOT EXISTS idx_admin1_name ON geonames_admin1_codes(name);
 
 -- ============================================================================
 -- GeoNames Cities
 -- ============================================================================
-CREATE TABLE geonames_cities (
+CREATE TABLE IF NOT EXISTS geonames_cities (
     geoname_id INTEGER PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     ascii_name VARCHAR(200),
@@ -166,16 +156,16 @@ CREATE TABLE geonames_cities (
 );
 
 -- Geography index for fast ST_DWithin distance queries
-CREATE INDEX idx_geonames_cities_location_geog ON geonames_cities USING GIST((location::geography));
+CREATE INDEX IF NOT EXISTS idx_geonames_cities_location_geog ON geonames_cities USING GIST((location::geography));
 
 -- Other useful indexes
-CREATE INDEX idx_cities_country ON geonames_cities(country_code);
-CREATE INDEX idx_cities_country_admin1 ON geonames_cities(country_code, admin1_code);
-CREATE INDEX idx_cities_country_population ON geonames_cities(country_code, population DESC);
+CREATE INDEX IF NOT EXISTS idx_cities_country ON geonames_cities(country_code);
+CREATE INDEX IF NOT EXISTS idx_cities_country_admin1 ON geonames_cities(country_code, admin1_code);
+CREATE INDEX IF NOT EXISTS idx_cities_country_population ON geonames_cities(country_code, population DESC);
 
 -- Trigram indexes for fuzzy name search
-CREATE INDEX idx_cities_name_trgm ON geonames_cities USING GIN(name gin_trgm_ops);
-CREATE INDEX idx_cities_ascii_name_trgm ON geonames_cities USING GIN(ascii_name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_cities_name_trgm ON geonames_cities USING GIN(name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_cities_ascii_name_trgm ON geonames_cities USING GIN(ascii_name gin_trgm_ops);
 
 -- Note: Hotels are now stored in the POIs table with poi_type='hotel'
 -- This better reflects OSM's data model where hotels are just tourism POIs
@@ -183,7 +173,7 @@ CREATE INDEX idx_cities_ascii_name_trgm ON geonames_cities USING GIN(ascii_name 
 -- ============================================================================
 -- Regions (for "hotels in the Alps" style queries)
 -- ============================================================================
-CREATE TABLE regions (
+CREATE TABLE IF NOT EXISTS regions (
     id SERIAL PRIMARY KEY,
     name VARCHAR(200) NOT NULL,
     name_en VARCHAR(200),
@@ -201,14 +191,14 @@ CREATE TABLE regions (
 );
 
 -- Spatial index for polygon queries
-CREATE INDEX idx_regions_boundary ON regions USING GIST(boundary);
-CREATE INDEX idx_regions_name ON regions(name);
-CREATE INDEX idx_regions_type ON regions(region_type);
+CREATE INDEX IF NOT EXISTS idx_regions_boundary ON regions USING GIST(boundary);
+CREATE INDEX IF NOT EXISTS idx_regions_name ON regions(name);
+CREATE INDEX IF NOT EXISTS idx_regions_type ON regions(region_type);
 
 -- ============================================================================
 -- Google Places Data Storage
 -- ============================================================================
-CREATE TABLE google_places (
+CREATE TABLE IF NOT EXISTS google_places (
     google_place_id VARCHAR(200) PRIMARY KEY,
 
     -- Basic info
@@ -261,15 +251,15 @@ CREATE TABLE google_places (
     raw_response JSONB
 );
 
-CREATE INDEX idx_google_places_location ON google_places USING GIST(location);
-CREATE INDEX idx_google_places_name ON google_places(name);
-CREATE INDEX idx_google_places_rating ON google_places(rating DESC) WHERE rating IS NOT NULL;
-CREATE INDEX idx_google_places_types ON google_places USING GIN(types);
+CREATE INDEX IF NOT EXISTS idx_google_places_location ON google_places USING GIST(location);
+CREATE INDEX IF NOT EXISTS idx_google_places_name ON google_places(name);
+CREATE INDEX IF NOT EXISTS idx_google_places_rating ON google_places(rating DESC) WHERE rating IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_google_places_types ON google_places USING GIN(types);
 
 -- ============================================================================
 -- OSM to Google Places Mapping
 -- ============================================================================
-CREATE TABLE osm_google_mappings (
+CREATE TABLE IF NOT EXISTS osm_google_mappings (
     osm_id BIGINT PRIMARY KEY,
     google_place_id VARCHAR(200),
 
@@ -289,16 +279,16 @@ CREATE TABLE osm_google_mappings (
     FOREIGN KEY (google_place_id) REFERENCES google_places(google_place_id) ON DELETE SET NULL
 );
 
-CREATE INDEX idx_osm_google_mappings_google_id ON osm_google_mappings(google_place_id);
-CREATE INDEX idx_osm_google_mappings_status ON osm_google_mappings(mapping_status);
-CREATE INDEX idx_osm_google_mappings_mapped_at ON osm_google_mappings(mapped_at DESC);
+CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_google_id ON osm_google_mappings(google_place_id);
+CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_status ON osm_google_mappings(mapping_status);
+CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_mapped_at ON osm_google_mappings(mapped_at DESC);
 
 -- ============================================================================
 -- POIs (Points of Interest)
 -- All types: hotels, restaurants, attractions, monuments, museums, etc.
 -- Unified table matching OSM's data model
 -- ============================================================================
-CREATE TABLE osm_pois (
+CREATE TABLE IF NOT EXISTS osm_pois (
     osm_id BIGINT PRIMARY KEY,
     osm_type VARCHAR(10) NOT NULL,              -- 'node', 'way', 'relation'
     poi_type VARCHAR(50) NOT NULL,              -- 'hotel', 'restaurant', 'attraction', 'monument', etc.
@@ -333,21 +323,20 @@ CREATE TABLE osm_pois (
 );
 
 -- Geography index for fast ST_DWithin distance queries
-CREATE INDEX idx_osm_pois_location_geog ON osm_pois USING GIST((location::geography));
-CREATE INDEX idx_osm_pois_location ON osm_pois USING GIST(location);
+CREATE INDEX IF NOT EXISTS idx_osm_pois_location_geog ON osm_pois USING GIST((location::geography));
+CREATE INDEX IF NOT EXISTS idx_osm_pois_location ON osm_pois USING GIST(location);
 
 -- Type and lookup indexes
-CREATE INDEX idx_osm_pois_type ON osm_pois(poi_type);
-CREATE INDEX idx_osm_pois_type_city ON osm_pois(poi_type, nearest_city_id);
-CREATE INDEX idx_osm_pois_source_region ON osm_pois(source_region);
-CREATE INDEX idx_osm_pois_nearest_city_id ON osm_pois(nearest_city_id) WHERE nearest_city_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_osm_pois_type ON osm_pois(poi_type);
+CREATE INDEX IF NOT EXISTS idx_osm_pois_type_city ON osm_pois(poi_type, nearest_city_id);
+CREATE INDEX IF NOT EXISTS idx_osm_pois_source_region ON osm_pois(source_region);
+CREATE INDEX IF NOT EXISTS idx_osm_pois_nearest_city_id ON osm_pois(nearest_city_id) WHERE nearest_city_id IS NOT NULL;
 
 -- Trigram index for fuzzy name search
-CREATE INDEX idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);
-CREATE INDEX idx_osm_pois_name_en_trgm ON osm_pois USING GIN(name_en gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_osm_pois_name_en_trgm ON osm_pois USING GIN(name_en gin_trgm_ops);
 
 -- Enable trigram extension for fuzzy name search
-CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- ============================================================================
 -- Enriched POIs View
@@ -620,12 +609,8 @@ $$ LANGUAGE plpgsql;
 -- User Authentication (Optional)
 -- Enables per-user features like API limit bypass, favorites, preferences
 -- ============================================================================
-DROP TABLE IF EXISTS user_favorites CASCADE;
-DROP TABLE IF EXISTS user_config CASCADE;
-DROP TABLE IF EXISTS user_tokens CASCADE;
-DROP TABLE IF EXISTS users CASCADE;
 
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     google_id VARCHAR(255) UNIQUE,           -- Google OAuth subject ID
     email VARCHAR(255) UNIQUE NOT NULL,
@@ -636,10 +621,10 @@ CREATE TABLE users (
 );
 
 -- Note: email already has UNIQUE constraint index (users_email_key), no separate index needed
-CREATE INDEX idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_id IS NOT NULL;
 
 -- API tokens for authentication
-CREATE TABLE user_tokens (
+CREATE TABLE IF NOT EXISTS user_tokens (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     token VARCHAR(64) UNIQUE NOT NULL,       -- Secure random token
@@ -650,11 +635,11 @@ CREATE TABLE user_tokens (
     revoked_at TIMESTAMP                     -- NULL = active, set to revoke
 );
 
-CREATE INDEX idx_user_tokens_token ON user_tokens(token) WHERE revoked_at IS NULL;
-CREATE INDEX idx_user_tokens_user ON user_tokens(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_tokens_token ON user_tokens(token) WHERE revoked_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id);
 
 -- Per-user configuration (API limits, preferences, etc.)
-CREATE TABLE user_config (
+CREATE TABLE IF NOT EXISTS user_config (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     key VARCHAR(100) NOT NULL,
     value TEXT,
@@ -666,7 +651,7 @@ CREATE TABLE user_config (
 -- INSERT INTO user_config (user_id, key, value) VALUES (1, 'role', 'admin');
 
 -- User favorites
-CREATE TABLE user_favorites (
+CREATE TABLE IF NOT EXISTS user_favorites (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     poi_osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -674,8 +659,8 @@ CREATE TABLE user_favorites (
     PRIMARY KEY (user_id, poi_osm_id)
 );
 
-CREATE INDEX idx_user_favorites_user ON user_favorites(user_id);
-CREATE INDEX idx_user_favorites_poi ON user_favorites(poi_osm_id);
+CREATE INDEX IF NOT EXISTS idx_user_favorites_user ON user_favorites(user_id);
+CREATE INDEX IF NOT EXISTS idx_user_favorites_poi ON user_favorites(poi_osm_id);
 
 -- ============================================================================
 -- Verification Queries

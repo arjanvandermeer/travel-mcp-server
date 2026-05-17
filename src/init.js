@@ -5,12 +5,13 @@
  *
  * This script:
  * 1. Connects to PostgreSQL
- * 2. Reads and executes schema.sql
+ * 2. Reads and executes the non-destructive schema.sql
  * 3. Verifies PostGIS is working
  * 4. Shows database statistics
  *
  * Usage:
- *   node src/init-postgres.js
+ *   node src/init.js
+ *   node src/init.js --reset   # destructive local reset, then recreate schema
  */
 
 import pg from 'pg';
@@ -28,13 +29,44 @@ const __dirname = dirname(__filename);
 // Database connection string from environment or default
 const CONNECTION_STRING = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 
-async function initializeDatabase() {
+const RESET_TABLES = [
+  'user_favorites',
+  'user_config',
+  'user_tokens',
+  'users',
+  'osm_google_mappings',
+  'google_places',
+  'google_api_usage',
+  'import_sources',
+  'import_log',
+  'imports',
+  'osm_pois',
+  'hotels',
+  'geonames_cities',
+  'geonames_admin1_codes',
+  'geonames_countries',
+  'regions',
+  'app_config',
+];
+
+async function resetDatabase(client) {
+  console.log('\n⚠️  Destructive reset requested with --reset');
+  console.log('Dropping application tables before recreating schema...');
+  await client.query(`DROP TABLE IF EXISTS ${RESET_TABLES.join(', ')} CASCADE`);
+  console.log('✓ Existing application tables dropped');
+}
+
+async function initializeDatabase({ reset = false } = {}) {
   const client = new pg.Client({ connectionString: CONNECTION_STRING });
 
   try {
     console.log('Connecting to PostgreSQL...');
     await client.connect();
     console.log('✓ Connected to PostgreSQL');
+
+    if (reset) {
+      await resetDatabase(client);
+    }
 
     // Check PostGIS version
     console.log('\nChecking PostGIS extension...');
@@ -48,9 +80,9 @@ async function initializeDatabase() {
     console.log(`✓ Schema file loaded (${schemaSql.length} characters)`);
 
     // Execute schema
-    console.log('\nExecuting schema...');
+    console.log('\nExecuting non-destructive schema...');
     await client.query(schemaSql);
-    console.log('✓ Schema created successfully');
+    console.log('✓ Schema initialized successfully');
 
     // Verify tables were created
     console.log('\nVerifying tables...');
@@ -139,7 +171,7 @@ async function initializeDatabase() {
 
 // Run if called directly
 if (import.meta.url === `file://${process.argv[1]}`) {
-  initializeDatabase();
+  initializeDatabase({ reset: process.argv.includes('--reset') });
 }
 
-export { initializeDatabase };
+export { initializeDatabase, resetDatabase };

@@ -13,6 +13,7 @@
     "inspect:http": "node src/index-http.js & sleep 2 && npx @modelcontextprotocol/inspector --transport streamable-http --url http://localhost:3000/mcp; kill %1 2>/dev/null",
     "inspect:watch": "nodemon --exec 'npx @modelcontextprotocol/inspector' node src/index.js",
     "db:init": "node src/init.js",
+    "db:reset": "node src/init.js --reset",
     "db:import-geonames": "node src/import-geonames-postgres.js",
     "db:import": "node src/import-osm-pbf.js",
     "db:refresh": "node src/refresh-imports.js",

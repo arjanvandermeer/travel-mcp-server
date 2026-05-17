@@ -551,8 +551,11 @@ ST_Contains(polygon, point)
 ### Initialize Schema
 
 ```bash
-# Apply schema
+# Safely apply missing schema objects
 psql $DATABASE_URL < data/schema.sql
+
+# Destructive local development reset
+npm run db:reset
 ```
 
 ### Import Data

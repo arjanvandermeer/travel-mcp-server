@@ -23,7 +23,7 @@ See [GETTING_STARTED.md](GETTING_STARTED.md) for full setup instructions.
 
 ```bash
 npm install
-npm run db:init                                       # Create tables
+npm run db:init                                       # Safely create missing tables
 npm run db:import-geonames                            # Import ~150k cities
 node src/import-osm-pbf.js data/REGION.osm.pbf all    # Import OSM POIs
 npm start                                             # stdio (Claude Desktop)

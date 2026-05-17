@@ -193,7 +193,7 @@ EOF
 
 ## Step 4: Initialize Database Schema
 
-Now that PostgreSQL is running, create the database tables:
+Now that PostgreSQL is running, safely create any missing database tables:
 
 ```bash
 # Option 1: Using npm script (recommended)
@@ -201,6 +201,12 @@ npm run db:init
 
 # Option 2: Manual import
 psql postgresql://traveluser:travelpass@localhost:5432/travel < data/schema.sql
+```
+
+`data/schema.sql` is non-destructive and can be re-run without dropping existing travel data. For a destructive local development reset, run:
+
+```bash
+npm run db:reset
 ```
 
 **Verify the setup:**
@@ -830,9 +836,10 @@ node scripts/manage-config.js set google_places_api_key <google-api-key>
 node scripts/manage-config.js delete google_places_api_key
 
 # Database management
-npm run db:init                          # Initialize schema
+npm run db:init                          # Safely initialize missing schema objects
+npm run db:reset                         # Destructive local reset, then recreate schema
 psql $DATABASE_URL                       # Connect to database
-psql $DATABASE_URL < data/schema.sql     # Re-run schema
+psql $DATABASE_URL < data/schema.sql     # Safely re-run schema
 ```
 
 ### Docker PostgreSQL Commands
