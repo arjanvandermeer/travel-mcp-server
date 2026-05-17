@@ -291,9 +291,10 @@ already store but don't yet expose through search parameters.
 - [ ] **Medium** `scripts/maintenance-review-gate.js`: Gate tests cover actor, age, force, and path filters, but not the real GitHub `workflow_run` checkout/diff behavior. Recommended next action: add a lightweight CI smoke check or document the manual verification result after the first run.
 
 #### Code Sprawl And Maintainability
-- [ ] **Medium** `src/database.js`: File is about 2,725 lines and remains the broadest ownership hotspot in the repo. Recommended next action: split by domain when touching related code, starting with POI search/enrichment and import/logging helpers.
+- [ ] **Medium** `src/database.js`: File is about 2,668 lines and remains the broadest ownership hotspot in the repo. Progress: response shaping helpers were extracted to `src/response-utils.js` with focused unit coverage. Recommended next action: split by domain when touching related code, starting with POI search/enrichment and import/logging helpers.
 - [ ] **Medium** `src/tools-config.js`: File is about 1,694 lines and combines MCP schemas, descriptions, and handler wiring. Recommended next action: split large tool groups into focused modules while preserving the exported contract.
-- [ ] **Medium** `web/js/app.js`, `src/index-http.js`, `src/google-places.js`: These files are each over 800 lines and are likely to keep accumulating responsibilities. Recommended next action: avoid adding new feature work directly to these files without extracting route/client/enrichment helpers first.
+- [x] **Medium** `web/js/app.js`, `web/css/style.css`: Split frontend map constants, marker utilities, format store logic, and dossier-specific CSS into focused modules while preserving the existing `web/*` UI changes. Verified syntax, lint, audit, and full tests.
+- [ ] **Medium** `src/index-http.js`, `src/google-places.js`: These files are still near/over 800 lines and are likely to keep accumulating responsibilities. Recommended next action: avoid adding new feature work directly to these files without extracting route/client/enrichment helpers first.
 
 #### Performance And Operations
 - [ ] **Medium** `.github/workflows/codebase-maintenance.yml`: The long-running review job captures lint, tests, and audit output before invoking Codex, which is useful but can become expensive once the suite grows. Recommended next action: after the first GitHub run, review runtime and consider targeted test subsets plus a manual full-suite mode if necessary.
