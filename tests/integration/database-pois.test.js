@@ -512,6 +512,25 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(searchCall.params.includes('Hilton'), 'Should bind chain name');
     });
 
+    it('should post-filter coordinate searches by Google price level', async () => {
+      mockPool.setResponse('osm_pois', dbResult(samplePOIs));
+      mockPool.setResponse('google_places', dbResult([
+        { osm_id: 12345, google_price_level: 'PRICE_LEVEL_MODERATE', google_name: 'Grand Hotel Bangkok' },
+        { osm_id: 12346, google_price_level: 'PRICE_LEVEL_INEXPENSIVE', google_name: 'Thai Kitchen' },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const results = await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, ['restaurant'], 20, null, null, { priceLevel: 2 }, false, 5
+      );
+
+      assert.deepStrictEqual(results.map(p => p.osm_id), [12345]);
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes('ST_DWithin'));
+      assert.strictEqual(searchCall.params.at(-2), 60, 'Should over-fetch for price post-filtering');
+      assert.strictEqual(searchCall.params.at(-1), 0, 'Should reset offset when post-filtering by price');
+    });
+
     it('should over-fetch coordinate searches when filtering by open_at', async () => {
       mockPool.setResponse('osm_pois', dbResult([
         { ...samplePOIs[1], osm_opening_hours: 'Mo-Su 10:00-22:00' },
@@ -958,6 +977,64 @@ describe('TravelDatabase POI Search Functions', () => {
       // Enrichment metadata added
       assert.ok(result._enrichment, 'Should have _enrichment');
       assert.strictEqual(result._enrichment.status, 'complete');
+    });
+  });
+
+  describe('getDiningBudget', () => {
+    it('should aggregate city dining budget by Google price level', async () => {
+      mockPool.setResponse('geonames_cities', dbResult([{
+        geoname_id: 2988507,
+        name: 'Paris',
+        country_code: 'FR',
+        latitude: 48.8566,
+        longitude: 2.3522,
+        population: 2148000,
+      }]));
+      mockPool.setResponse('google_places', dbResult([
+        { google_price_level: 'PRICE_LEVEL_INEXPENSIVE', count: 3 },
+        { google_price_level: 'PRICE_LEVEL_MODERATE', count: 12 },
+        { google_price_level: 'PRICE_LEVEL_EXPENSIVE', count: 5 },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getDiningBudget({ cityName: 'Paris', countryCode: 'FR' });
+
+      assert.strictEqual(result.city, 'Paris');
+      assert.strictEqual(result.country_code, 'FR');
+      assert.strictEqual(result.sample_size, 20);
+      assert.strictEqual(result.data_quality, 'good');
+      assert.deepStrictEqual(result.estimated_usd_per_person, {
+        currency: 'USD',
+        low: 8,
+        median: 30,
+        high: 110,
+      });
+      assert.strictEqual(result.price_levels.length, 3);
+    });
+
+    it('should mark sparse dining budget data without returning ranges', async () => {
+      mockPool.setResponse('geonames_cities', dbResult([{
+        geoname_id: 1609350,
+        name: 'Bangkok',
+        country_code: 'TH',
+        latitude: 13.75,
+        longitude: 100.5,
+        population: 8000000,
+      }]));
+      mockPool.setResponse('google_places', dbResult([
+        { google_price_level: 'PRICE_LEVEL_MODERATE', count: 2 },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getDiningBudget({ cityName: 'Bangkok', countryCode: 'TH', cuisine: ['thai'] });
+
+      assert.strictEqual(result.sample_size, 2);
+      assert.strictEqual(result.data_quality, 'sparse');
+      assert.strictEqual(result.estimated_usd_per_person, null);
+      const calls = mockPool.getCalls();
+      const budgetCall = calls.find(c => c.sql.includes('g.price_level') && c.sql.includes('p.cuisine ILIKE'));
+      assert.ok(budgetCall, 'Should filter budget estimates by cuisine');
+      assert.ok(budgetCall.params.includes('%thai%'));
     });
   });
 

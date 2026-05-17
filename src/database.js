@@ -76,6 +76,32 @@ const IMPORT_SOURCE_COUNTRY_CODES = {
   nigeria: ['NG'],
 };
 
+const GOOGLE_PRICE_LEVELS = {
+  free: 'PRICE_LEVEL_FREE',
+  0: 'PRICE_LEVEL_FREE',
+  inexpensive: 'PRICE_LEVEL_INEXPENSIVE',
+  cheap: 'PRICE_LEVEL_INEXPENSIVE',
+  1: 'PRICE_LEVEL_INEXPENSIVE',
+  moderate: 'PRICE_LEVEL_MODERATE',
+  midrange: 'PRICE_LEVEL_MODERATE',
+  2: 'PRICE_LEVEL_MODERATE',
+  expensive: 'PRICE_LEVEL_EXPENSIVE',
+  3: 'PRICE_LEVEL_EXPENSIVE',
+  very_expensive: 'PRICE_LEVEL_VERY_EXPENSIVE',
+  luxury: 'PRICE_LEVEL_VERY_EXPENSIVE',
+  4: 'PRICE_LEVEL_VERY_EXPENSIVE',
+};
+
+const DINING_PRICE_ESTIMATES_USD = {
+  PRICE_LEVEL_FREE: { low: 0, median: 0, high: 0 },
+  PRICE_LEVEL_INEXPENSIVE: { low: 8, median: 12, high: 18 },
+  PRICE_LEVEL_MODERATE: { low: 18, median: 30, high: 45 },
+  PRICE_LEVEL_EXPENSIVE: { low: 45, median: 70, high: 110 },
+  PRICE_LEVEL_VERY_EXPENSIVE: { low: 110, median: 160, high: 250 },
+};
+
+const DINING_POI_TYPES = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+
 function normalizeImportKeyword(value) {
   return String(value || '')
     .toLowerCase()
@@ -707,6 +733,23 @@ export class TravelDatabase {
       .filter(Boolean);
   }
 
+  static normalizePriceLevel(value) {
+    if (value === null || value === undefined || value === '') return null;
+    const key = String(value).trim().toLowerCase();
+    return GOOGLE_PRICE_LEVELS[key] || null;
+  }
+
+  static priceLevelToNumber(priceLevel) {
+    switch (priceLevel) {
+      case 'PRICE_LEVEL_FREE': return 0;
+      case 'PRICE_LEVEL_INEXPENSIVE': return 1;
+      case 'PRICE_LEVEL_MODERATE': return 2;
+      case 'PRICE_LEVEL_EXPENSIVE': return 3;
+      case 'PRICE_LEVEL_VERY_EXPENSIVE': return 4;
+      default: return null;
+    }
+  }
+
   static buildHotelChainMatchSql(inputParam, mode) {
     const hotelChainMatch = `
       EXISTS (
@@ -826,6 +869,7 @@ export class TravelDatabase {
    * @param {string[]|null} params.dietary - Dietary restriction filter (e.g., ["vegan", "halal"])
    * @param {string|null} params.brand - Hotel brand filter
    * @param {string|null} params.chain - Hotel chain filter including known sub-brands
+   * @param {number|string|null} params.priceLevel - Google Places price level filter
    * @param {boolean} params.openNow - Filter to only currently open POIs
    * @param {Date|string|null} params.openAt - Filter to only POIs open at this time
    * @param {number} params.limit - Max results (default SEARCH_LIMIT_DEFAULT, capped at SEARCH_LIMIT_MAX)
@@ -848,6 +892,7 @@ export class TravelDatabase {
       dietary = null,     // Dietary restriction filter (e.g., ["vegan", "halal"])
       brand = null,       // Hotel brand filter
       chain = null,       // Hotel chain filter
+      priceLevel = null,  // Google Places price level filter
       openNow = false,    // Filter to only currently open POIs
       openAt = null,      // Filter to POIs open at a specific time
       limit: rawLimit = SEARCH_LIMIT_DEFAULT,
@@ -861,12 +906,14 @@ export class TravelDatabase {
     const cuisineList = TravelDatabase.normalizeExtraFilterList(cuisine);
     const amenityList = TravelDatabase.normalizeExtraFilterList(amenities);
     const dietaryList = TravelDatabase.normalizeExtraFilterList(dietary);
+    const normalizedPriceLevel = TravelDatabase.normalizePriceLevel(priceLevel);
     const extraDesc = [
       cuisineList.length > 0 && `cuisine=${cuisineList.join(',')}`,
       amenityList.length > 0 && `amenities=${amenityList.join(',')}`,
       dietaryList.length > 0 && `dietary=${dietaryList.join(',')}`,
       brand && `brand=${brand}`,
       chain && `chain=${chain}`,
+      normalizedPriceLevel && `priceLevel=${normalizedPriceLevel}`,
       openNow && 'openNow',
       openAt && `openAt=${openAt}`,
     ].filter(Boolean).join(', ');
@@ -972,7 +1019,7 @@ export class TravelDatabase {
     }
     // Case 2: Location only (city or coordinates)
     else if (!hasName && (hasCity || hasCoords)) {
-      const extraFilters = { cuisine, amenities, dietary, brand, chain };
+      const extraFilters = { cuisine, amenities, dietary, brand, chain, priceLevel: normalizedPriceLevel };
       if (hasCity) {
         const city = await this.getCityByName(cityName, countryCode, state);
         if (!city) {
@@ -1083,11 +1130,12 @@ export class TravelDatabase {
 
     const openAtDate = coerceOpenAt(openAt);
     const shouldFilterByHours = openNow || openAtDate;
+    const shouldFilterByPrice = !!normalizedPriceLevel;
 
     // For hours filtering, over-fetch and post-filter using Google or OSM opening hours.
-    const fetchLimit = shouldFilterByHours ? limit * 3 : limit;
+    const fetchLimit = (shouldFilterByHours || shouldFilterByPrice) ? limit * 3 : limit;
     // Replace the limit param (always the last one) with the potentially larger fetch limit
-    if (shouldFilterByHours) {
+    if (shouldFilterByHours || shouldFilterByPrice) {
       queryParams[queryParams.length - 1] = fetchLimit;
     }
 
@@ -1095,9 +1143,13 @@ export class TravelDatabase {
     const enriched = await this.enrichWithGoogleData(result.rows);
 
     let filtered = enriched;
-    if (shouldFilterByHours) {
-      filtered = this.filterOpenAt(enriched, openAtDate || new Date()).slice(0, limit);
+    if (shouldFilterByPrice) {
+      filtered = this.filterByPriceLevel(filtered, normalizedPriceLevel);
     }
+    if (shouldFilterByHours) {
+      filtered = this.filterOpenAt(filtered, openAtDate || new Date());
+    }
+    filtered = filtered.slice(0, limit);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
@@ -1116,6 +1168,10 @@ export class TravelDatabase {
 
   filterOpenNow(pois) {
     return this.filterOpenAt(pois, new Date());
+  }
+
+  filterByPriceLevel(pois, priceLevel) {
+    return pois.filter(poi => poi.google_price_level === priceLevel);
   }
 
   /**
@@ -1158,6 +1214,99 @@ export class TravelDatabase {
         ...(fav?.favorite_notes && { favorite_notes: fav.favorite_notes }),
       };
     });
+  }
+
+  buildDiningBudgetSummary(rows, city, cuisine = null) {
+    const counts = new Map();
+    let sampleSize = 0;
+
+    for (const row of rows) {
+      if (!row.google_price_level || !DINING_PRICE_ESTIMATES_USD[row.google_price_level]) continue;
+      const count = Number(row.count || 0);
+      counts.set(row.google_price_level, (counts.get(row.google_price_level) || 0) + count);
+      sampleSize += count;
+    }
+
+    const priceLevels = [...counts.entries()]
+      .map(([priceLevel, count]) => ({
+        price_level: priceLevel,
+        numeric_level: TravelDatabase.priceLevelToNumber(priceLevel),
+        count,
+        estimated_usd_per_person: DINING_PRICE_ESTIMATES_USD[priceLevel],
+      }))
+      .sort((a, b) => a.numeric_level - b.numeric_level);
+
+    const dataQuality = sampleSize >= 20 ? 'good' : sampleSize >= 5 ? 'limited' : 'sparse';
+    let range = null;
+
+    if (sampleSize >= 5) {
+      const expanded = [];
+      for (const item of priceLevels) {
+        for (let i = 0; i < item.count; i += 1) {
+          expanded.push(item.price_level);
+        }
+      }
+      const medianLevel = expanded[Math.floor((expanded.length - 1) / 2)];
+      const lowLevel = priceLevels[0]?.price_level;
+      const highLevel = priceLevels.at(-1)?.price_level;
+      range = {
+        currency: 'USD',
+        low: DINING_PRICE_ESTIMATES_USD[lowLevel].low,
+        median: DINING_PRICE_ESTIMATES_USD[medianLevel].median,
+        high: DINING_PRICE_ESTIMATES_USD[highLevel].high,
+      };
+    }
+
+    return {
+      city: city.name,
+      country_code: city.country_code,
+      cuisine: cuisine || null,
+      sample_size: sampleSize,
+      data_quality: dataQuality,
+      estimated_usd_per_person: range,
+      price_levels: priceLevels,
+    };
+  }
+
+  async getDiningBudget({ cityName, countryCode = null, state = null, cuisine = null }) {
+    if (!cityName) {
+      throw new Error('cityName is required');
+    }
+
+    const city = await this.getCityByName(cityName, countryCode, state);
+    if (!city) {
+      return null;
+    }
+
+    const params = [city.geoname_id, DINING_POI_TYPES];
+    let cuisineSql = '';
+    if (cuisine) {
+      const cuisineList = TravelDatabase.normalizeExtraFilterList(cuisine);
+      if (cuisineList.length > 0) {
+        const clauses = cuisineList.map(c => {
+          const escaped = c.replace(/[%_\\]/g, '\\$&');
+          params.push(`%${escaped}%`);
+          return `p.cuisine ILIKE $${params.length}`;
+        });
+        cuisineSql = ` AND (${clauses.join(' OR ')})`;
+      }
+    }
+
+    const result = await this.pool.query(`
+      SELECT
+        g.price_level as google_price_level,
+        COUNT(*)::int as count
+      FROM osm_pois p
+      JOIN osm_google_mappings m ON p.osm_id = m.osm_id AND m.mapping_status = 'active'
+      JOIN google_places g ON m.google_place_id = g.google_place_id
+      WHERE p.nearest_city_id = $1
+        AND p.poi_type = ANY($2)
+        AND g.price_level IS NOT NULL
+        ${cuisineSql}
+      GROUP BY g.price_level
+    `, params);
+
+    return this.buildDiningBudgetSummary(result.rows, city, cuisine);
   }
 
   /**
@@ -1229,9 +1378,11 @@ export class TravelDatabase {
 
     const openAtDate = coerceOpenAt(openAt);
     const shouldFilterByHours = openNow || openAtDate;
+    const normalizedPriceLevel = TravelDatabase.normalizePriceLevel(extraFilters?.priceLevel);
+    const shouldFilterByPrice = !!normalizedPriceLevel;
     // For hours filtering, over-fetch and post-filter (offset not applied since post-filtering changes counts)
-    const fetchLimit = shouldFilterByHours ? limit * 3 : limit;
-    const fetchOffset = shouldFilterByHours ? 0 : offset;
+    const fetchLimit = (shouldFilterByHours || shouldFilterByPrice) ? limit * 3 : limit;
+    const fetchOffset = (shouldFilterByHours || shouldFilterByPrice) ? 0 : offset;
     query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(fetchLimit, fetchOffset);
 
@@ -1239,9 +1390,13 @@ export class TravelDatabase {
     const enriched = await this.enrichWithGoogleData(result.rows);
 
     let filtered = enriched;
-    if (shouldFilterByHours) {
-      filtered = this.filterOpenAt(enriched, openAtDate || new Date()).slice(0, limit);
+    if (shouldFilterByPrice) {
+      filtered = this.filterByPriceLevel(filtered, normalizedPriceLevel);
     }
+    if (shouldFilterByHours) {
+      filtered = this.filterOpenAt(filtered, openAtDate || new Date());
+    }
+    filtered = filtered.slice(0, limit);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);

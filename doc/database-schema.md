@@ -555,6 +555,20 @@ WHERE LOWER(chain_name) = LOWER('Hilton')
 ORDER BY brand_name;
 ```
 
+### Restaurant price levels and dining budgets
+
+Restaurant price filters use Google Places `price_level` values after the initial indexed OSM search has been enriched:
+
+| Tool value | Google Places value |
+|------------|---------------------|
+| `0` / `free` | `PRICE_LEVEL_FREE` |
+| `1` / `inexpensive` | `PRICE_LEVEL_INEXPENSIVE` |
+| `2` / `moderate` | `PRICE_LEVEL_MODERATE` |
+| `3` / `expensive` | `PRICE_LEVEL_EXPENSIVE` |
+| `4` / `very_expensive` | `PRICE_LEVEL_VERY_EXPENSIVE` |
+
+`get_dining_budget` aggregates active Google Places mappings by city, optional cuisine, and price level. It returns sample size, a data-quality label, the price-level distribution, and USD per-person low/median/high estimates when at least 5 mapped venues have price data.
+
 ## PostGIS Reference
 
 All coordinates use **WGS84 (SRID 4326)**.

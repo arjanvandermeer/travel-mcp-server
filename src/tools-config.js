@@ -215,6 +215,13 @@ const baseToolsConfig = [
           ],
           description: 'Filter by dietary restriction support. Multiple values use AND logic (must support all). Based on OSM dietary tags.',
         },
+        price_level: {
+          oneOf: [
+            { type: 'number', enum: [0, 1, 2, 3, 4] },
+            { type: 'string', enum: ['free', 'inexpensive', 'moderate', 'expensive', 'very_expensive'] },
+          ],
+          description: 'Filter by Google Places price level: 0/free, 1/inexpensive, 2/moderate, 3/expensive, 4/very_expensive. Requires Google enrichment data.',
+        },
         open_now: {
           type: 'boolean',
           description: 'If true, only return restaurants that are currently open. Uses Google Places hours when available and OSM opening_hours as fallback. POIs without hours data are excluded.',
@@ -259,6 +266,13 @@ const baseToolsConfig = [
           ],
           description: 'Dietary restriction filter. AND logic.',
         },
+        price_level: {
+          oneOf: [
+            { type: 'number', enum: [0, 1, 2, 3, 4] },
+            { type: 'string', enum: ['free', 'inexpensive', 'moderate', 'expensive', 'very_expensive'] },
+          ],
+          description: 'Google Places price level filter.',
+        },
         open_now: { type: 'boolean', description: 'Only return currently open restaurants.' },
         open_at: { type: 'string', description: 'ISO datetime to return only restaurants open at that time.' },
         limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
@@ -268,6 +282,26 @@ const baseToolsConfig = [
       ui: { resourceUri: 'ui://widget/search-results.html' },
       'openai/toolInvocation/invoking': 'Searching...',
       'openai/toolInvocation/invoked': 'Results ready.',
+    },
+  },
+  {
+    name: 'get_dining_budget',
+    description: 'Estimate per-person dining costs for a city using Google Places restaurant price-level data. Optionally filter by cuisine. Returns sample size, data quality, price-level distribution, and USD low/median/high estimates when enough data exists.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        city_name: { type: 'string', description: 'City name to estimate dining costs for.' },
+        country_code: { type: 'string', description: 'Optional 2-letter country code (e.g., "FR", "TH").' },
+        state: { type: 'string', description: 'Optional state/province code or full name.' },
+        cuisine: {
+          oneOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+          description: 'Optional cuisine filter. Examples: "thai", ["italian", "pizza"].',
+        },
+      },
+      required: ['city_name'],
     },
   },
   {
@@ -766,6 +800,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         poiTypes: types,
         cuisine: args.cuisine,
         dietary: args.dietary,
+        priceLevel: args.price_level,
         openNow: args.open_now || false,
         openAt: args.open_at,
         limit: validateLimit(args.limit, 50, 100),
@@ -777,6 +812,29 @@ export async function executeToolHandler(name, args, db, options = {}) {
         return buildSearchResponse(pois);
       }
       return { content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }] };
+    }
+
+    case 'get_dining_budget': {
+      try {
+        const budget = await db.getDiningBudget({
+          cityName: args.city_name,
+          countryCode: args.country_code,
+          state: args.state,
+          cuisine: args.cuisine,
+        });
+        if (!budget) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify({ error: 'City not found' }, null, 2) }],
+          };
+        }
+        return { content: [{ type: 'text', text: JSON.stringify(budget, null, 2) }] };
+      } catch (error) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
+        };
+      }
     }
 
     case 'search_pois':

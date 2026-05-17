@@ -19,6 +19,7 @@ function createMockDb(overrides = {}) {
     searchCities: async () => [],
     searchPOIs: async () => [],
     searchPOIsNearCoordinates: async () => [],
+    getDiningBudget: async () => null,
     getPOIDetails: async () => null,
     getStats: async () => ({ total_pois: 100, total_cities: 50 }),
     batchEnrichPOIs: async () => {},
@@ -302,6 +303,19 @@ describe('executeToolHandler: search_restaurants', () => {
     assert.deepStrictEqual(capturedArgs.dietary, ['vegan', 'gluten_free']);
   });
 
+  it('should pass price level filters for restaurants', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_restaurants', {
+      city_name: 'Paris',
+      country_code: 'FR',
+      price_level: 2,
+    }, db);
+    assert.strictEqual(capturedArgs.priceLevel, 2);
+  });
+
   it('should pass open_now and open_at filters for restaurants', async () => {
     let capturedArgs;
     const db = createMockDb({
@@ -333,6 +347,58 @@ describe('executeToolHandler: search_restaurants', () => {
       assert.ok(schema, `${toolName} should expose open_at`);
       assert.strictEqual(schema.type, 'string');
     }
+  });
+
+  it('should expose price_level schema on restaurant tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_restaurants', 'search_restaurants_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      const schema = tool.inputSchema.properties.price_level;
+      assert.ok(schema, `${toolName} should expose price_level`);
+      assert.ok(schema.oneOf[0].enum.includes(2));
+      assert.ok(schema.oneOf[1].enum.includes('moderate'));
+    }
+  });
+});
+
+// =============================================================================
+// get_dining_budget
+// =============================================================================
+
+describe('executeToolHandler: get_dining_budget', () => {
+  it('should return dining budget estimates', async () => {
+    let capturedArgs;
+    const budget = { city: 'Paris', sample_size: 10, data_quality: 'limited' };
+    const db = createMockDb({
+      getDiningBudget: async (args) => { capturedArgs = args; return budget; },
+    });
+    const result = await executeToolHandler('get_dining_budget', {
+      city_name: 'Paris',
+      country_code: 'FR',
+      cuisine: 'french',
+    }, db);
+    assert.deepStrictEqual(parseResponse(result), budget);
+    assert.deepStrictEqual(capturedArgs, {
+      cityName: 'Paris',
+      countryCode: 'FR',
+      state: undefined,
+      cuisine: 'french',
+    });
+  });
+
+  it('should return an error when city is not found', async () => {
+    const db = createMockDb({ getDiningBudget: async () => null });
+    const result = await executeToolHandler('get_dining_budget', { city_name: 'Atlantis' }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /City not found/);
+  });
+
+  it('should expose get_dining_budget schema', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    const tool = tools.find(t => t.name === 'get_dining_budget');
+    assert.ok(tool);
+    assert.deepStrictEqual(tool.inputSchema.required, ['city_name']);
+    assert.ok(tool.inputSchema.properties.cuisine);
   });
 });
 
