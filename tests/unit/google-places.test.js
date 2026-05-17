@@ -186,6 +186,33 @@ describe('GooglePlacesClient', () => {
       const score = client.calculateNameSimilarity('The Grand Hotel', 'Grand Resort');
       assert.ok(score > 0.3);
     });
+
+    it('should keep exact Thai names comparable', () => {
+      assert.strictEqual(client.calculateNameSimilarity('วัดอรุณ', 'วัดอรุณ'), 1.0);
+    });
+
+    it('should match Thai names against transliterated Google names', () => {
+      const score = client.calculateNameSimilarity('วัดอรุณ', 'Wat Arun');
+      assert.ok(score >= 0.9);
+    });
+
+    it('should score reordered words highly', () => {
+      const score = client.calculateNameSimilarity(
+        'Hotel Indigo Bangkok Wireless Road',
+        'Hotel Indigo Wireless Road Bangkok',
+      );
+      assert.ok(score >= 0.9);
+    });
+
+    it('should expand common address abbreviations', () => {
+      const score = client.calculateNameSimilarity('International Hotel Silom Rd', 'Intl Hotel Silom Road');
+      assert.ok(score >= 0.9);
+    });
+
+    it('should still reject one-token false positives', () => {
+      const score = client.calculateNameSimilarity('Wat Arun', 'Wat Pho');
+      assert.ok(score < 0.7);
+    });
   });
 
   // =========================================================================
@@ -254,6 +281,15 @@ describe('GooglePlacesClient', () => {
       );
 
       assert.strictEqual(result, false);
+    });
+
+    it('should accept final place details using Thai transliteration', () => {
+      const result = client.isPlaceDetailsNameCompatible(
+        { name: 'วัดอรุณ', name_en: null, tags: {} },
+        { displayName: { text: 'Wat Arun', languageCode: 'en' } },
+      );
+
+      assert.strictEqual(result, true);
     });
   });
 

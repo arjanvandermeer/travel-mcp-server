@@ -1,4 +1,5 @@
 import { GOOGLE_PLACES_MIN_CONFIDENCE } from './config.js';
+import { getEnglishName } from './lib/transliterate-thai.js';
 
 export function isTypeCompatible(poiType, googleTypes) {
   if (!poiType || !googleTypes || googleTypes.length === 0) {
@@ -51,30 +52,104 @@ export function levenshteinDistance(str1, str2) {
   return dp[m][n];
 }
 
-export function calculateNameSimilarity(name1, name2) {
-  if (!name1 || !name2) return 0;
+const FILLER_WORDS = new Set([
+  'the', 'a', 'an', 'and', 'or', 'of', 'in', 'at', 'to', 'for',
+  'bar', 'restaurant', 'restaurants', 'cafe', 'hotel', 'hotels', 'hostel',
+  'hostels', 'bistro', 'resort', 'resorts', 'guesthouse', 'guesthouses',
+]);
 
-  const normalize = (str) => str.toLowerCase().trim()
-    .replace(/[^\w\s]/g, ' ')
+const TOKEN_ALIASES = new Map([
+  ['intl', 'international'],
+  ['int', 'international'],
+  ['rd', 'road'],
+  ['st', 'street'],
+  ['ave', 'avenue'],
+  ['av', 'avenue'],
+  ['blvd', 'boulevard'],
+  ['ctr', 'center'],
+  ['centre', 'center'],
+]);
+
+function normalizeName(str) {
+  return str
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/&/g, ' and ')
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
 
-  const n1 = normalize(name1);
-  const n2 = normalize(name2);
+function canonicalToken(token) {
+  const normalized = TOKEN_ALIASES.get(token) || token;
+  if (normalized.length > 4 && normalized.endsWith('s')) {
+    return normalized.slice(0, -1);
+  }
+  return normalized;
+}
+
+function getComparableTokens(str) {
+  return normalizeName(str)
+    .split(' ')
+    .map(canonicalToken)
+    .filter(w => w.length > 1 && !FILLER_WORDS.has(w));
+}
+
+function tokensMatch(token1, token2) {
+  if (token1 === token2) return true;
+  if (token1.length < 4 || token2.length < 4) return false;
+  return token1.includes(token2) || token2.includes(token1);
+}
+
+function tokenOverlapScore(tokens1, tokens2) {
+  if (tokens1.length === 0 || tokens2.length === 0) return 0;
+
+  const remaining = [...tokens2];
+  let matches = 0;
+  for (const token of tokens1) {
+    const idx = remaining.findIndex(other => tokensMatch(token, other));
+    if (idx >= 0) {
+      matches++;
+      remaining.splice(idx, 1);
+    }
+  }
+
+  return matches > 0 ? (matches * 2) / (tokens1.length + tokens2.length) : 0;
+}
+
+function sortedTokenScore(tokens1, tokens2) {
+  if (tokens1.length < 2 || tokens2.length < 2) return 0;
+  const sorted1 = [...tokens1].sort().join(' ');
+  const sorted2 = [...tokens2].sort().join(' ');
+  const maxLen = Math.max(sorted1.length, sorted2.length);
+  return maxLen > 0 ? 1 - (levenshteinDistance(sorted1, sorted2) / maxLen) : 0;
+}
+
+function nameVariants(name) {
+  const variants = [name];
+  const transliterated = getEnglishName(name);
+  if (transliterated && transliterated !== name) {
+    variants.push(transliterated);
+  }
+  return variants.filter((variant, index, all) => variant && all.indexOf(variant) === index);
+}
+
+function calculateNameSimilarityPair(name1, name2) {
+  const n1 = normalizeName(name1);
+  const n2 = normalizeName(name2);
 
   if (!n1 || !n2) return 0;
   if (n1 === n2) return 1.0;
 
-  const fillerWords = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'in', 'at', 'to', 'for', 'bar', 'restaurant', 'cafe', 'hotel', 'hostel', 'bistro']);
-  const getWords = (str) => str.split(' ').filter(w => w.length > 1 && !fillerWords.has(w));
+  const words1 = getComparableTokens(n1);
+  const words2 = getComparableTokens(n2);
 
-  const words1 = getWords(n1);
-  const words2 = getWords(n2);
-
-  const commonWords = words1.filter(w => words2.some(w2 => w === w2 || w.includes(w2) || w2.includes(w)));
-  const wordOverlapScore = commonWords.length > 0
-    ? (commonWords.length * 2) / (words1.length + words2.length)
-    : 0;
+  let wordOverlapScore = tokenOverlapScore(words1, words2);
+  if (words1.length === 1 && words2.length === 1 && n1 !== n2) {
+    wordOverlapScore = Math.min(wordOverlapScore, 0.65);
+  }
+  const reorderedScore = sortedTokenScore(words1, words2);
 
   const maxLen = Math.max(n1.length, n2.length);
   const levenshteinScore = maxLen > 0
@@ -93,7 +168,19 @@ export function calculateNameSimilarity(name1, name2) {
     containsScore = Math.min(n1.length, n2.length) / Math.max(n1.length, n2.length);
   }
 
-  return Math.max(wordOverlapScore, levenshteinScore, containsScore, prefixScore);
+  return Math.max(wordOverlapScore, reorderedScore, levenshteinScore, containsScore, prefixScore);
+}
+
+export function calculateNameSimilarity(name1, name2) {
+  if (!name1 || !name2) return 0;
+
+  let bestScore = 0;
+  for (const variant1 of nameVariants(name1)) {
+    for (const variant2 of nameVariants(name2)) {
+      bestScore = Math.max(bestScore, calculateNameSimilarityPair(variant1, variant2));
+    }
+  }
+  return bestScore;
 }
 
 export function findBestNameMatch(targetName, results, minConfidence = GOOGLE_PLACES_MIN_CONFIDENCE) {
@@ -170,6 +257,7 @@ export function getOSMNameVariants(poi) {
   return [
     poi?.name,
     poi?.name_en,
+    getEnglishName(poi?.name),
     poi?.tags?.['name:en'],
     poi?.tags?.brand,
   ].filter((name, index, names) => name && names.indexOf(name) === index);
