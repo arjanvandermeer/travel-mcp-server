@@ -274,19 +274,34 @@ CREATE TABLE IF NOT EXISTS osm_google_mappings (
 
     -- Timestamps
     mapped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    next_retry_at TIMESTAMP,
+    next_enrichment_at TIMESTAMP,
     last_verified_at TIMESTAMP,
 
     FOREIGN KEY (google_place_id) REFERENCES google_places(google_place_id) ON DELETE SET NULL
 );
 
 ALTER TABLE IF EXISTS osm_google_mappings
-ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMP;
+ADD COLUMN IF NOT EXISTS next_enrichment_at TIMESTAMP;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'osm_google_mappings'
+          AND column_name = 'next_retry_at'
+    ) THEN
+        UPDATE osm_google_mappings
+        SET next_enrichment_at = COALESCE(next_enrichment_at, next_retry_at)
+        WHERE next_retry_at IS NOT NULL;
+    END IF;
+END $$;
 
 CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_google_id ON osm_google_mappings(google_place_id);
 CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_status ON osm_google_mappings(mapping_status);
 CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_mapped_at ON osm_google_mappings(mapped_at DESC);
-CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_next_retry ON osm_google_mappings(next_retry_at) WHERE next_retry_at IS NOT NULL;
+DROP INDEX IF EXISTS idx_osm_google_mappings_next_retry;
+ALTER TABLE IF EXISTS osm_google_mappings DROP COLUMN IF EXISTS next_retry_at;
+CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_next_enrichment ON osm_google_mappings(next_enrichment_at) WHERE next_enrichment_at IS NOT NULL;
 
 -- ============================================================================
 -- POIs (Points of Interest)
@@ -478,7 +493,7 @@ SELECT
     m.match_distance_meters,
     m.mapping_notes,
     m.mapped_at,
-    m.next_retry_at,
+    m.next_enrichment_at,
     m.last_verified_at
 
 FROM osm_pois p

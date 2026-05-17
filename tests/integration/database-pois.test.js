@@ -1035,14 +1035,14 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(quotaCall.params.some(param => param instanceof Date), 'Should schedule a retry after quota reset');
     });
 
-    it('should not restart pending enrichment before next_retry_at', async () => {
+    it('should not restart pending enrichment before next_enrichment_at', async () => {
       const pausedPendingPOI = {
         ...samplePOIDetail,
         google_place_id: null,
         mapping_status: 'pending',
         mapping_notes: 'Google Places enrichment is paused because the daily API limit has been reached (500/500).',
         mapped_at: new Date(Date.now() - 10 * 60 * 1000),
-        next_retry_at: new Date(Date.now() + 60 * 60 * 1000),
+        next_enrichment_at: new Date(Date.now() + 60 * 60 * 1000),
       };
       mockPool.setResponse('enriched_pois', dbResult([pausedPendingPOI]));
 
@@ -1547,6 +1547,26 @@ describe('TravelDatabase POI Search Functions', () => {
       const result = await db.getRandomPOI();
 
       assert.strictEqual(result, null);
+    });
+  });
+
+  describe('batchEnrichPOIs', () => {
+    it('should enrich due POIs serially in database-scheduled order', async () => {
+      mockPool.setResponse('FROM unnest', dbResult([
+        { osm_id: 300 },
+        { osm_id: 100 },
+        { osm_id: 200 },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const calls = [];
+      db.enrichOSMPOI = async (osmId) => {
+        calls.push(osmId);
+      };
+
+      await db.batchEnrichPOIs([100, 200, 300]);
+
+      assert.deepStrictEqual(calls, [300, 100, 200]);
     });
   });
 });
