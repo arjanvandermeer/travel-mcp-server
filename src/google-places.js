@@ -8,7 +8,17 @@
 import https from 'https';
 import dotenv from 'dotenv';
 import * as telemetry from './telemetry.js';
-import { GOOGLE_PLACES_MIN_CONFIDENCE, GOOGLE_PLACES_TEXT_SEARCH_RADIUS, GOOGLE_PLACES_NEARBY_SEARCH_RADIUS, GOOGLE_PLACES_MATCH_SEARCH_RADIUS, GOOGLE_PLACES_MAX_RESULTS } from './config.js';
+import { GOOGLE_PLACES_TEXT_SEARCH_RADIUS, GOOGLE_PLACES_NEARBY_SEARCH_RADIUS, GOOGLE_PLACES_MATCH_SEARCH_RADIUS, GOOGLE_PLACES_MAX_RESULTS } from './config.js';
+import {
+  calculateNameSimilarity,
+  findBestNameMatch,
+  findBestNameMatchMulti,
+  getOSMNameVariants,
+  isPlaceDetailsNameCompatible,
+  isTypeCompatible,
+  levenshteinDistance,
+  radiusToBBox,
+} from './google-places-matching.js';
 
 dotenv.config();
 
@@ -436,22 +446,7 @@ export class GooglePlacesClient {
    * Returns true if types are compatible or if no compatibility rule exists for the POI type.
    */
   isTypeCompatible(poiType, googleTypes) {
-    if (!poiType || !googleTypes || googleTypes.length === 0) {
-      return true; // No type info to check, allow match
-    }
-
-    const compatibilityRules = {
-      hotel: ['lodging', 'hotel', 'guest_house', 'hostel'],
-      hostel: ['lodging', 'hotel', 'guest_house', 'hostel'],
-      restaurant: ['restaurant', 'food', 'meal_delivery', 'meal_takeaway'],
-    };
-
-    const requiredTypes = compatibilityRules[poiType];
-    if (!requiredTypes) {
-      return true; // No rule for this POI type, skip check
-    }
-
-    return googleTypes.some(t => requiredTypes.includes(t));
+    return isTypeCompatible(poiType, googleTypes);
   }
 
   /**
@@ -460,90 +455,18 @@ export class GooglePlacesClient {
   // Convert a centre point + radius (metres) to a lat/lon bounding box.
   // Used because Text Search locationRestriction only accepts rectangle, not circle.
   _radiusToBBox(lat, lon, radiusMeters) {
-    const deltaLat = radiusMeters / 111320;
-    const deltaLon = radiusMeters / (111320 * Math.cos(lat * Math.PI / 180));
-    return {
-      low:  { latitude: lat - deltaLat, longitude: lon - deltaLon },
-      high: { latitude: lat + deltaLat, longitude: lon + deltaLon },
-    };
+    return radiusToBBox(lat, lon, radiusMeters);
   }
 
   levenshteinDistance(str1, str2) {
-    const m = str1.length;
-    const n = str2.length;
-    const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        if (str1[i - 1] === str2[j - 1]) {
-          dp[i][j] = dp[i - 1][j - 1];
-        } else {
-          dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
-        }
-      }
-    }
-    return dp[m][n];
+    return levenshteinDistance(str1, str2);
   }
 
   /**
    * Calculate name similarity score (0-1, higher is better)
    */
   calculateNameSimilarity(name1, name2) {
-    if (!name1 || !name2) return 0;
-
-    // Normalize: lowercase, remove special chars, collapse whitespace
-    const normalize = (str) => str.toLowerCase().trim()
-      .replace(/[^\w\s]/g, ' ')  // Replace special chars with space
-      .replace(/\s+/g, ' ')      // Collapse multiple spaces
-      .trim();
-
-    const n1 = normalize(name1);
-    const n2 = normalize(name2);
-
-    if (!n1 || !n2) return 0;
-
-    // Exact match after normalization
-    if (n1 === n2) return 1.0;
-
-    // Extract significant words (filter out common filler words)
-    const fillerWords = new Set(['the', 'a', 'an', 'and', 'or', 'of', 'in', 'at', 'to', 'for', 'bar', 'restaurant', 'cafe', 'hotel', 'hostel', 'bistro']);
-    const getWords = (str) => str.split(' ').filter(w => w.length > 1 && !fillerWords.has(w));
-
-    const words1 = getWords(n1);
-    const words2 = getWords(n2);
-
-    // Check for word overlap (important words match)
-    const commonWords = words1.filter(w => words2.some(w2 => w === w2 || w.includes(w2) || w2.includes(w)));
-    const wordOverlapScore = commonWords.length > 0
-      ? (commonWords.length * 2) / (words1.length + words2.length)
-      : 0;
-
-    // Levenshtein-based similarity
-    const maxLen = Math.max(n1.length, n2.length);
-    const levenshteinScore = maxLen > 0
-      ? 1 - (this.levenshteinDistance(n1, n2) / maxLen)
-      : 0;
-
-    // Prefix match: one name starts with the other (e.g. OSM "Travelodge" vs
-    // Google "Travelodge London Peckham"). Strong signal — score at least 0.7.
-    let prefixScore = 0;
-    if (n2.startsWith(n1) || n1.startsWith(n2)) {
-      const shorter = Math.min(n1.length, n2.length);
-      const longer  = Math.max(n1.length, n2.length);
-      prefixScore = 0.7 + 0.3 * (shorter / longer);
-    }
-
-    // Contains match (one name is substring of other)
-    let containsScore = 0;
-    if (n1.includes(n2) || n2.includes(n1)) {
-      containsScore = Math.min(n1.length, n2.length) / Math.max(n1.length, n2.length);
-    }
-
-    // Return the highest score from different methods
-    return Math.max(wordOverlapScore, levenshteinScore, containsScore, prefixScore);
+    return calculateNameSimilarity(name1, name2);
   }
 
   /**
@@ -551,46 +474,7 @@ export class GooglePlacesClient {
    * Returns null if no confident match found (prevents wrong matches)
    */
   findBestNameMatch(targetName, results) {
-    if (!results || results.length === 0) {
-      return null;
-    }
-
-    let bestMatch = null;
-    let bestScore = 0;
-
-    for (const result of results) {
-      // Handle new API format: displayName can be {text: "name"} or just "name"
-      const resultName = result.displayName?.text || result.displayName || '';
-      const score = this.calculateNameSimilarity(targetName, resultName);
-
-      // Debug logging for matching
-      if (process.env.DEBUG_MATCHING) {
-        console.error(`  Match score: "${targetName}" vs "${resultName}" = ${score.toFixed(3)}`);
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestMatch = result;
-      }
-    }
-
-    // IMPORTANT: Only return a match if we have good confidence
-    // Previously this returned results[0] even with score=0, causing wrong matches
-    const MIN_CONFIDENCE = GOOGLE_PLACES_MIN_CONFIDENCE; // Require at least 40% similarity
-
-    if (bestScore >= MIN_CONFIDENCE) {
-      if (process.env.DEBUG_MATCHING) {
-        const matchName = bestMatch.displayName?.text || bestMatch.displayName;
-        console.error(`  Best match: "${matchName}" with score ${bestScore.toFixed(3)}`);
-      }
-      return bestMatch;
-    }
-
-    // No confident match found - return null instead of wrong match
-    if (process.env.DEBUG_MATCHING) {
-      console.error(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
-    }
-    return null;
+    return findBestNameMatch(targetName, results);
   }
 
   /**
@@ -598,57 +482,15 @@ export class GooglePlacesClient {
    * Returns the best match across all name variants
    */
   findBestNameMatchMulti(names, results) {
-    let bestMatch = null;
-    let bestScore = 0;
-
-    for (const name of names) {
-      for (const result of results) {
-        const resultName = result.displayName?.text || result.displayName || '';
-        const score = this.calculateNameSimilarity(name, resultName);
-
-        if (process.env.DEBUG_MATCHING) {
-          console.error(`  Match score: "${name}" vs "${resultName}" = ${score.toFixed(3)}`);
-        }
-
-        if (score > bestScore) {
-          bestScore = score;
-          bestMatch = result;
-        }
-      }
-    }
-
-    const MIN_CONFIDENCE = GOOGLE_PLACES_MIN_CONFIDENCE;
-    if (bestScore >= MIN_CONFIDENCE) {
-      if (process.env.DEBUG_MATCHING) {
-        const matchName = bestMatch.displayName?.text || bestMatch.displayName;
-        console.error(`  Best match: "${matchName}" with score ${bestScore.toFixed(3)}`);
-      }
-      return bestMatch;
-    }
-
-    if (process.env.DEBUG_MATCHING) {
-      console.error(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
-    }
-    return null;
+    return findBestNameMatchMulti(names, results);
   }
 
   getOSMNameVariants(poi) {
-    return [
-      poi?.name,
-      poi?.name_en,
-      poi?.tags?.['name:en'],
-      poi?.tags?.brand,
-    ].filter((name, index, names) => name && names.indexOf(name) === index);
+    return getOSMNameVariants(poi);
   }
 
   isPlaceDetailsNameCompatible(poi, placeDetails) {
-    const googleName = placeDetails?.displayName?.text || placeDetails?.displayName || placeDetails?.name;
-    if (!googleName) {
-      return false;
-    }
-
-    const names = this.getOSMNameVariants(poi);
-    return names.some(name => this.calculateNameSimilarity(name, googleName) >= GOOGLE_PLACES_MIN_CONFIDENCE);
+    return isPlaceDetailsNameCompatible(poi, placeDetails);
   }
 
   /**
