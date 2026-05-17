@@ -86,7 +86,8 @@ function renderGoogleAnalyticsTag(measurementId) {
 
 async function renderWebIndex(filePath) {
   let html = fs.readFileSync(filePath, 'utf8');
-  const assetVersion = encodeURIComponent(versionInfo.gitCommitShort || versionInfo.version);
+  const versionParts = [versionInfo.gitCommitShort || versionInfo.version, versionInfo.buildTime].filter(Boolean);
+  const assetVersion = encodeURIComponent(versionParts.join('-'));
   html = html
     .replace('href="/css/style.css"', `href="/css/style.css?v=${assetVersion}"`)
     .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`);
@@ -95,7 +96,7 @@ async function renderWebIndex(filePath) {
   return html.replace('</head>', `${tag}\n</head>`);
 }
 
-function getStaticHeaders(contentType, filePath) {
+function getStaticHeaders(contentType) {
   return {
     'Content-Type': contentType,
     'Cache-Control': 'no-cache',
@@ -445,7 +446,7 @@ async function main() {
 
     // CORS headers
     res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, HEAD, POST, PATCH, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, mcp-session-id, MCP-Protocol-Version, Authorization');
     res.setHeader('Access-Control-Expose-Headers', 'mcp-session-id');
 
@@ -607,7 +608,7 @@ async function main() {
     }
 
     // Static file serving for web frontend
-    if (req.method === 'GET' && !pathname.startsWith('/mcp')) {
+    if ((req.method === 'GET' || req.method === 'HEAD') && !pathname.startsWith('/mcp')) {
       // Serve index.html for SPA routes (no extension = SPA route)
       let filePath;
       if (pathname === '/' || !path.extname(pathname)) {
@@ -628,7 +629,11 @@ async function main() {
         if (stat.isFile()) {
           const ext = path.extname(filePath);
           const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-          res.writeHead(200, getStaticHeaders(contentType, filePath));
+          res.writeHead(200, getStaticHeaders(contentType));
+          if (req.method === 'HEAD') {
+            res.end();
+            return;
+          }
           if (path.basename(filePath) === 'index.html') {
             res.end(await renderWebIndex(filePath));
             return;
