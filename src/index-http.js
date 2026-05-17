@@ -37,21 +37,9 @@ import { registerHomepageRoutes } from './api/homepage.js';
 import { registerMapRoutes } from './api/map.js';
 import { registerCityOverviewRoutes } from './api/city-overview.js';
 import { SESSION_MAX_AGE_MS, SESSION_CLEANUP_INTERVAL_MS, AUTH_TOKEN_MIN_LENGTH, OAUTH_INTROSPECTION_CACHE_TTL_MS } from './config.js';
+import { getStaticHeaders, obfuscateEmail, renderWebIndex } from './http-static-utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-/**
- * Obfuscate email for logging and telemetry — shows first+last of local part,
- * first two + last two of domain.
- * "arjanvdm@gmail.com" → "a...m@gm...om"
- */
-function obfuscateEmail(email) {
-  if (!email || !email.includes('@')) return email;
-  const [local, domain] = email.split('@');
-  const localObf = local.length <= 2 ? `${local[0]}*` : `${local[0]}...${local[local.length - 1]}`;
-  const domainObf = domain.length <= 4 ? domain : `${domain.slice(0, 2)}...${domain.slice(-2)}`;
-  return `${localObf}@${domainObf}`;
-}
 
 let db;
 try {
@@ -61,47 +49,12 @@ try {
   process.exit(1);
 }
 const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
-const GOOGLE_ANALYTICS_ID_PATTERN = /^(G|GT|GTM)-[A-Z0-9-]+$/i;
 
 // Store active sessions: sessionId -> { server, transport, user }
 const sessions = new Map();
 
 // Cache OAuth introspection results: token -> { user, expiry }
 const introspectionCache = new Map();
-
-function renderGoogleAnalyticsTag(measurementId) {
-  const id = String(measurementId || '').trim();
-  if (!id || !GOOGLE_ANALYTICS_ID_PATTERN.test(id)) return '';
-
-  return `
-  <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>
-  <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', '${id}');
-  </script>`;
-}
-
-async function renderWebIndex(filePath) {
-  let html = fs.readFileSync(filePath, 'utf8');
-  const versionParts = [versionInfo.gitCommitShort || versionInfo.version, versionInfo.buildTime].filter(Boolean);
-  const assetVersion = encodeURIComponent(versionParts.join('-'));
-  html = html
-    .replace('href="/css/style.css"', `href="/css/style.css?v=${assetVersion}"`)
-    .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`);
-  const tag = renderGoogleAnalyticsTag(await db.getConfigCached('google_analytics_measurement_id'));
-  if (!tag) return html;
-  return html.replace('</head>', `${tag}\n</head>`);
-}
-
-function getStaticHeaders(contentType) {
-  return {
-    'Content-Type': contentType,
-    'Cache-Control': 'no-cache',
-  };
-}
 
 /**
  * Extract user from Authorization header
@@ -635,7 +588,8 @@ async function main() {
             return;
           }
           if (path.basename(filePath) === 'index.html') {
-            res.end(await renderWebIndex(filePath));
+            const measurementId = await db.getConfigCached('google_analytics_measurement_id');
+            res.end(renderWebIndex(filePath, { versionInfo, measurementId }));
             return;
           }
           fs.createReadStream(filePath).pipe(res);
