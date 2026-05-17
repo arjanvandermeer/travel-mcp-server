@@ -139,6 +139,27 @@ describe('TravelDatabase POI Search Functions', () => {
         assert.ok(searchCall, 'Should include cuisine ILIKE clause');
         assert.ok(searchCall.params.includes('%thai%'), 'Should bind single cuisine string');
       });
+
+      it('should map dietary filters to parameterized OSM tag keys', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        await db.searchPOIs({
+          name: 'Kitchen',
+          poiTypes: ['restaurant'],
+          dietary: ['vegan', 'vegetarian', 'halal', 'kosher', 'gluten_free'],
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes("p.tags->>$"));
+        assert.ok(searchCall, 'Should include parameterized tag lookups');
+        assert.ok(searchCall.params.includes('diet:vegan'), 'Should bind vegan tag key');
+        assert.ok(searchCall.params.includes('diet:vegetarian'), 'Should bind vegetarian tag key');
+        assert.ok(searchCall.params.includes('diet:halal'), 'Should bind halal tag key');
+        assert.ok(searchCall.params.includes('diet:kosher'), 'Should bind kosher tag key');
+        assert.ok(searchCall.params.includes('diet:gluten_free'), 'Should bind gluten-free tag key');
+        assert.ok(!searchCall.sql.includes('diet:vegan'), 'Tag keys should not be interpolated into SQL');
+      });
     });
 
     describe('Case 2: Location only search', () => {
@@ -392,6 +413,25 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(searchCall, 'Should include cuisine filter in coordinate query');
       assert.ok(searchCall.params.includes('%thai%'), 'Should bind thai cuisine');
       assert.ok(searchCall.params.includes('%japanese%'), 'Should bind japanese cuisine');
+    });
+
+    it('should add dietary filters to coordinate searches', async () => {
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, ['restaurant'], 20, null, null, { dietary: ['vegan', 'kosher'] }
+      );
+
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('osm_pois') &&
+        c.sql.includes('ST_DWithin') &&
+        c.sql.includes("p.tags->>$")
+      );
+      assert.ok(searchCall, 'Should include dietary filter in coordinate query');
+      assert.ok(searchCall.params.includes('diet:vegan'), 'Should bind vegan tag key');
+      assert.ok(searchCall.params.includes('diet:kosher'), 'Should bind kosher tag key');
     });
   });
 

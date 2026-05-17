@@ -85,6 +85,7 @@ export function registerSearchRoutes(router) {
     const poiType = query.poi_type || null;
     const poiTypes = query.poi_types ? query.poi_types.split(',').map(t => t.trim()).filter(Boolean) : null;
     const cuisine = parseListParam(query.cuisine);
+    const dietary = parseListParam(query.dietary);
     const name = query.q || null;
     const limit = validateLimit(query.limit, 50, 100);
     const offset = Math.max(0, parseInt(query.offset ?? '0', 10) || 0);
@@ -114,6 +115,7 @@ export function registerSearchRoutes(router) {
       poiType,
       poiTypes,
       cuisine,
+      dietary,
       name,
       limit,
       offset,

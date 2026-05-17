@@ -180,8 +180,10 @@ const baseToolsConfig = [
           description: 'Filter by cuisine type(s). Examples: "thai", ["italian", "pizza"], ["sushi", "japanese"]. Matches against OSM cuisine data. Multiple values use OR logic (matches any).',
         },
         dietary: {
-          type: 'array',
-          items: { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] },
+          oneOf: [
+            { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] },
+            { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] } },
+          ],
           description: 'Filter by dietary restriction support. Multiple values use AND logic (must support all). Based on OSM dietary tags.',
         },
         open_now: {
@@ -217,7 +219,13 @@ const baseToolsConfig = [
           ],
           description: 'Cuisine filter (e.g., "thai" or ["thai", "italian"]). OR logic.',
         },
-        dietary: { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] }, description: 'Dietary restriction filter. AND logic.' },
+        dietary: {
+          oneOf: [
+            { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] },
+            { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] } },
+          ],
+          description: 'Dietary restriction filter. AND logic.',
+        },
         open_now: { type: 'boolean', description: 'Only return currently open restaurants.' },
         limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
       },

@@ -162,6 +162,19 @@ describe('executeToolHandler: search_restaurants', () => {
     assert.strictEqual(capturedArgs.cuisine, 'thai');
   });
 
+  it('should pass dietary filters for restaurants', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_restaurants', {
+      city_name: 'Berlin',
+      country_code: 'DE',
+      dietary: ['vegan', 'gluten_free'],
+    }, db);
+    assert.deepStrictEqual(capturedArgs.dietary, ['vegan', 'gluten_free']);
+  });
+
   it('search_restaurants_ui should return structuredContent', async () => {
     const pois = [{ osm_id: 2 }];
     const db = createMockDb({ searchPOIs: async () => pois });
