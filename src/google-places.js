@@ -503,6 +503,8 @@ export class GooglePlacesClient {
     const n1 = normalize(name1);
     const n2 = normalize(name2);
 
+    if (!n1 || !n2) return 0;
+
     // Exact match after normalization
     if (n1 === n2) return 1.0;
 
@@ -628,6 +630,25 @@ export class GooglePlacesClient {
       console.error(`  No confident match found (best score: ${bestScore.toFixed(3)} < ${MIN_CONFIDENCE})`);
     }
     return null;
+  }
+
+  getOSMNameVariants(poi) {
+    return [
+      poi?.name,
+      poi?.name_en,
+      poi?.tags?.['name:en'],
+      poi?.tags?.brand,
+    ].filter((name, index, names) => name && names.indexOf(name) === index);
+  }
+
+  isPlaceDetailsNameCompatible(poi, placeDetails) {
+    const googleName = placeDetails?.displayName?.text || placeDetails?.displayName || placeDetails?.name;
+    if (!googleName) {
+      return false;
+    }
+
+    const names = this.getOSMNameVariants(poi);
+    return names.some(name => this.calculateNameSimilarity(name, googleName) >= GOOGLE_PLACES_MIN_CONFIDENCE);
   }
 
   /**

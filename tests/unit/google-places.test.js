@@ -235,6 +235,28 @@ describe('GooglePlacesClient', () => {
     });
   });
 
+  describe('isPlaceDetailsNameCompatible', () => {
+    const client = new GooglePlacesClient('key', true);
+
+    it('should accept matching final place details names', () => {
+      const result = client.isPlaceDetailsNameCompatible(
+        { name: "Nelson's Column", name_en: "Nelson's Column", tags: { 'name:en': "Nelson's Column" } },
+        { displayName: { text: "Nelson's Column", languageCode: 'en' } },
+      );
+
+      assert.strictEqual(result, true);
+    });
+
+    it('should reject unrelated final place details names at the same location', () => {
+      const result = client.isPlaceDetailsNameCompatible(
+        { name: "Nelson's Column", name_en: "Nelson's Column", tags: { 'name:en': "Nelson's Column" } },
+        { displayName: { text: 'ایالات متحده آمریکا', languageCode: 'fa' } },
+      );
+
+      assert.strictEqual(result, false);
+    });
+  });
+
   // =========================================================================
   // isTypeCompatible
   // =========================================================================

@@ -1713,6 +1713,15 @@ export class TravelDatabase {
         return;
       }
 
+      if (!this.googlePlaces.isPlaceDetailsNameCompatible(osmPOI, placeDetails)) {
+        const googleName = placeDetails.displayName?.text || placeDetails.displayName || placeDetails.name || 'unknown';
+        await this.createMapping(osmId, null, {
+          mapping_status: 'not_found',
+          mapping_notes: `Rejected Google Place name mismatch: "${googleName}" (place_id: ${matchResult.place_id})`
+        });
+        return;
+      }
+
       // Upsert Google Place data
       await this.upsertGooglePlace(placeDetails);
 
