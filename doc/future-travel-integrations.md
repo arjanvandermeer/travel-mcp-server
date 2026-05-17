@@ -73,3 +73,41 @@ Wikidata and route planning belong as optional enrichment/integration layers:
 - Routing: provider-backed tool first, then itinerary enhancement.
 
 Both should be implemented behind explicit configuration flags, with tests that cover disabled-provider behavior, sparse data, attribution fields, and cache hits. This avoids making the reliable core POI/search surfaces dependent on external services that have different licensing, latency, and quota profiles.
+
+## Commercial And Review Integrations
+
+Future hotel, restaurant, review, reservation, and booking integrations should be evaluated one provider at a time. Do not add broad multi-provider abstractions before at least one provider is approved and integrated.
+
+### Evaluation Checklist
+
+Every provider needs a short implementation issue that answers:
+
+- Data access: public API, partner API, paid contract, or no stable access.
+- Allowed use: display, caching, ranking, derived summaries, and attribution requirements.
+- Cost and quota: free tier, expected request volume, burst limits, and failure behavior.
+- User value: whether it improves an existing workflow or introduces a new one.
+- Privacy: whether user identity, location, or trip intent leaves the application.
+- Operational model: cache lifetime, refresh schedule, secrets, monitoring, and disabled-state behavior.
+
+### Candidate Decisions
+
+| Candidate | Current decision | Reason |
+|---|---|---|
+| Booking.com / Expedia availability and pricing | Defer until partner access is explicit. | Availability and price data are contract-sensitive, cache-sensitive, and likely unsuitable for unauthenticated public tool calls. |
+| Yelp / TripAdvisor / Foursquare enrichment | Defer pending licensing review. | Review text, ratings, photos, and rankings often have strict attribution, caching, and display limits. |
+| Cross-platform review aggregation | Do not implement before source-specific approvals. | Aggregation can violate provider terms if it normalizes or republishes review/rating content without permission. |
+| Multi-source hotel price comparison | Defer. | Requires booking-provider contracts, freshness guarantees, currency/tax normalization, and user-facing disclaimers. |
+| Loyalty program points tracking | Separate user-feature issue if pursued. | It is account-specific and belongs with authenticated user preferences/trips, not general POI search. |
+| Reservation availability / booking | Defer until a booking provider is selected. | Requires provider-specific checkout/deep-link behavior, liability boundaries, and clear handoff UX. |
+| Private dining / event booking | Defer. | High-touch supply and venue-specific availability make it a product partnership, not a general enrichment layer. |
+
+### Recommended Near-Term Focus
+
+Keep core search focused on durable, inspectable data:
+
+1. OSM and GeoNames for open geographic coverage.
+2. Google Places for cached business enrichment with existing quota controls.
+3. Optional Wikidata enrichment for attractions once attribution storage exists.
+4. Optional route estimates after a provider or self-hosted routing engine is selected.
+
+Commercial availability, booking, and review aggregation should remain future product integrations until legal access and user value are both clear.
