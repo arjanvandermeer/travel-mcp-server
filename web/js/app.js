@@ -747,6 +747,20 @@ Alpine.store('atlas', {
   activeTypes() {
     return LAYERS.filter(layer => this.activeLayers.has(layer.key)).flatMap(layer => layer.types);
   },
+  rankPlacesByDistance(places) {
+    if (!this.map) return places;
+    const center = this.map.getCenter();
+    return [...places]
+      .map(poi => ({
+        ...poi,
+        atlas_distance_meters: this.map.distance(center, [poi.latitude, poi.longitude]),
+      }))
+      .sort((a, b) => a.atlas_distance_meters - b.atlas_distance_meters)
+      .map((poi, index) => ({
+        ...poi,
+        atlas_rank: index < 99 ? index + 1 : null,
+      }));
+  },
   async fetchMapPlaces() {
     if (!this.map || this.map.getZoom() < 8 || this.activeTypes().length === 0) {
       this.places = [];
@@ -769,7 +783,7 @@ Alpine.store('atlas', {
     this.loading = true;
     try {
       const data = await apiGet('/api/v1/map/pois', params);
-      this.places = data.results || [];
+      this.places = this.rankPlacesByDistance(data.results || []);
       this.drawMarkers();
     } catch {
       this.places = [];
@@ -781,7 +795,7 @@ Alpine.store('atlas', {
     this.cluster.clearLayers();
     this.markers.clear();
     for (const poi of this.places) {
-      const marker = L.marker([poi.latitude, poi.longitude], { icon: markerIcon(poi, this.selected?.osm_id === poi.osm_id) });
+      const marker = L.marker([poi.latitude, poi.longitude], { icon: markerIcon(poi, this.selected?.osm_id === poi.osm_id, poi.atlas_rank) });
       marker.on('click', () => this.select(poi));
       this.markers.set(poi.osm_id, marker);
       this.cluster.addLayer(marker);
@@ -807,7 +821,7 @@ Alpine.store('atlas', {
     if (!query) return;
     try {
       const data = await apiGet('/api/v1/search/pois', { q: query, limit: 20 });
-      this.places = data.results || [];
+      this.places = this.rankPlacesByDistance(data.results || []);
       if (this.places[0]) this.focusPoi(this.places[0]);
     } catch {
       this.places = [];

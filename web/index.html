@@ -198,6 +198,7 @@
             </template>
             <template x-for="poi in $store.atlas.places" :key="poi.osm_id">
               <article class="place-card" :class="{ selected: $store.atlas.selected?.osm_id === poi.osm_id }" @mouseenter="$store.atlas.preview(poi)" @click="$store.atlas.select(poi)">
+                <span class="result-rank" x-show="poi.atlas_rank" x-text="poi.atlas_rank"></span>
                 <div class="thumb" :style="$store.format.thumbStyle(poi)"></div>
                 <div class="place-body">
                   <h3><button type="button" @click.stop="$store.poi.open(poi.osm_id)" x-text="poi.name || poi.osm_name"></button></h3>
