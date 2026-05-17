@@ -153,6 +153,21 @@ describe('executeToolHandler: search_hotels', () => {
     assert.deepStrictEqual(capturedArgs.amenities, ['wifi', 'pool', 'breakfast']);
   });
 
+  it('should pass open_now and open_at filters to hotel search', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_hotels_ui', {
+      city_name: 'Bangkok',
+      country_code: 'TH',
+      open_now: true,
+      open_at: '2026-05-18T20:00:00Z',
+    }, db);
+    assert.strictEqual(capturedArgs.openNow, true);
+    assert.strictEqual(capturedArgs.openAt, '2026-05-18T20:00:00Z');
+  });
+
   it('should reject invalid accommodation types', async () => {
     const db = createMockDb();
     const result = await executeToolHandler('search_hotels', {
@@ -189,6 +204,16 @@ describe('executeToolHandler: search_hotels', () => {
       assert.ok(schema.items.enum.includes('breakfast'));
       assert.ok(schema.items.enum.includes('air_conditioning'));
       assert.ok(schema.items.enum.includes('parking'));
+    }
+  });
+
+  it('should expose open_at schema on hotel tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_hotels', 'search_hotels_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      const schema = tool.inputSchema.properties.open_at;
+      assert.ok(schema, `${toolName} should expose open_at`);
+      assert.strictEqual(schema.type, 'string');
     }
   });
 });
@@ -254,12 +279,37 @@ describe('executeToolHandler: search_restaurants', () => {
     assert.deepStrictEqual(capturedArgs.dietary, ['vegan', 'gluten_free']);
   });
 
+  it('should pass open_now and open_at filters for restaurants', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_restaurants', {
+      city_name: 'Bangkok',
+      country_code: 'TH',
+      open_now: true,
+      open_at: '2026-05-18T20:00:00Z',
+    }, db);
+    assert.strictEqual(capturedArgs.openNow, true);
+    assert.strictEqual(capturedArgs.openAt, '2026-05-18T20:00:00Z');
+  });
+
   it('search_restaurants_ui should return structuredContent', async () => {
     const pois = [{ osm_id: 2 }];
     const db = createMockDb({ searchPOIs: async () => pois });
     const result = await executeToolHandler('search_restaurants_ui', { city_name: 'NYC', country_code: 'US' }, db);
     assert.ok(result.structuredContent);
     assert.strictEqual(result.structuredContent.count, 1);
+  });
+
+  it('should expose open_at schema on restaurant tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_restaurants', 'search_restaurants_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      const schema = tool.inputSchema.properties.open_at;
+      assert.ok(schema, `${toolName} should expose open_at`);
+      assert.strictEqual(schema.type, 'string');
+    }
   });
 });
 

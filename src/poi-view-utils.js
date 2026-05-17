@@ -1,3 +1,5 @@
+import { isGoogleOpenAt } from './lib/opening-hours.js';
+
 // Shared POI groups used by tools, web APIs, and template rendering.
 export const accommodationTypes = [
   'hotel',
@@ -64,47 +66,13 @@ export async function fetchNearbyForPOI(poi, db, userId = null) {
  * @returns {{ isOpen: boolean, label: string }|null} - null if no hours data available
  */
 export function isOpenNow(openingHours, utcOffsetMinutes) {
-  if (!openingHours?.periods || !Array.isArray(openingHours.periods) || utcOffsetMinutes == null) {
+  const isOpen = isGoogleOpenAt(openingHours, utcOffsetMinutes, new Date());
+  if (isOpen === null) {
     return null;
   }
 
-  const now = new Date();
-  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
-  const localMs = utcMs + utcOffsetMinutes * 60000;
-  const localDate = new Date(localMs);
-  const day = localDate.getDay();
-  const hour = localDate.getHours();
-  const minute = localDate.getMinutes();
-  const currentMinutes = hour * 60 + minute;
-
-  for (const period of openingHours.periods) {
-    if (!period.open) continue;
-    const openDay = period.open.day;
-    const openMin = period.open.hour * 60 + period.open.minute;
-
-    if (!period.close) {
-      if (openDay === day) return { isOpen: true, label: 'Open 24 hours' };
-      continue;
-    }
-
-    const closeDay = period.close.day;
-    const closeMin = period.close.hour * 60 + period.close.minute;
-
-    if (openDay === closeDay && openDay === day) {
-      if (currentMinutes >= openMin && currentMinutes < closeMin) {
-        return { isOpen: true, label: 'Open now' };
-      }
-    } else if (openDay !== closeDay) {
-      if (day === openDay && currentMinutes >= openMin) {
-        return { isOpen: true, label: 'Open now' };
-      }
-      if (day === closeDay && currentMinutes < closeMin) {
-        return { isOpen: true, label: 'Open now' };
-      }
-    }
-  }
-
-  return { isOpen: false, label: 'Closed' };
+  const isAllDay = openingHours.periods.some(period => period.open && !period.close);
+  return { isOpen, label: isOpen ? (isAllDay ? 'Open 24 hours' : 'Open now') : 'Closed' };
 }
 
 export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title = null) {

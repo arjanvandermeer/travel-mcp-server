@@ -105,7 +105,11 @@ const baseToolsConfig = [
         },
         open_now: {
           type: 'boolean',
-          description: 'If true, only return hotels that are currently open/accepting guests (based on Google Places hours). POIs without hours data are excluded.',
+          description: 'If true, only return hotels that are currently open/accepting guests. Uses Google Places hours when available and OSM opening_hours as fallback. POIs without hours data are excluded.',
+        },
+        open_at: {
+          type: 'string',
+          description: 'ISO datetime to return only hotels open/accepting guests at that time. Uses Google Places hours when available and OSM opening_hours as fallback.',
         },
         limit: {
           type: 'number',
@@ -137,6 +141,7 @@ const baseToolsConfig = [
           description: 'Accommodation type filter. OR logic.',
         },
         open_now: { type: 'boolean', description: 'Only return currently open hotels.' },
+        open_at: { type: 'string', description: 'ISO datetime to return only hotels open at that time.' },
         limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
       },
     },
@@ -202,7 +207,11 @@ const baseToolsConfig = [
         },
         open_now: {
           type: 'boolean',
-          description: 'If true, only return restaurants that are currently open (based on Google Places opening hours data). POIs without hours data are excluded.',
+          description: 'If true, only return restaurants that are currently open. Uses Google Places hours when available and OSM opening_hours as fallback. POIs without hours data are excluded.',
+        },
+        open_at: {
+          type: 'string',
+          description: 'ISO datetime to return only restaurants open at that time. Uses Google Places hours when available and OSM opening_hours as fallback.',
         },
         limit: {
           type: 'number',
@@ -241,6 +250,7 @@ const baseToolsConfig = [
           description: 'Dietary restriction filter. AND logic.',
         },
         open_now: { type: 'boolean', description: 'Only return currently open restaurants.' },
+        open_at: { type: 'string', description: 'ISO datetime to return only restaurants open at that time.' },
         limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
       },
     },
@@ -710,6 +720,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         poiTypes: accommodationTypeFilter.types,
         amenities: args.amenities,
         openNow: args.open_now || false,
+        openAt: args.open_at,
         limit: validateLimit(args.limit, 50, 100),
         userId: options.user?.id,
       });
@@ -744,6 +755,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         cuisine: args.cuisine,
         dietary: args.dietary,
         openNow: args.open_now || false,
+        openAt: args.open_at,
         limit: validateLimit(args.limit, 50, 100),
         userId: options.user?.id,
       });

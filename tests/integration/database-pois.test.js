@@ -455,6 +455,57 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(searchCall.params.includes('diet:vegan'), 'Should bind vegan tag key');
       assert.ok(searchCall.params.includes('diet:kosher'), 'Should bind kosher tag key');
     });
+
+    it('should over-fetch coordinate searches when filtering by open_at', async () => {
+      mockPool.setResponse('osm_pois', dbResult([
+        { ...samplePOIs[1], osm_opening_hours: 'Mo-Su 10:00-22:00' },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, ['restaurant'], 20, null, null, null, false, 10, new Date(2026, 4, 18, 12, 0)
+      );
+
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('osm_pois') &&
+        c.sql.includes('ST_DWithin') &&
+        c.sql.includes('p.opening_hours as osm_opening_hours')
+      );
+      assert.ok(searchCall, 'Should select OSM opening_hours for fallback filtering');
+      assert.strictEqual(searchCall.params.at(-2), 60, 'Should over-fetch for post-filtering');
+      assert.strictEqual(searchCall.params.at(-1), 0, 'Should reset offset when post-filtering by hours');
+    });
+
+    it('should filter by Google hours first and OSM opening_hours as fallback', () => {
+      db = new TravelDatabase({ pool: mockPool });
+      const openAt = new Date(2026, 4, 18, 12, 0);
+
+      const results = db.filterOpenAt([
+        {
+          osm_id: 1,
+          google_opening_hours: {
+            periods: [{ open: { day: 1, hour: 9, minute: 0 }, close: { day: 1, hour: 17, minute: 0 } }],
+          },
+          google_utc_offset_minutes: 0,
+          osm_opening_hours: 'Mo-Fr 00:00-01:00',
+        },
+        {
+          osm_id: 2,
+          google_opening_hours: null,
+          google_utc_offset_minutes: null,
+          osm_opening_hours: 'Mo-Fr 10:00-22:00',
+        },
+        {
+          osm_id: 3,
+          google_opening_hours: null,
+          google_utc_offset_minutes: null,
+          osm_opening_hours: null,
+        },
+      ], openAt);
+
+      assert.deepStrictEqual(results.map(p => p.osm_id), [1, 2]);
+    });
   });
 
   describe('getPOIDetails', () => {

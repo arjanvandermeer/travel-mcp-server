@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { CONFIG_CACHE_TTL_MS, DB_STATEMENT_TIMEOUT_MS, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, HOMEPAGE_CACHE_MAX_SIZE, HOMEPAGE_CACHE_TTL_MS, COUNTRIES_CACHE_TTL_MS, EARTH_RADIUS_METERS, GOOGLE_PLACES_DAILY_LIMIT_DEFAULT } from './config.js';
 import { addResourceUris, removeNullFields } from './response-utils.js';
 import { databaseUserMethods } from './database-user-methods.js';
+import { coerceOpenAt, isPoiOpenAt } from './lib/opening-hours.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
@@ -770,6 +771,7 @@ export class TravelDatabase {
    * @param {string[]|null} params.amenities - Amenity filter (e.g., ["wifi", "pool"])
    * @param {string[]|null} params.dietary - Dietary restriction filter (e.g., ["vegan", "halal"])
    * @param {boolean} params.openNow - Filter to only currently open POIs
+   * @param {Date|string|null} params.openAt - Filter to only POIs open at this time
    * @param {number} params.limit - Max results (default SEARCH_LIMIT_DEFAULT, capped at SEARCH_LIMIT_MAX)
    * @param {string|null} params.userId - User ID for including favorite status
    * @returns {Promise<Array<Object>>} Array of POI objects with osm_id, name, coordinates, city, type, and optional favorite status
@@ -789,6 +791,7 @@ export class TravelDatabase {
       amenities = null,   // Amenity filter (e.g., ["wifi", "pool"])
       dietary = null,     // Dietary restriction filter (e.g., ["vegan", "halal"])
       openNow = false,    // Filter to only currently open POIs
+      openAt = null,      // Filter to POIs open at a specific time
       limit: rawLimit = SEARCH_LIMIT_DEFAULT,
       offset = 0,
       userId = null,    // For including favorite status in results
@@ -805,6 +808,7 @@ export class TravelDatabase {
       amenityList.length > 0 && `amenities=${amenityList.join(',')}`,
       dietaryList.length > 0 && `dietary=${dietaryList.join(',')}`,
       openNow && 'openNow',
+      openAt && `openAt=${openAt}`,
     ].filter(Boolean).join(', ');
     console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radius}km, types=${typeDesc}, limit=${limit}${extraDesc ? `, ${extraDesc}` : ''}`);
 
@@ -834,6 +838,7 @@ export class TravelDatabase {
           c.country_code,
           p.stars as osm_stars,
           p.cuisine as osm_cuisine,
+          p.opening_hours as osm_opening_hours,
           p.tags->>'brand' as osm_brand,
           GREATEST(
             similarity(p.name, $1),
@@ -886,6 +891,7 @@ export class TravelDatabase {
           extraFilters,
           openNow,
           offset,
+          openAt,
         );
       } else {
         const searchRadius = radius || 10; // Default 10km
@@ -900,6 +906,7 @@ export class TravelDatabase {
           extraFilters,
           openNow,
           offset,
+          openAt,
         );
       }
     }
@@ -934,6 +941,7 @@ export class TravelDatabase {
           c.country_code,
           p.stars as osm_stars,
           p.cuisine as osm_cuisine,
+          p.opening_hours as osm_opening_hours,
           p.tags->>'brand' as osm_brand,
           GREATEST(
             similarity(p.name, $1),
@@ -972,10 +980,13 @@ export class TravelDatabase {
       throw new Error('Must provide either name, cityName, or coordinates (latitude + longitude)');
     }
 
-    // For openNow, over-fetch and post-filter using Google Places opening_hours
-    const fetchLimit = openNow ? limit * 3 : limit;
+    const openAtDate = coerceOpenAt(openAt);
+    const shouldFilterByHours = openNow || openAtDate;
+
+    // For hours filtering, over-fetch and post-filter using Google or OSM opening hours.
+    const fetchLimit = shouldFilterByHours ? limit * 3 : limit;
     // Replace the limit param (always the last one) with the potentially larger fetch limit
-    if (openNow) {
+    if (shouldFilterByHours) {
       queryParams[queryParams.length - 1] = fetchLimit;
     }
 
@@ -983,8 +994,8 @@ export class TravelDatabase {
     const enriched = await this.enrichWithGoogleData(result.rows);
 
     let filtered = enriched;
-    if (openNow) {
-      filtered = this.filterOpenNow(enriched).slice(0, limit);
+    if (shouldFilterByHours) {
+      filtered = this.filterOpenAt(enriched, openAtDate || new Date()).slice(0, limit);
     }
 
     const baseUrl = await this.getServerBaseUrl();
@@ -994,41 +1005,16 @@ export class TravelDatabase {
   }
 
   /**
-   * Filter POIs to only those currently open, using Google Places opening_hours data.
+   * Filter POIs to only those open at a specific time, using Google Places data
+   * when available and OSM opening_hours as a fallback.
    * POIs without opening hours data are excluded (we can't determine if they're open).
    */
-  filterOpenNow(pois) {
-    // Import isOpenNow lazily to avoid circular deps — it's a pure function
-    const now = new Date();
-    return pois.filter(poi => {
-      if (!poi.google_opening_hours?.periods || poi.google_utc_offset_minutes == null) {
-        return false; // No hours data — can't confirm open, exclude
-      }
-      const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
-      const localMs = utcMs + poi.google_utc_offset_minutes * 60000;
-      const localDate = new Date(localMs);
-      const day = localDate.getDay();
-      const currentMinutes = localDate.getHours() * 60 + localDate.getMinutes();
+  filterOpenAt(pois, openAt = new Date()) {
+    return pois.filter(poi => isPoiOpenAt(poi, openAt) === true);
+  }
 
-      for (const period of poi.google_opening_hours.periods) {
-        if (!period.open) continue;
-        const openDay = period.open.day;
-        const openMin = period.open.hour * 60 + period.open.minute;
-        if (!period.close) {
-          if (openDay === day) return true; // 24 hours
-          continue;
-        }
-        const closeDay = period.close.day;
-        const closeMin = period.close.hour * 60 + period.close.minute;
-        if (openDay === closeDay && openDay === day) {
-          if (currentMinutes >= openMin && currentMinutes < closeMin) return true;
-        } else if (openDay !== closeDay) {
-          if (day === openDay && currentMinutes >= openMin) return true;
-          if (day === closeDay && currentMinutes < closeMin) return true;
-        }
-      }
-      return false;
-    });
+  filterOpenNow(pois) {
+    return this.filterOpenAt(pois, new Date());
   }
 
   /**
@@ -1084,9 +1070,11 @@ export class TravelDatabase {
    * @param {string[]|null} excludeOsmIds - OSM IDs to exclude from results
    * @param {Object|null} extraFilters - Additional filters: { cuisine, amenities, dietary }
    * @param {boolean} openNow - Filter to only currently open POIs
+   * @param {number} offset - Results offset
+   * @param {Date|string|null} openAt - Filter to only POIs open at this time
    * @returns {Promise<Array<Object>>} Array of POI objects with distance_km included
    */
-  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null, extraFilters = null, openNow = false, offset = 0) {
+  async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null, extraFilters = null, openNow = false, offset = 0, openAt = null) {
     const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
     // Debug logging
     const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
@@ -1103,6 +1091,7 @@ export class TravelDatabase {
         c.country_code,
         p.stars as osm_stars,
         p.cuisine as osm_cuisine,
+        p.opening_hours as osm_opening_hours,
         ST_Distance(
           p.location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
@@ -1136,9 +1125,11 @@ export class TravelDatabase {
       );
     }
 
-    // For openNow, over-fetch and post-filter (offset not applied when openNow since post-filtering changes counts)
-    const fetchLimit = openNow ? limit * 3 : limit;
-    const fetchOffset = openNow ? 0 : offset;
+    const openAtDate = coerceOpenAt(openAt);
+    const shouldFilterByHours = openNow || openAtDate;
+    // For hours filtering, over-fetch and post-filter (offset not applied since post-filtering changes counts)
+    const fetchLimit = shouldFilterByHours ? limit * 3 : limit;
+    const fetchOffset = shouldFilterByHours ? 0 : offset;
     query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(fetchLimit, fetchOffset);
 
@@ -1146,8 +1137,8 @@ export class TravelDatabase {
     const enriched = await this.enrichWithGoogleData(result.rows);
 
     let filtered = enriched;
-    if (openNow) {
-      filtered = this.filterOpenNow(enriched).slice(0, limit);
+    if (shouldFilterByHours) {
+      filtered = this.filterOpenAt(enriched, openAtDate || new Date()).slice(0, limit);
     }
 
     const baseUrl = await this.getServerBaseUrl();
@@ -1185,6 +1176,7 @@ export class TravelDatabase {
         c.country_code,
         p.stars as osm_stars,
         p.cuisine as osm_cuisine,
+        p.opening_hours as osm_opening_hours,
         g.rating as google_rating,
         g.user_rating_count as google_review_count,
         g.photos->0->>'url' as photo_url
