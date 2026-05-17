@@ -139,6 +139,20 @@ const ITINERARY_INTEREST_TYPES = {
 };
 const ITINERARY_DEFAULT_ATTRACTION_TYPES = ['attraction', 'museum', 'monument', 'gallery', 'viewpoint', 'castle', 'ruins', 'zoo', 'theme_park'];
 const ITINERARY_DEFAULT_FOOD_TYPES = ['restaurant', 'cafe', 'food_court'];
+const DINING_PLAN_MEALS = [
+  { key: 'breakfast', label: 'Breakfast', local_time: '09:00', preferredTypes: ['cafe', 'restaurant'], cuisineHints: ['coffee_shop', 'breakfast', 'bakery'] },
+  { key: 'lunch', label: 'Lunch', local_time: '12:30', preferredTypes: ['restaurant', 'cafe', 'food_court', 'fast_food'], cuisineHints: [] },
+  { key: 'dinner', label: 'Dinner', local_time: '19:30', preferredTypes: ['restaurant', 'bar', 'pub'], cuisineHints: [] },
+];
+const DINING_BUDGET_PRICE_LEVELS = {
+  free: ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
+  inexpensive: ['PRICE_LEVEL_INEXPENSIVE'],
+  cheap: ['PRICE_LEVEL_INEXPENSIVE'],
+  moderate: ['PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE'],
+  midrange: ['PRICE_LEVEL_MODERATE'],
+  expensive: ['PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE'],
+  luxury: ['PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE'],
+};
 
 function normalizeImportKeyword(value) {
   return String(value || '')
@@ -1096,6 +1110,187 @@ export class TravelDatabase {
     };
   }
 
+  static normalizeDiningBudget(budget) {
+    const normalized = String(budget || 'moderate').toLowerCase();
+    return DINING_BUDGET_PRICE_LEVELS[normalized] ? normalized : 'moderate';
+  }
+
+  static cuisineTokens(cuisine) {
+    return String(cuisine || '')
+      .split(/[;,]/)
+      .map(item => item.trim().toLowerCase())
+      .filter(Boolean);
+  }
+
+  static candidateCuisineKey(candidate) {
+    return TravelDatabase.cuisineTokens(candidate.osm_cuisine)[0] || candidate.poi_type || 'unknown';
+  }
+
+  static selectDiningCandidate(candidates, meal, usedOsmIds, usedCuisines, priceLevels, varietyPreference) {
+    const scored = candidates
+      .filter(candidate => !usedOsmIds.has(candidate.osm_id))
+      .map(candidate => {
+        const cuisineKey = TravelDatabase.candidateCuisineKey(candidate);
+        const priceLevel = candidate.google_price_level;
+        const preferredType = meal.preferredTypes.includes(candidate.poi_type) ? 30 : 0;
+        const cuisineHint = meal.cuisineHints.some(hint => TravelDatabase.cuisineTokens(candidate.osm_cuisine).includes(hint)) ? 15 : 0;
+        const priceFit = !priceLevel || priceLevels.includes(priceLevel) ? 20 : -20;
+        const variety = usedCuisines.has(cuisineKey) ? (varietyPreference === 'high' ? -25 : -10) : 10;
+        const rating = Number(candidate.google_rating) || 0;
+        const distance = Number(candidate.distance_from_city_center_km) || 0;
+        const score = preferredType + cuisineHint + priceFit + variety + rating * 4 - distance;
+        return { candidate, cuisineKey, score };
+      })
+      .sort((a, b) => b.score - a.score ||
+        (Number(a.candidate.distance_from_city_center_km) || 0) - (Number(b.candidate.distance_from_city_center_km) || 0) ||
+        String(a.candidate.name || '').localeCompare(String(b.candidate.name || '')));
+
+    return scored[0] || null;
+  }
+
+  static buildDiningPlanDays(candidates, days, priceLevels, varietyPreference) {
+    const clusters = new Map();
+    for (const candidate of candidates) {
+      const clusterId = Number.isInteger(Number(candidate.cluster_id)) ? Number(candidate.cluster_id) : 0;
+      if (!clusters.has(clusterId)) clusters.set(clusterId, []);
+      clusters.get(clusterId).push(candidate);
+    }
+    const sortedClusters = [...clusters.entries()].sort((a, b) => a[0] - b[0]);
+    const usedOsmIds = new Set();
+    const usedCuisines = new Set();
+
+    return Array.from({ length: days }, (_value, index) => {
+      const clusterRows = sortedClusters[index % Math.max(sortedClusters.length, 1)]?.[1] || candidates;
+      const dayRows = clusterRows.length > 0 ? clusterRows : candidates;
+      const meals = DINING_PLAN_MEALS.map(meal => {
+        const selected = TravelDatabase.selectDiningCandidate(dayRows, meal, usedOsmIds, usedCuisines, priceLevels, varietyPreference) ||
+          TravelDatabase.selectDiningCandidate(candidates, meal, usedOsmIds, usedCuisines, priceLevels, varietyPreference);
+        if (!selected) {
+          return {
+            meal: meal.key,
+            label: meal.label,
+            target_local_time: meal.local_time,
+            restaurant: null,
+          };
+        }
+        usedOsmIds.add(selected.candidate.osm_id);
+        usedCuisines.add(selected.cuisineKey);
+        return {
+          meal: meal.key,
+          label: meal.label,
+          target_local_time: meal.local_time,
+          restaurant: {
+            osm_id: selected.candidate.osm_id,
+            name: selected.candidate.name,
+            poi_type: selected.candidate.poi_type,
+            cuisine: selected.candidate.osm_cuisine || null,
+            cuisine_key: selected.cuisineKey,
+            google_rating: selected.candidate.google_rating ?? null,
+            google_price_level: selected.candidate.google_price_level ?? null,
+            latitude: selected.candidate.latitude,
+            longitude: selected.candidate.longitude,
+            distance_from_city_center_km: Number(Number(selected.candidate.distance_from_city_center_km || 0).toFixed(2)),
+            opening_hours_available: !!(selected.candidate.google_opening_hours || selected.candidate.osm_opening_hours),
+          },
+        };
+      });
+
+      return {
+        day: index + 1,
+        cluster_id: sortedClusters[index % Math.max(sortedClusters.length, 1)]?.[0] ?? null,
+        meals,
+      };
+    });
+  }
+
+  async planDining({ cityName, countryCode = null, state = null, days = 3, dietary = [], budget = 'moderate', varietyPreference = 'balanced' } = {}) {
+    const city = await this.getCityByName(cityName, countryCode, state);
+    if (!city) return null;
+
+    const safeDays = Math.min(Math.max(Number(days) || 3, 1), 14);
+    const normalizedBudget = TravelDatabase.normalizeDiningBudget(budget);
+    const priceLevels = DINING_BUDGET_PRICE_LEVELS[normalizedBudget];
+    const safeVariety = ['low', 'balanced', 'high'].includes(varietyPreference) ? varietyPreference : 'balanced';
+    const radiusKm = this.getRadiusForPopulation(city.population || 100000);
+    const candidateLimit = Math.min(180, safeDays * 18);
+    const params = [
+      city.latitude,
+      city.longitude,
+      radiusKm,
+      DINING_POI_TYPES,
+      candidateLimit,
+      safeDays,
+    ];
+
+    let query = `
+      WITH candidates AS (
+        SELECT
+          p.osm_id,
+          p.poi_type,
+          p.name,
+          p.latitude,
+          p.longitude,
+          p.location,
+          p.cuisine as osm_cuisine,
+          p.opening_hours as osm_opening_hours,
+          g.rating as google_rating,
+          g.price_level as google_price_level,
+          g.opening_hours as google_opening_hours,
+          ST_Distance(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
+          ) / 1000.0 as distance_from_city_center_km
+        FROM osm_pois p
+        LEFT JOIN osm_google_mappings m ON p.osm_id = m.osm_id AND m.mapping_status = 'active'
+        LEFT JOIN google_places g ON m.google_place_id = g.google_place_id
+        WHERE p.name IS NOT NULL
+          AND p.poi_type = ANY($4)
+          AND ST_DWithin(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
+            $3::float8 * 1000
+          )
+    `;
+    query += TravelDatabase.buildExtraFilters(null, null, dietary, params);
+    query += `
+        ORDER BY g.rating DESC NULLS LAST, distance_from_city_center_km ASC
+        LIMIT $5
+      )
+      SELECT
+        osm_id,
+        poi_type,
+        name,
+        latitude,
+        longitude,
+        osm_cuisine,
+        osm_opening_hours,
+        google_rating,
+        google_price_level,
+        google_opening_hours,
+        distance_from_city_center_km,
+        ST_ClusterKMeans(location, $6) OVER () as cluster_id
+      FROM candidates
+      ORDER BY cluster_id ASC, distance_from_city_center_km ASC
+    `;
+
+    const result = await this.pool.query(query, params);
+    const plan = TravelDatabase.buildDiningPlanDays(result.rows, safeDays, priceLevels, safeVariety);
+    return {
+      city: city.name,
+      country_code: city.country_code,
+      days: safeDays,
+      dietary: TravelDatabase.normalizeExtraFilterList(dietary),
+      budget: normalizedBudget,
+      price_levels: priceLevels,
+      variety_preference: safeVariety,
+      radius_km: radiusKm,
+      candidate_count: result.rows.length,
+      opening_hours_considered: true,
+      plan,
+      sparse_data: result.rows.length < safeDays * DINING_PLAN_MEALS.length,
+    };
+  }
+
   // =========================================================================
   // POI Search (queries osm_pois directly, enriches with Google data)
   // =========================================================================
@@ -1151,6 +1346,8 @@ export class TravelDatabase {
     gluten_free: 'diet:gluten_free',
     halal: 'diet:halal',
     kosher: 'diet:kosher',
+    pescatarian: 'diet:pescetarian',
+    pescetarian: 'diet:pescetarian',
     organic: 'diet:organic',
     lactose_free: 'diet:lactose_free',
   };

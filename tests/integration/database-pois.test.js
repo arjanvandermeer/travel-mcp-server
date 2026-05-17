@@ -170,7 +170,7 @@ describe('TravelDatabase POI Search Functions', () => {
         await db.searchPOIs({
           name: 'Kitchen',
           poiTypes: ['restaurant'],
-          dietary: ['vegan', 'vegetarian', 'halal', 'kosher', 'gluten_free'],
+          dietary: ['vegan', 'vegetarian', 'pescatarian', 'halal', 'kosher', 'gluten_free'],
         });
 
         const calls = mockPool.getCalls();
@@ -178,6 +178,7 @@ describe('TravelDatabase POI Search Functions', () => {
         assert.ok(searchCall, 'Should include parameterized tag lookups');
         assert.ok(searchCall.params.includes('diet:vegan'), 'Should bind vegan tag key');
         assert.ok(searchCall.params.includes('diet:vegetarian'), 'Should bind vegetarian tag key');
+        assert.ok(searchCall.params.includes('diet:pescetarian'), 'Should bind pescetarian tag key');
         assert.ok(searchCall.params.includes('diet:halal'), 'Should bind halal tag key');
         assert.ok(searchCall.params.includes('diet:kosher'), 'Should bind kosher tag key');
         assert.ok(searchCall.params.includes('diet:gluten_free'), 'Should bind gluten-free tag key');
@@ -544,6 +545,81 @@ describe('TravelDatabase POI Search Functions', () => {
 
       db = new TravelDatabase({ pool: mockPool });
       const result = await db.buildItinerary({ hotelOsmId: 99999 });
+
+      assert.strictEqual(result, null);
+    });
+  });
+
+  describe('planDining', () => {
+    it('should build a clustered dining plan with dietary and budget filters', async () => {
+      mockPool.setResponse('geonames_cities', dbResult([{
+        name: 'Tokyo',
+        country_code: 'JP',
+        latitude: 35.6762,
+        longitude: 139.6503,
+        population: 13960000,
+      }]));
+      mockPool.setResponse('ST_ClusterKMeans', dbResult([
+        { osm_id: 1, poi_type: 'cafe', name: 'Morning Cafe', latitude: 35.67, longitude: 139.65, osm_cuisine: 'coffee_shop', google_rating: 4.4, google_price_level: 'PRICE_LEVEL_MODERATE', distance_from_city_center_km: 0.2, google_opening_hours: { periods: [] }, cluster_id: 0 },
+        { osm_id: 2, poi_type: 'restaurant', name: 'Soba House', latitude: 35.671, longitude: 139.651, osm_cuisine: 'japanese;soba', google_rating: 4.6, google_price_level: 'PRICE_LEVEL_MODERATE', distance_from_city_center_km: 0.3, osm_opening_hours: 'Mo-Su 11:00-22:00', cluster_id: 0 },
+        { osm_id: 3, poi_type: 'restaurant', name: 'Veggie Table', latitude: 35.672, longitude: 139.652, osm_cuisine: 'vegetarian', google_rating: 4.5, google_price_level: 'PRICE_LEVEL_INEXPENSIVE', distance_from_city_center_km: 0.4, cluster_id: 0 },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.planDining({
+        cityName: 'Tokyo',
+        countryCode: 'JP',
+        days: 1,
+        dietary: ['vegetarian'],
+        budget: 'moderate',
+        varietyPreference: 'high',
+      });
+
+      assert.strictEqual(result.city, 'Tokyo');
+      assert.strictEqual(result.days, 1);
+      assert.deepStrictEqual(result.dietary, ['vegetarian']);
+      assert.strictEqual(result.budget, 'moderate');
+      assert.deepStrictEqual(result.price_levels, ['PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE']);
+      assert.strictEqual(result.candidate_count, 3);
+      assert.strictEqual(result.opening_hours_considered, true);
+      assert.strictEqual(result.plan[0].meals.length, 3);
+      assert.strictEqual(result.plan[0].meals[0].meal, 'breakfast');
+      assert.strictEqual(result.plan[0].meals[0].restaurant.name, 'Morning Cafe');
+      assert.strictEqual(result.plan[0].meals[0].restaurant.opening_hours_available, true);
+
+      const calls = mockPool.getCalls();
+      const diningCall = calls.find(c => c.sql.includes('ST_ClusterKMeans') && c.sql.includes('google_opening_hours'));
+      assert.ok(diningCall, 'Should query clustered dining candidates with opening hours');
+      assert.ok(diningCall.sql.includes('ST_DWithin'), 'Should constrain dining candidates spatially');
+      assert.ok(diningCall.sql.includes("p.tags->>$"), 'Should apply dietary tag filters');
+      assert.ok(diningCall.params.includes('diet:vegetarian'), 'Should bind dietary tag key');
+      assert.deepStrictEqual(diningCall.params[3], ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court']);
+      assert.strictEqual(diningCall.params[5], 1);
+    });
+
+    it('should return sparse empty meal slots when dining data is limited', async () => {
+      mockPool.setResponse('geonames_cities', dbResult([{
+        name: 'Tokyo',
+        country_code: 'JP',
+        latitude: 35.6762,
+        longitude: 139.6503,
+        population: 13960000,
+      }]));
+      mockPool.setResponse('ST_ClusterKMeans', emptyResult());
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.planDining({ cityName: 'Tokyo', days: 2 });
+
+      assert.strictEqual(result.sparse_data, true);
+      assert.strictEqual(result.plan.length, 2);
+      assert.strictEqual(result.plan[0].meals[0].restaurant, null);
+    });
+
+    it('should return null when dining city is missing', async () => {
+      mockPool.setResponse('geonames_cities', emptyResult());
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.planDining({ cityName: 'Atlantis' });
 
       assert.strictEqual(result, null);
     });

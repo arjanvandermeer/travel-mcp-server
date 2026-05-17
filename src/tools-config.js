@@ -243,6 +243,37 @@ const baseToolsConfig = [
     },
   },
   {
+    name: 'plan_dining',
+    description: 'Plan city dining across multiple days. Suggests breakfast, lunch, and dinner restaurants while balancing dietary filters, budget, cuisine variety, geography, and opening-hours availability.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        city_name: { type: 'string', description: 'City name to plan dining in.' },
+        country_code: { type: 'string', description: 'Optional 2-letter country code.' },
+        state: { type: 'string', description: 'Optional state/province code or name.' },
+        days: { type: 'number', description: 'Number of dining days (default: 3, max: 14).', default: 3 },
+        dietary: {
+          type: 'array',
+          items: { type: 'string', enum: ['vegan', 'vegetarian', 'pescatarian', 'pescetarian', 'halal', 'kosher', 'gluten_free'] },
+          description: 'Optional dietary restrictions. Multiple values use AND logic.',
+        },
+        budget: {
+          type: 'string',
+          enum: ['cheap', 'inexpensive', 'moderate', 'midrange', 'expensive', 'luxury'],
+          description: 'Budget preference used to balance Google Places price levels.',
+          default: 'moderate',
+        },
+        variety_preference: {
+          type: 'string',
+          enum: ['low', 'balanced', 'high'],
+          description: 'How strongly to avoid repeated cuisines.',
+          default: 'balanced',
+        },
+      },
+      required: ['city_name'],
+    },
+  },
+  {
     name: 'search_restaurants',
     description: 'Search for food & drink (restaurants, cafes, bars, fast food, coffee shops, etc.). Returns JSON results with coordinates, ratings, cuisine, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location - combine name filter with location. Supports cuisine filtering (e.g., "thai", "italian"), dietary restrictions (e.g., "vegan", "halal"), and open_now to find currently open places. WORKFLOW TIP: To find a chain restaurant near a landmark, first use search_pois to get the landmark coordinates, then use search_restaurants with those lat/long coordinates and query.',
     inputSchema: {
@@ -291,8 +322,8 @@ const baseToolsConfig = [
         },
         dietary: {
           oneOf: [
-            { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] },
-            { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] } },
+            { type: 'string', enum: ['vegetarian', 'vegan', 'pescatarian', 'pescetarian', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] },
+            { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'pescatarian', 'pescetarian', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] } },
           ],
           description: 'Filter by dietary restriction support. Multiple values use AND logic (must support all). Based on OSM dietary tags.',
         },
@@ -347,8 +378,8 @@ const baseToolsConfig = [
         },
         dietary: {
           oneOf: [
-            { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] },
-            { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] } },
+            { type: 'string', enum: ['vegetarian', 'vegan', 'pescatarian', 'pescetarian', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] },
+            { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'pescatarian', 'pescetarian', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] } },
           ],
           description: 'Dietary restriction filter. AND logic.',
         },
@@ -1149,6 +1180,34 @@ export async function executeToolHandler(name, args, db, options = {}) {
       return {
         content: [{ type: 'text', text: JSON.stringify(itinerary, null, 2) }],
         structuredContent: itinerary,
+      };
+    }
+
+    case 'plan_dining': {
+      if (!args.city_name) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: 'city_name is required' }, null, 2) }],
+        };
+      }
+      const plan = await db.planDining({
+        cityName: args.city_name,
+        countryCode: args.country_code,
+        state: args.state,
+        days: validateLimit(args.days, 3, 14),
+        dietary: args.dietary || [],
+        budget: args.budget || 'moderate',
+        varietyPreference: args.variety_preference || 'balanced',
+      });
+      if (!plan) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: 'City not found', city_name: args.city_name }, null, 2) }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(plan, null, 2) }],
+        structuredContent: plan,
       };
     }
 

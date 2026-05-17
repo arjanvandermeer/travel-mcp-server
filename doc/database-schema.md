@@ -616,6 +616,22 @@ Supported interests map to POI type groups:
 
 The tool always includes default food types so each day can include meal stops when nearby data exists. Days are capped at 7 and candidate radius is capped at 25 km.
 
+### Dining planner
+
+`plan_dining` accepts a city, day count, dietary filters, budget, and cuisine-variety preference. It resolves the city, fetches food candidates with `ST_DWithin`, applies dietary tag filters, clusters candidates with `ST_ClusterKMeans`, and returns breakfast/lunch/dinner slots per day.
+
+Budget preferences map to Google Places price levels:
+
+| Budget | Price levels |
+|--------|--------------|
+| `cheap` / `inexpensive` | `PRICE_LEVEL_INEXPENSIVE` |
+| `moderate` | `PRICE_LEVEL_INEXPENSIVE`, `PRICE_LEVEL_MODERATE` |
+| `midrange` | `PRICE_LEVEL_MODERATE` |
+| `expensive` | `PRICE_LEVEL_MODERATE`, `PRICE_LEVEL_EXPENSIVE` |
+| `luxury` | `PRICE_LEVEL_EXPENSIVE`, `PRICE_LEVEL_VERY_EXPENSIVE` |
+
+Meal slots target local times of 09:00, 12:30, and 19:30. The response includes whether opening-hours data was available for each selected restaurant, but venues without hours are retained because OSM/Google hours coverage is incomplete.
+
 ### Restaurant price levels and dining budgets
 
 Restaurant price filters use Google Places `price_level` values after the initial indexed OSM search has been enriched:

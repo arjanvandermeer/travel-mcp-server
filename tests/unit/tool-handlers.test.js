@@ -23,6 +23,7 @@ function createMockDb(overrides = {}) {
     findFoodDistricts: async () => null,
     getNeighborhoodScore: async () => null,
     buildItinerary: async () => null,
+    planDining: async () => null,
     getPOIDetails: async () => null,
     getStats: async () => ({ total_pois: 100, total_cities: 50 }),
     batchEnrichPOIs: async () => {},
@@ -497,6 +498,70 @@ describe('executeToolHandler: build_itinerary', () => {
     assert.deepStrictEqual(tool.inputSchema.required, ['hotel_osm_id']);
     assert.ok(tool.inputSchema.properties.interests.items.enum.includes('museums'));
     assert.strictEqual(tool.inputSchema.properties.days.default, 3);
+  });
+});
+
+// =============================================================================
+// plan_dining
+// =============================================================================
+
+describe('executeToolHandler: plan_dining', () => {
+  it('should return structured dining plan content', async () => {
+    let capturedArgs;
+    const diningPlan = {
+      city: 'Tokyo',
+      days: 2,
+      budget: 'moderate',
+      plan: [{ day: 1, meals: [] }, { day: 2, meals: [] }],
+    };
+    const db = createMockDb({
+      planDining: async (args) => {
+        capturedArgs = args;
+        return diningPlan;
+      },
+    });
+
+    const result = await executeToolHandler('plan_dining', {
+      city_name: 'Tokyo',
+      country_code: 'JP',
+      days: 2,
+      dietary: ['vegetarian'],
+      budget: 'moderate',
+      variety_preference: 'high',
+    }, db);
+    const parsed = parseResponse(result);
+
+    assert.deepStrictEqual(parsed, diningPlan);
+    assert.deepStrictEqual(result.structuredContent, diningPlan);
+    assert.strictEqual(capturedArgs.cityName, 'Tokyo');
+    assert.strictEqual(capturedArgs.countryCode, 'JP');
+    assert.deepStrictEqual(capturedArgs.dietary, ['vegetarian']);
+    assert.strictEqual(capturedArgs.varietyPreference, 'high');
+  });
+
+  it('should reject missing city_name', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('plan_dining', {}, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /city_name is required/);
+  });
+
+  it('should return an error when dining city is not found', async () => {
+    const db = createMockDb({ planDining: async () => null });
+    const result = await executeToolHandler('plan_dining', { city_name: 'Atlantis' }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /City not found/);
+  });
+
+  it('should expose plan_dining schema', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    const tool = tools.find(t => t.name === 'plan_dining');
+    assert.ok(tool);
+    assert.deepStrictEqual(tool.inputSchema.required, ['city_name']);
+    assert.ok(tool.inputSchema.properties.dietary.items.enum.includes('vegetarian'));
+    assert.ok(tool.inputSchema.properties.dietary.items.enum.includes('pescatarian'));
+    assert.ok(tool.inputSchema.properties.budget.enum.includes('moderate'));
+    assert.strictEqual(tool.inputSchema.properties.variety_preference.default, 'balanced');
   });
 });
 
