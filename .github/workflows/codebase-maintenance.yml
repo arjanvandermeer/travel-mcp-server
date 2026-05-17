@@ -1,9 +1,6 @@
 name: Codebase Maintenance Review
 
 on:
-  workflow_run:
-    workflows: ["CI"]
-    types: [completed]
   workflow_dispatch:
     inputs:
       force:
