@@ -19,36 +19,6 @@ jobs:
       - run: npm run lint
 
       - name: Credential scan
-        run: |
-          FOUND=0
-          FILES=$(find src/ tests/ scripts/ .github/ -type f \
-            ! -name '*.md' ! -name 'package-lock.json' 2>/dev/null)
-          for FILE in $FILES; do
-            if grep -qinE 'AKIA[0-9A-Z]{16}' "$FILE"; then
-              grep -inE 'AKIA[0-9A-Z]{16}' "$FILE" | sed "s|^|$FILE:|"
-              FOUND=1
-            fi
-            if grep -inE 'password\s*[:=]\s*['"'"'"][^'"'"'"]+['"'"'"]' "$FILE" | grep -qiv '<[a-z-]*>'; then
-              grep -inE 'password\s*[:=]\s*['"'"'"][^'"'"'"]+['"'"'"]' "$FILE" | grep -iv '<[a-z-]*>' | sed "s|^|$FILE:|"
-              FOUND=1
-            fi
-            if grep -inE 'api[_-]?key\s*[:=]\s*['"'"'"][^'"'"'"]+['"'"'"]' "$FILE" | grep -qiv '<[a-z-]*>'; then
-              grep -inE 'api[_-]?key\s*[:=]\s*['"'"'"][^'"'"'"]+['"'"'"]' "$FILE" | grep -iv '<[a-z-]*>' | sed "s|^|$FILE:|"
-              FOUND=1
-            fi
-            if grep -qinE 'bearer\s+[a-zA-Z0-9._-]{20,}' "$FILE"; then
-              grep -inE 'bearer\s+[a-zA-Z0-9._-]{20,}' "$FILE" | sed "s|^|$FILE:|"
-              FOUND=1
-            fi
-            if grep -qinE -e '-----BEGIN (RSA |EC )?PRIVATE KEY-----' "$FILE"; then
-              grep -inE -e '-----BEGIN (RSA |EC )?PRIVATE KEY-----' "$FILE" | sed "s|^|$FILE:|"
-              FOUND=1
-            fi
-          done
-          if [ "$FOUND" = "1" ]; then
-            echo "Credential scan FAILED: see above."
-            exit 1
-          fi
-          echo "Credential scan passed."
+        run: node scripts/credential-scan.js
 
       - run: npm test
