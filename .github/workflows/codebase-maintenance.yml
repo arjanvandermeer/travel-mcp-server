@@ -8,9 +8,14 @@ on:
         required: false
         default: false
         type: boolean
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
 
 permissions:
   contents: read
+  actions: read
+  issues: write
 
 jobs:
   gate:
@@ -25,6 +30,7 @@ jobs:
       )
     permissions:
       contents: read
+      actions: read
     outputs:
       should_run: ${{ steps.gate.outputs.should_run }}
       reason: ${{ steps.gate.outputs.reason }}
@@ -39,11 +45,15 @@ jobs:
         env:
           ACTOR: ${{ github.event.workflow_run.actor.login || github.actor }}
           FORCE: ${{ inputs.force || 'false' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           git diff-tree --no-commit-id --name-only -r HEAD > changed-files.txt || true
           echo "Changed files:"
           cat changed-files.txt
+          last_review_at="$(gh run list --workflow "Codebase Maintenance Review" --status success --limit 20 --json createdAt --jq '.[0].createdAt // ""')"
+          echo "Last successful maintenance review: ${last_review_at:-none}"
+          export LAST_REVIEW_AT="$last_review_at"
           node scripts/maintenance-review-gate.js changed-files.txt
 
   review:
@@ -52,8 +62,8 @@ jobs:
     needs: gate
     if: needs.gate.outputs.should_run == 'true'
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      issues: write
     steps:
       - uses: actions/checkout@v4
         with:
@@ -83,8 +93,19 @@ jobs:
           npm audit --audit-level=moderate --json > .maintenance/npm-audit.json 2>&1
           echo $? > .maintenance/npm-audit.exit
 
+      - name: Capture existing GitHub issues
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue list --state all --limit 200 \
+            --json number,title,state,labels,body,url,updatedAt,closedAt \
+            > .maintenance/github-issues.json
+
       - name: Run Codex maintenance review
         uses: openai/codex-action@v1
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           prompt-file: doc/regular-codebase-review.md
@@ -95,20 +116,3 @@ jobs:
 
       - name: Remove transient check output
         run: rm -rf .maintenance
-
-      - name: Create TODO update pull request
-        uses: peter-evans/create-pull-request@v7
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          branch: codex/codebase-maintenance-review
-          delete-branch: true
-          title: "Update TODO from codebase maintenance review"
-          commit-message: "Update TODO from codebase maintenance review"
-          add-paths: TODO.md
-          body: |
-            Automated codebase maintenance review.
-
-            Gate reason: ${{ needs.gate.outputs.reason }}
-
-            This PR should only contain review output updates, primarily `TODO.md`.
-          labels: maintenance, automated

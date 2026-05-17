@@ -79,7 +79,7 @@ Claude Desktop / ChatGPT / Web Browser
 | [doc/google-places.md](doc/google-places.md) | Google Places API integration |
 | [doc/http-transport.md](doc/http-transport.md) | HTTP/SSE server setup |
 | [slm/README.md](slm/README.md) | Local SLM agent with Ollama (usage, test suite, integration guide) |
-| [TODO.md](TODO.md) | Planned improvements and known issues |
+| [GitHub Issues](https://github.com/arjanvandermeer/travel-mcp-server/issues) | Planned improvements and known issues |
 
 ## Data Sources
 

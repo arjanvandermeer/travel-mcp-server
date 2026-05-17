@@ -5,19 +5,13 @@ import { fileURLToPath } from 'url';
 
 const CODE_IMPACTING_PATH_RE = /^(\.github\/workflows\/|cloudflare-oauth-worker\/|data\/|package\.json$|package-lock\.json$|scripts\/|slm\/|src\/|tests\/|web\/)/;
 
-export function getLatestReviewDate(todoText) {
-  const marker = '## Regular Codebase Review';
-  const idx = todoText.indexOf(marker);
-  if (idx === -1) return null;
+export function getReviewDate(reviewTimestamp) {
+  if (!reviewTimestamp) return null;
 
-  const rest = todoText.slice(idx + marker.length);
-  const nextSectionIdx = rest.search(/\n## /);
-  const section = nextSectionIdx === -1 ? rest : rest.slice(0, nextSectionIdx);
-  const dates = [...section.matchAll(/^### (\d{4}-\d{2}-\d{2})$/gm)]
-    .map(match => match[1])
-    .sort();
+  const parsed = new Date(reviewTimestamp);
+  if (Number.isNaN(parsed.getTime())) return null;
 
-  return dates[dates.length - 1] || null;
+  return parsed.toISOString().split('T')[0];
 }
 
 export function daysSince(dateString, today = new Date()) {
@@ -34,7 +28,7 @@ export function decideMaintenanceReview({
   actor = '',
   force = false,
   changedFiles = [],
-  todoText = '',
+  lastReviewAt = '',
   today = new Date(),
   minDays = 7,
 } = {}) {
@@ -50,9 +44,9 @@ export function decideMaintenanceReview({
     return { shouldRun: false, reason: 'no code-impacting files changed' };
   }
 
-  const latestReviewDate = getLatestReviewDate(todoText);
+  const latestReviewDate = getReviewDate(lastReviewAt);
   if (!latestReviewDate) {
-    return { shouldRun: true, reason: 'no previous dated Regular Codebase Review entry' };
+    return { shouldRun: true, reason: 'no previous successful maintenance review run' };
   }
 
   const ageDays = daysSince(latestReviewDate, today);
@@ -79,15 +73,13 @@ function main() {
     ? fs.readFileSync(changedFilesPath, 'utf8').split(/\r?\n/).filter(Boolean)
     : [];
 
-  const todoPath = process.env.TODO_PATH || 'TODO.md';
-  const todoText = fs.existsSync(todoPath) ? fs.readFileSync(todoPath, 'utf8') : '';
   const today = process.env.TODAY ? new Date(`${process.env.TODAY}T00:00:00Z`) : new Date();
 
   const result = decideMaintenanceReview({
     actor: process.env.ACTOR || '',
     force: process.env.FORCE === 'true',
     changedFiles,
-    todoText,
+    lastReviewAt: process.env.LAST_REVIEW_AT || '',
     today,
     minDays: parseInt(process.env.MIN_DAYS || '7', 10),
   });

@@ -1,6 +1,6 @@
 # Regular Codebase Review
 
-This prompt is for a scheduled maintenance review of the whole repository. It is broader than PR review: the goal is to keep `TODO.md` current with code health findings, test gaps, approval-needed changes, sprawl, optimizations, and documentation drift.
+This prompt is for a scheduled maintenance review of the whole repository. It is broader than PR review: the goal is to keep GitHub issues current with code health findings, test gaps, approval-needed changes, sprawl, optimizations, security issues, and documentation drift.
 
 ## Recommended Scheduling
 
@@ -8,27 +8,22 @@ Prefer an event-gated CI/CD workflow over a plain cron schedule.
 
 Recommended trigger model:
 
-- Trigger on pushes to `main`, plus `workflow_dispatch` for manual runs.
+- Trigger after successful `CI` runs on `main`, plus `workflow_dispatch` for manual runs.
 - Skip commits made by automation/bots.
-- Skip if the push only changes low-signal files such as `TODO.md`, generated files, or this review prompt.
-- Run only if the latest dated `## Regular Codebase Review` entry in `TODO.md` is at least 7 days old.
-- If the review runs and finds no new actionable items, still add a small dated note so the 7-day gate advances.
-- Open a pull request with the `TODO.md` update instead of committing directly to `main`.
+- Skip if the push only changes low-signal files such as this review prompt or generated files.
+- Run only if the latest successful `Codebase Maintenance Review` workflow run is at least 7 days old.
+- If the review runs and finds no new actionable items, leave a concise comment on the newest open maintenance issue if one exists, or create a small dated "maintenance review: no new findings" issue and close it. This gives the workflow history an auditable run without changing source files.
 
-Use Codex automation if the desired output is an inbox item plus an updated local `TODO.md`. It can run the prompt directly in the workspace and make a focused documentation-only change.
-
-Use a GitHub Action if the desired output is a GitHub issue or pull request. That is better for team visibility and auditability, but it requires an LLM/API secret, permissions to create issues or PRs, and careful rules to avoid committing directly to `main`.
-
-Recommended starting interval: 7 days since the last actual review run. This means no commits for 3 weeks produces no review, while daily commits produce at most one review per week.
+Use a GitHub Action for this workflow because the desired output is GitHub issue reconciliation. It requires an LLM/API secret plus `issues: write` permission.
 
 ## CI/CD Gate Design
 
 The workflow should have separate gate steps before invoking any AI agent:
 
 1. Detect whether the push contains code-impacting changes.
-2. Parse `TODO.md` for the newest dated subsection under `## Regular Codebase Review`.
-3. Compare that date to the current UTC date.
-4. Run the review only when both gates pass.
+2. Read the latest successful `Codebase Maintenance Review` workflow run timestamp.
+3. Compare that timestamp to the current UTC date.
+4. Run the review only when both gates pass, unless `workflow_dispatch` sets `force=true`.
 
 Suggested code-impacting paths:
 
@@ -45,26 +40,56 @@ Suggested code-impacting paths:
 
 Suggested low-signal paths to ignore for triggering:
 
-- `TODO.md`
 - `doc/regular-codebase-review.md`
 - generated coverage or local data files
-- bot-authored review PR commits
-
-If this becomes a GitHub Action, keep the job split into:
-
-- `gate`: cheap shell checks, no LLM/API calls
-- `review`: runs only when `gate` says the review is due
-- `pull-request`: opens a PR containing the `TODO.md` changes
+- bot-authored review commits
 
 ## Manual Use
 
-Paste the prompt below into Codex from the repository root. Do not run the implementation work it discovers unless explicitly requested.
+Paste the prompt below into Codex from the repository root. Do not run implementation work discovered by the review unless explicitly requested.
 
 ## Prompt
 
 You are performing a full maintenance review of the `travel-mcp-server` repository.
 
-Your job is to analyze the whole codebase and update `TODO.md` with actionable findings. Do not implement product or code fixes during this run. Only update `TODO.md`. Treat existing user changes as owned by the user; do not revert or overwrite unrelated work.
+Your job is to analyze the whole codebase and reconcile GitHub issues. Do not implement product or code fixes during this run. Do not edit source files unless explicitly asked. Treat existing user changes as owned by the user; do not revert or overwrite unrelated work.
+
+### Required GitHub Issue Workflow
+
+Use GitHub issues as the source of truth for maintenance findings.
+
+1. Read `.maintenance/github-issues.json` when it exists. It contains the current issue snapshot captured before the review.
+2. If the file is missing or stale, run:
+
+```bash
+gh issue list --state all --limit 200 --json number,title,state,labels,body,url,updatedAt,closedAt
+```
+
+3. For every existing open issue that looks maintenance-related, determine whether it is still relevant.
+4. If an open issue is no longer relevant because the code clearly fixed it, close it with a short evidence-based comment:
+
+```bash
+gh issue close <number> --reason completed --comment "Closed by scheduled maintenance review: <specific evidence>."
+```
+
+5. If an open issue is partially fixed, leave a short comment explaining what remains instead of closing it.
+6. Before creating a new issue, search existing open and closed issues by title and body. Do not create duplicates.
+7. Create new issues for new actionable findings:
+
+```bash
+gh issue create --title "<clear actionable title>" --body "<markdown body>"
+```
+
+8. New issue bodies must include:
+   - category: approval needed, correctness, test coverage, code sprawl, performance, security, operations, docs, repo hygiene, or product
+   - priority: high, medium, or low
+   - affected files/areas
+   - concrete issue
+   - recommended next action
+   - test coverage needed, when applicable
+   - evidence from code, tests, command output, or docs
+9. Prefer updating/commenting on existing issues over creating new ones.
+10. Do not close feature/backlog issues just because they are old. Close only when code or documentation clearly proves the issue is complete or obsolete.
 
 ### Goals
 
@@ -74,9 +99,9 @@ Your job is to analyze the whole codebase and update `TODO.md` with actionable f
 - Check unit and integration test coverage quality, including measurable coverage output where available.
 - Find code sprawl: files or functions becoming too long, modules taking on too many responsibilities, duplicate logic, or unclear ownership boundaries.
 - Find possible optimizations in database queries, indexing, caching, API calls, import jobs, frontend request patterns, startup behavior, and test runtime.
-- Find documentation drift between code, `README.md`, `GETTING_STARTED.md`, `doc/`, workflow files, and `TODO.md`.
+- Find documentation drift between code, `README.md`, `GETTING_STARTED.md`, `doc/`, and workflow files.
 - Find repo hygiene issues such as generated files, local artifacts, stale docs, unused files, inconsistent naming, or old migration assumptions.
-- Find dependency vulnerabilities from `npm audit` and add actionable remediation items to `TODO.md`.
+- Find dependency vulnerabilities from `npm audit` and create or update actionable GitHub issues.
 
 ### Scope
 
@@ -94,7 +119,8 @@ Review these areas:
 - Local SLM agent under `slm/`
 - Tests under `tests/`
 - CI and review workflows under `.github/`
-- Existing documentation and `TODO.md`
+- Existing documentation under `README.md`, `GETTING_STARTED.md`, and `doc/`
+- Current GitHub issues
 
 Exclude generated or dependency-heavy folders unless a repo hygiene issue points to them:
 
@@ -118,7 +144,7 @@ Exclude generated or dependency-heavy folders unless a repo hygiene issue points
 ### Review Process
 
 1. Check working tree status and note existing uncommitted files. Do not modify unrelated user work.
-2. Read `TODO.md` first and avoid duplicating existing open items.
+2. Read current GitHub issues first and avoid duplicating existing open or recently closed items.
 3. Build a repository map with `rg --files`, excluding generated folders.
 4. Measure file and module size. Flag candidates that are getting too long or too broad, especially files over roughly 500 lines and files over roughly 900 lines.
 5. Compare source modules to tests. Identify missing tests by behavior, not only by filename.
@@ -154,72 +180,30 @@ Exclude generated or dependency-heavy folders unless a repo hygiene issue points
    - `npm audit --audit-level=moderate`
    - targeted `rg`/line-count checks
    - When the `.maintenance/` directory exists, read its captured command outputs before rerunning expensive checks
-10. Update `TODO.md` only after analysis is complete.
+10. Reconcile GitHub issues only after analysis is complete.
 
-### TODO Update Rules
+### Dependency Audit Rules
 
-Add or update a section named `## Regular Codebase Review`.
-
-For each review run, add a dated subsection using the current date. Keep it concise and useful. Prefer merging with existing TODO items instead of duplicating them. If no new findings are discovered, add a short dated note saying no new actionable findings were found so the CI/CD 7-day gate has an explicit last-run marker.
-
-Each finding should include:
-
-- priority: high, medium, low
-- category: approval needed, correctness, test coverage, code sprawl, performance, security, operations, docs, repo hygiene
-- file or area
-- concrete issue
-- recommended next action
-- test coverage needed, when applicable
-
-Use this format:
-
-```md
-## Regular Codebase Review
-
-### YYYY-MM-DD
-
-#### Approval Needed
-- [ ] **High** `area/file.js`: Decision needed before changing X because it affects Y. Recommended next action: ...
-
-#### Fixes And Risks
-- [ ] **High** `area/file.js`: Issue. Recommended next action: ... Test coverage: ...
-
-#### Test Coverage
-- [ ] **Medium** `area/file.js`: Missing regression coverage for X. Recommended next action: ...
-
-#### Code Sprawl And Maintainability
-- [ ] **Medium** `area/file.js`: File/function has grown too broad. Recommended next action: ...
-
-#### Performance And Operations
-- [ ] **Medium** `area/file.js`: Possible optimization. Recommended next action: ...
-
-#### Dependency Audit
-- [ ] **High** `package-lock.json`: `npm audit` found high/critical vulnerability in `<package>`. Recommended next action: upgrade to `<fixed-version>` or document why no safe upgrade exists. Test coverage: run `npm test` after dependency change.
-
-#### Documentation And Hygiene
-- [ ] **Low** `area/file.js`: Drift or hygiene issue. Recommended next action: ...
-```
+- Create or update issues for all high and critical `npm audit` findings.
+- Create or update issues for moderate findings when they affect runtime dependencies, security-sensitive tooling, request parsing, auth, database access, or CI/CD.
+- Do not create low-severity issues unless they are easy, safe upgrades with no expected behavioral impact.
+- Group duplicate advisories by vulnerable package and remediation path instead of creating one issue per advisory.
+- Include package name, severity, vulnerable range, fixed version or recommended command when available, and whether it is direct or transitive.
+- If `npm audit` cannot run because registry/network access is unavailable, include that fact in the final summary, but do not create a vulnerability issue from incomplete data.
 
 ### Output Requirements
 
-- Update `TODO.md` with findings.
+- Reconcile GitHub issues: create new issues, close resolved issues, and comment on partially resolved issues where appropriate.
+- Do not create local backlog files; GitHub issues are the source of truth.
 - Do not make source code changes during this scheduled review.
-- Do not mark old TODO items complete unless the code clearly proves they are complete.
-- Do not remove existing TODO items unless they are exact duplicates of the new consolidated item.
-- Keep the review actionable. Avoid vague items like "improve code quality."
-- In the final response or inbox item, summarize:
-  - whether `TODO.md` was updated
+- Do not close existing issues unless the code clearly proves they are complete or obsolete.
+- Keep issues actionable. Avoid vague items like "improve code quality."
+- In the final response or workflow log summary, include:
+  - number of issues created
+  - number of issues closed
+  - number of issues commented on
   - commands run and whether they passed
   - `npm audit` result, including count of moderate/high/critical vulnerabilities
   - unit/integration coverage result, including notable weak areas
   - the highest-priority new findings
   - anything skipped because of missing credentials, network, or local services
-
-### Dependency Audit Rules
-
-- Add all high and critical `npm audit` findings to `TODO.md`.
-- Add moderate findings when they affect runtime dependencies, security-sensitive tooling, request parsing, auth, database access, or CI/CD.
-- Do not add low findings unless they are easy, safe upgrades with no expected behavioral impact.
-- Group duplicate advisories by vulnerable package and remediation path instead of adding one TODO item per advisory.
-- Include package name, severity, vulnerable range, fixed version or recommended command when available, and whether it is direct or transitive.
-- If `npm audit` cannot run because registry/network access is unavailable, add that fact to the review summary, but do not create a vulnerability TODO from incomplete data.

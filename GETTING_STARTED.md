@@ -784,7 +784,7 @@ Now that your server is running:
 
 3. **Review documentation:**
    - [README.md](README.md) - Full feature documentation
-   - [TODO.md](TODO.md) - Planned improvements and known issues
+   - [GitHub Issues](https://github.com/arjanvandermeer/travel-mcp-server/issues) - Planned improvements and known issues
    - [google-places.md](doc/google-places.md) - Google Places API integration
 
 4. **Customize configuration:**
@@ -850,7 +850,7 @@ docker exec -it travel-postgres psql -U traveluser -d travel  # Connect to DB
 
 If you encounter issues not covered in this guide:
 
-1. Check [TODO.md](TODO.md) for known issues
+1. Check [GitHub Issues](https://github.com/arjanvandermeer/travel-mcp-server/issues) for known issues
 2. Review server logs: `npm start` shows real-time logs
 3. Check Claude Desktop logs (location shown in Troubleshooting section)
 4. Open an issue on the GitHub repository
