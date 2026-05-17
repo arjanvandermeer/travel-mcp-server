@@ -26,7 +26,7 @@ describe('http static utils', () => {
   it('adds asset versions and optional analytics to the web index', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'travel-index-'));
     const filePath = path.join(tmpDir, 'index.html');
-    fs.writeFileSync(filePath, '<head><link rel="stylesheet" href="/css/style.css"></head><body><script src="/js/app.js"></script></body>');
+    fs.writeFileSync(filePath, '<head><link rel="stylesheet" href="/css/style.css"></head><body><span>__APP_COMMIT__</span><script src="/js/app.js"></script></body>');
 
     const html = renderWebIndex(filePath, {
       versionInfo: { gitCommitShort: 'abc123', buildTime: '2026-05-17T00:00:00Z' },
@@ -35,6 +35,7 @@ describe('http static utils', () => {
 
     assert.ok(html.includes('/css/style.css?v=abc123-2026-05-17T00%3A00%3A00Z'));
     assert.ok(html.includes('/js/app.js?v=abc123-2026-05-17T00%3A00%3A00Z'));
+    assert.ok(html.includes('<span>abc123</span>'));
     assert.ok(html.includes('G-ABC123'));
   });
 });
