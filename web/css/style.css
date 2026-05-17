@@ -70,7 +70,9 @@ button { cursor: pointer; }
   color: var(--muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 11px;
+  text-decoration: none;
 }
+.build-chip:hover { color: var(--ink); border-color: var(--accent); }
 .nav-actions { display: flex; align-items: center; gap: 10px; }
 .nav-link, .icon-button, .secondary-button, .primary-button, .account-button {
   border: 1px solid var(--line);
