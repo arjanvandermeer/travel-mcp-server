@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Travel MCP OSM and Google Places refresh daily
+
+[Timer]
+OnCalendar=*-*-* 02:15:00
+RandomizedDelaySec=45m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

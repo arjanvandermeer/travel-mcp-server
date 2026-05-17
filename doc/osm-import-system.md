@@ -116,14 +116,37 @@ node scripts/refresh-imports.js --region=thailand --force
 | `--max=N` | Limit regions per run (for Lambda timeouts) |
 | `--region=NAME` | Target specific region |
 | `--force` | Refresh even if not due yet |
+| `--refresh-google` | Refresh stale Google Places cache entries |
+| `--refresh-geonames` | Re-import GeoNames country/city data |
+| `--skip-osm` | Skip OSM region refresh checks for Google/GeoNames-only runs |
 
 ## NPM Scripts
 
 ```bash
+npm run init:osm -- thailand        # Initialize DB, download Thailand, import all POIs
+npm run init:osm -- thailand hotel  # Import only hotel-like POIs for Thailand
 npm run db:import -- france           # Import a region
 npm run db:refresh -- --list          # List import status
 npm run db:refresh -- --dry-run       # Preview refresh
 npm run db:refresh -- --max=3         # Refresh up to 3 regions
+```
+
+### init:osm one-command workflow
+
+`npm run init:osm -- <region> [poi-type]` wraps the common local bootstrap path:
+
+1. Runs `db:init` so missing tables are created safely.
+2. Optionally runs `db:import-geonames` when `--geonames` is supplied.
+3. Downloads the configured Geofabrik PBF for `<region>` through `import-osm.js`.
+4. Imports the requested POI type (`all` by default).
+5. Optionally runs `db:optimize` when `--optimize` is supplied.
+
+Examples:
+
+```bash
+npm run init:osm -- thailand
+npm run init:osm -- thailand restaurant --geonames --optimize
+npm run init:osm -- thailand all --skip-db-init
 ```
 
 ## Duplicate Import Protection
@@ -187,7 +210,31 @@ DATABASE_URL="postgresql://user:pass@rds-endpoint:5432/travel?sslmode=no-verify"
   node scripts/import-osm.js thailand
 ```
 
-### Scheduled Refresh (Cron/Lambda)
+### Scheduled Refresh (systemd, Cron, Lambda)
+
+Ready-to-install systemd examples live in `ops/systemd/`:
+
+| Unit | Schedule | Command |
+|------|----------|---------|
+| `travel-osm-google-refresh.timer` | Daily, randomized after 02:15 | `npm run db:refresh -- --max=2 --optimize --refresh-google` |
+| `travel-geonames-refresh.timer` | Weekly Sunday, randomized after 03:30 | `npm run db:refresh -- --skip-osm --refresh-geonames` |
+
+Install outline:
+
+```bash
+sudo mkdir -p /etc/travel-mcp-server
+sudo install -m 600 /dev/stdin /etc/travel-mcp-server/refresh.env <<'ENV'
+DATABASE_URL=postgresql://user:pass@host:5432/travel
+GOOGLE_PLACES_API_KEY=...
+TELEMETRY_ENABLED=true
+ENV
+
+sudo cp ops/systemd/travel-*-refresh.* /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now travel-osm-google-refresh.timer travel-geonames-refresh.timer
+```
+
+Cron and Lambda can run the same commands:
 
 ```bash
 # Daily cron job - refresh up to 3 stale regions
@@ -196,6 +243,15 @@ DATABASE_URL="postgresql://user:pass@rds-endpoint:5432/travel?sslmode=no-verify"
 # Or as Lambda (15 min timeout, process 2 regions max)
 DATABASE_URL="..." node scripts/refresh-imports.js --max=2
 ```
+
+### Operational cost, quota, and failure behavior
+
+- OSM imports download large Geofabrik PBF files. Small countries may be tens of MB; large countries can be multiple GB and need 8GB+ RAM plus enough temporary disk.
+- `--max=N` caps each scheduled OSM run so a timer or Lambda does not attempt the whole backlog at once.
+- Google Places refreshes call `enrichOSMPOI`, which uses the database-backed daily quota guard. When quota is exhausted, entries are skipped instead of looping indefinitely.
+- GeoNames refreshes are separated into a weekly timer because they are all-country data jobs and should not run every time stale OSM regions are checked.
+- Failed imports are recorded in `import_log`; running jobs older than 24 hours and aborted jobs older than 1 hour are marked failed by the import script cleanup.
+- The refresh command exits non-zero when any region refresh fails, so systemd, cron, Lambda, and Sentry can alert on the failure.
 
 ## Database Migration
 

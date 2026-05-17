@@ -63,6 +63,7 @@ Options:
   --optimize      Run database optimization after imports complete
   --refresh-geonames  Re-import GeoNames countries and cities data
   --refresh-google    Refresh stale Google Places cache entries
+  --skip-osm          Skip OSM import source refresh checks
   --help, -h      Show this help message
 
 Examples:
@@ -71,6 +72,7 @@ Examples:
   node scripts/refresh-imports.js --region=thailand --force
   node scripts/refresh-imports.js --list
   node scripts/refresh-imports.js --optimize   # Refresh and optimize
+  node scripts/refresh-imports.js --skip-osm --refresh-geonames
 `);
     process.exit(0);
   }
@@ -306,12 +308,14 @@ async function main() {
       return;
     }
 
-    // Get stale imports
-    const staleImports = await getStaleImports(pool, options);
+    // Get stale imports unless this run is intentionally data-source specific.
+    const staleImports = options.skipOsm ? [] : await getStaleImports(pool, options);
 
-    if (staleImports.length === 0 && !options.refreshGoogle) {
+    if (staleImports.length === 0 && !options.refreshGoogle && !options.refreshGeonames) {
       if (options.region) {
         console.log(`\nNo refresh needed for "${options.region}" (or region not found/disabled)`);
+      } else if (options.skipOsm) {
+        console.log('\nNo refresh work requested. Use --refresh-google and/or --refresh-geonames with --skip-osm.');
       } else {
         console.log('\n✓ All imports are up to date!');
       }

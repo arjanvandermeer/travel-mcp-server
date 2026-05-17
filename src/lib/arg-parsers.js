@@ -20,6 +20,7 @@
  * @returns {boolean} options.optimize - Run optimization after imports
  * @returns {boolean} options.refreshGeonames - Also refresh GeoNames data
  * @returns {boolean} options.refreshGoogle - Refresh stale Google Places cache entries
+ * @returns {boolean} options.skipOsm - Skip OSM region refreshes
  * @returns {boolean} options.help - Help was requested (caller should show help)
  *
  * @example
@@ -40,6 +41,7 @@ export function parseRefreshArgs(args) {
     optimize: false,
     refreshGeonames: false,
     refreshGoogle: false,
+    skipOsm: false,
     help: false,
   };
 
@@ -56,6 +58,8 @@ export function parseRefreshArgs(args) {
       options.refreshGeonames = true;
     } else if (arg === '--refresh-google') {
       options.refreshGoogle = true;
+    } else if (arg === '--skip-osm') {
+      options.skipOsm = true;
     } else if (arg.startsWith('--max=')) {
       const value = parseInt(arg.split('=')[1], 10);
       options.max = isNaN(value) ? null : value;
@@ -66,6 +70,48 @@ export function parseRefreshArgs(args) {
     }
   }
 
+  return options;
+}
+
+/**
+ * Parse command line arguments for init-osm.js.
+ *
+ * @param {string[]} args - Array of CLI arguments (e.g., process.argv.slice(2))
+ * @returns {Object} Parsed options object
+ * @returns {string|null} options.region - Import source keyword
+ * @returns {string} options.poiType - POI type to import
+ * @returns {boolean} options.skipDbInit - Skip database initialization
+ * @returns {boolean} options.geonames - Import GeoNames before OSM
+ * @returns {boolean} options.optimize - Run database optimization after OSM
+ * @returns {boolean} options.help - Help was requested
+ */
+export function parseInitOsmArgs(args) {
+  const options = {
+    region: null,
+    poiType: 'all',
+    skipDbInit: false,
+    geonames: false,
+    optimize: false,
+    help: false,
+  };
+
+  const positional = [];
+  for (const arg of args) {
+    if (arg === '--skip-db-init') {
+      options.skipDbInit = true;
+    } else if (arg === '--geonames') {
+      options.geonames = true;
+    } else if (arg === '--optimize') {
+      options.optimize = true;
+    } else if (arg === '--help' || arg === '-h') {
+      options.help = true;
+    } else if (!arg.startsWith('--')) {
+      positional.push(arg);
+    }
+  }
+
+  options.region = positional[0] || null;
+  options.poiType = positional[1] || 'all';
   return options;
 }
 
@@ -143,6 +189,7 @@ export function parseImportArgs(args) {
 
 export default {
   parseRefreshArgs,
+  parseInitOsmArgs,
   parseOptimizeArgs,
   parseImportArgs,
 };

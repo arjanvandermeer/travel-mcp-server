@@ -6,6 +6,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
   parseRefreshArgs,
+  parseInitOsmArgs,
   parseOptimizeArgs,
   parseImportArgs,
 } from '../../src/lib/arg-parsers.js';
@@ -23,6 +24,7 @@ describe('parseRefreshArgs', () => {
       optimize: false,
       refreshGeonames: false,
       refreshGoogle: false,
+      skipOsm: false,
       help: false,
     });
   });
@@ -44,6 +46,14 @@ describe('parseRefreshArgs', () => {
     const options = parseRefreshArgs(['--list']);
 
     assert.strictEqual(options.list, true);
+  });
+
+  it('should parse scheduled refresh flags', () => {
+    const options = parseRefreshArgs(['--skip-osm', '--refresh-google', '--refresh-geonames']);
+
+    assert.strictEqual(options.skipOsm, true);
+    assert.strictEqual(options.refreshGoogle, true);
+    assert.strictEqual(options.refreshGeonames, true);
   });
 
   it('should parse --optimize flag', () => {
@@ -117,6 +127,38 @@ describe('parseRefreshArgs', () => {
 
     assert.strictEqual(options.max, 2);
     assert.strictEqual(options.optimize, true);
+  });
+});
+
+describe('parseInitOsmArgs', () => {
+  it('should parse a one-command region import', () => {
+    const options = parseInitOsmArgs(['thailand']);
+
+    assert.deepStrictEqual(options, {
+      region: 'thailand',
+      poiType: 'all',
+      skipDbInit: false,
+      geonames: false,
+      optimize: false,
+      help: false,
+    });
+  });
+
+  it('should parse optional POI type and workflow flags', () => {
+    const options = parseInitOsmArgs(['thailand', 'restaurant', '--skip-db-init', '--geonames', '--optimize']);
+
+    assert.strictEqual(options.region, 'thailand');
+    assert.strictEqual(options.poiType, 'restaurant');
+    assert.strictEqual(options.skipDbInit, true);
+    assert.strictEqual(options.geonames, true);
+    assert.strictEqual(options.optimize, true);
+  });
+
+  it('should parse help without a region', () => {
+    const options = parseInitOsmArgs(['--help']);
+
+    assert.strictEqual(options.region, null);
+    assert.strictEqual(options.help, true);
   });
 });
 

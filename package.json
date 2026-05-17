@@ -19,6 +19,7 @@
     "db:reset": "node scripts/db-init.js --reset",
     "db:import-geonames": "node scripts/import-geonames.js",
     "db:import": "node scripts/import-osm.js",
+    "init:osm": "node scripts/init-osm.js",
     "db:refresh": "node scripts/refresh-imports.js",
     "db:optimize": "node scripts/optimize-db.js",
     "db:backfill-name-en": "node scripts/backfill-name-en.js",

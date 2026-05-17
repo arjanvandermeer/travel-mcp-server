@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Travel MCP GeoNames refresh weekly
+
+[Timer]
+OnCalendar=Sun 03:30:00
+RandomizedDelaySec=60m
+Persistent=true
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,13 @@
+[Unit]
+Description=Travel MCP GeoNames refresh
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/ubuntu/travel-mcp-server
+EnvironmentFile=/etc/travel-mcp-server/refresh.env
+ExecStart=/usr/bin/npm run db:refresh -- --skip-osm --refresh-geonames
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=7

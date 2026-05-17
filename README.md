@@ -26,6 +26,7 @@ npm install
 npm run db:init                                       # Safely create missing tables
 npm run db:import-geonames                            # Import ~150k cities
 node scripts/import-osm.js data/REGION.osm.pbf all     # Import OSM POIs
+npm run init:osm -- thailand                           # Initialize DB and download/import one OSM region
 npm start                                             # stdio (Claude Desktop)
 npm run start:http                                    # HTTP (port 3000)
 ```
