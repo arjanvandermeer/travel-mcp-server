@@ -139,7 +139,7 @@ Alpine.store('discovery', {
   hotels: [],
   overview: null,
   feedCategories: LAYERS,
-  activeFeed: 'accommodation',
+  activeFeedKeys: LAYERS.map(category => category.key),
   feedItems: {
     accommodation: [],
     dining: [],
@@ -372,53 +372,74 @@ Alpine.store('discovery', {
     const count = this.feedItems[key]?.length || 0;
     return count ? `${count}` : '0';
   },
-  activeFeedItems() {
-    return this.feedItems[this.activeFeed] || [];
+  isFeedActive(key) {
+    return this.activeFeedKeys.includes(key);
   },
-  selectFeed(key) {
-    this.activeFeed = key;
-    if (!this.activeFeedItems().length) this.loadMoreFeed();
+  activeFeedItems() {
+    const seen = new Set();
+    return this.activeFeedKeys.flatMap(key => this.feedItems[key] || []).filter(poi => {
+      const id = poi.osm_id || `${poi.poi_type}:${poi.name || poi.osm_name}`;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  },
+  toggleFeed(key) {
+    this.activeFeedKeys = this.isFeedActive(key)
+      ? this.activeFeedKeys.filter(activeKey => activeKey !== key)
+      : [...this.activeFeedKeys, key];
+    if (this.isFeedActive(key) && !this.feedItems[key]?.length) this.loadMoreCategory(key);
   },
   canLoadMore() {
     return Alpine.store('route').page === 'home'
       && !!this.city?.name
+      && this.activeFeedKeys.length > 0
       && !this.loading
       && !this.feedLoading
-      && this.feedHasMore[this.activeFeed] !== false;
+      && this.activeFeedKeys.some(key => this.feedHasMore[key] !== false);
   },
   async loadMoreFeed() {
     if (!this.canLoadMore()) return;
-    const category = this.feedCategories.find(item => item.key === this.activeFeed);
-    if (!category) return;
-
     this.feedLoading = true;
+    for (const key of this.activeFeedKeys) {
+      if (this.feedHasMore[key] !== false) {
+        await this.loadMoreCategory(key, { keepLoadingState: true });
+      }
+    }
+    this.feedLoading = false;
+  },
+  async loadMoreCategory(key, { keepLoadingState = false } = {}) {
+    const category = this.feedCategories.find(item => item.key === key);
+    if (!category || !this.city?.name || this.feedHasMore[key] === false) return;
+
+    if (!keepLoadingState) this.feedLoading = true;
     try {
       const data = await apiGet('/api/v1/search/pois', {
         city_name: this.city.name,
         country_code: this.city.country_code || this.country?.code,
         poi_types: category.types.join(','),
         limit: HOME_FEED_PAGE_SIZE,
-        offset: this.feedOffsets[category.key] || 0,
+        offset: this.feedOffsets[key] || 0,
       });
       const nextItems = data.results || [];
-      const existingIds = new Set((this.feedItems[category.key] || []).map(poi => poi.osm_id));
+      const existingIds = new Set((this.feedItems[key] || []).map(poi => poi.osm_id));
       const uniqueItems = nextItems.filter(poi => !existingIds.has(poi.osm_id));
       this.feedItems = {
         ...this.feedItems,
-        [category.key]: [...(this.feedItems[category.key] || []), ...uniqueItems],
+        [key]: [...(this.feedItems[key] || []), ...uniqueItems],
       };
       this.feedOffsets = {
         ...this.feedOffsets,
-        [category.key]: (this.feedOffsets[category.key] || 0) + nextItems.length,
+        [key]: (this.feedOffsets[key] || 0) + nextItems.length,
       };
       this.feedHasMore = {
         ...this.feedHasMore,
-        [category.key]: nextItems.length >= HOME_FEED_PAGE_SIZE,
+        [key]: nextItems.length >= HOME_FEED_PAGE_SIZE,
       };
     } catch {
-      this.feedHasMore = { ...this.feedHasMore, [category.key]: false };
+      this.feedHasMore = { ...this.feedHasMore, [key]: false };
     }
-    this.feedLoading = false;
+    if (!keepLoadingState) this.feedLoading = false;
   },
   maybeLoadMore() {
     if (Alpine.store('route').page !== 'home') return;

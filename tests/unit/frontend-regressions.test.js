@@ -25,10 +25,12 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /aria-label="Primary"/, 'Primary navigation should be exposed as navigation');
     assert.match(indexHtml, /\$store\.route\.page === 'atlas'/, 'Navigation should expose the atlas as a first-class page');
     assert.match(indexHtml, /home-category-strip/, 'City Pulse should expose the Stay, Eat, and See feed controls');
+    assert.match(indexHtml, /aria-pressed="\$store\.discovery\.isFeedActive\(category\.key\)"/, 'Homepage filters should be toggle buttons');
     assert.match(indexHtml, /hero-credit/, 'City Pulse should keep image attribution on the hero');
     assert.match(indexHtml, /atlas-status-grid/, 'Atlas should surface result and layer status');
     assert.match(indexHtml, /\$store\.atlas\.resetView\(\)/, 'Atlas should provide a reset control');
     assert.match(appJs, /activeFeedItems\(\)/, 'Discovery store should provide category-specific feed items');
+    assert.match(appJs, /toggleFeed\(key\)/, 'Discovery store should support combined category toggles');
     assert.match(appJs, /loadMoreFeed\(\)/, 'Discovery store should support loading more homepage cards');
     assert.match(appJs, /resultsLabel\(\)/, 'Atlas store should provide result status text');
     assert.match(appJs, /resetView\(\)/, 'Atlas store should provide a reset action');

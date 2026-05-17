@@ -116,14 +116,13 @@ button { cursor: pointer; }
 
 .city-pulse {
   position: relative;
-  min-height: min(760px, calc(100vh - 64px));
+  min-height: clamp(280px, 46vh, 560px);
   display: flex;
   align-items: flex-start;
-  padding: clamp(48px, 8vw, 112px) clamp(18px, 5vw, 72px) clamp(42px, 8vw, 96px);
+  padding: clamp(24px, 4vw, 56px) clamp(18px, 5vw, 72px) clamp(28px, 5vw, 64px);
   background:
-    linear-gradient(90deg, rgba(251,250,247,.97) 0%, rgba(251,250,247,.84) 42%, rgba(251,250,247,.28) 100%),
-    linear-gradient(0deg, rgba(23,32,51,.16), transparent 48%),
-    linear-gradient(120deg, rgba(15,118,110,.18), transparent 42%),
+    linear-gradient(90deg, rgba(251,250,247,.82) 0%, rgba(251,250,247,.48) 42%, rgba(251,250,247,.12) 100%),
+    linear-gradient(0deg, rgba(23,32,51,.28), rgba(23,32,51,.08) 42%, rgba(23,32,51,.12)),
     var(--city-hero, linear-gradient(320deg, rgba(180,83,9,.18), transparent 38%)),
     var(--paper);
   background-size: cover;
@@ -198,10 +197,10 @@ button { cursor: pointer; }
   backdrop-filter: blur(12px);
 }
 .home-feed {
-  padding: 12px clamp(14px, 4vw, 64px) 70px;
+  padding: 0 clamp(14px, 4vw, 64px) 70px;
   background:
-    radial-gradient(circle at 12% 0%, rgba(15,118,110,.12), transparent 34%),
-    linear-gradient(180deg, #f6f8f3 0%, var(--paper) 38%);
+    radial-gradient(circle at 12% 0%, rgba(15,118,110,.08), transparent 34%),
+    linear-gradient(180deg, rgba(246,248,243,.72) 0%, var(--paper) 34%);
 }
 .home-feed-inner {
   max-width: 980px;
@@ -225,18 +224,22 @@ button { cursor: pointer; }
   align-items: center;
   justify-content: center;
   gap: 9px;
-  border: 2px solid rgba(15,118,110,.62);
+  border: 2px solid rgba(42,50,68,.22);
   border-radius: 12px;
-  background: rgba(255,255,255,.62);
-  color: #0f83c5;
+  background: rgba(255,255,255,.38);
+  color: rgba(23,32,51,.48);
   font-size: 22px;
   font-weight: 850;
+  opacity: .74;
+  transition: background .16s ease, border-color .16s ease, color .16s ease, opacity .16s ease, transform .16s ease;
 }
 .home-category-strip button.active {
-  background: white;
+  background: rgba(255,255,255,.96);
   border-color: var(--accent);
   box-shadow: 0 10px 30px rgba(15,118,110,.14);
   color: var(--ink);
+  opacity: 1;
+  transform: translateY(-1px);
 }
 .home-category-strip small {
   min-width: 24px;
@@ -247,6 +250,10 @@ button { cursor: pointer; }
   background: #eef7f4;
   color: var(--accent);
   font-size: 12px;
+}
+.home-category-strip button:not(.active) .layer-dot {
+  filter: grayscale(1);
+  opacity: .42;
 }
 .home-card-list {
   display: grid;
@@ -498,7 +505,10 @@ button { cursor: pointer; }
   .nav-actions { width: 100%; overflow-x: auto; padding-bottom: 2px; }
   .nav-link { white-space: nowrap; }
   .workspace { min-height: calc(100vh - 100px); }
-  .city-pulse { padding: 22px 14px; }
+  .city-pulse {
+    min-height: 280px;
+    padding: 14px 14px 22px;
+  }
   .hero-credit {
     left: 14px;
     right: auto;
@@ -508,7 +518,7 @@ button { cursor: pointer; }
   .pulse-panel h1 { font-size: 42px; }
   .command-wrap { display: grid; }
   .suggestions { right: 0; }
-  .home-category-strip { top: 113px; gap: 6px; }
+  .home-category-strip { top: 113px; gap: 6px; padding: 10px 0; }
   .home-category-strip button { min-height: 48px; font-size: 18px; }
   .home-place-card {
     grid-template-columns: 86px minmax(0, 1fr);

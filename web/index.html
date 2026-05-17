@@ -59,16 +59,16 @@
 
       <section class="home-feed" x-show="$store.route.page === 'home'" x-cloak>
         <div class="home-feed-inner">
-          <div class="home-category-strip" role="tablist" aria-label="Place category">
+          <div class="home-category-strip" role="group" aria-label="Place category filters">
             <template x-for="category in $store.discovery.feedCategories" :key="category.key">
               <button
-                role="tab"
-                :aria-selected="$store.discovery.activeFeed === category.key"
-                :class="{ active: $store.discovery.activeFeed === category.key }"
-                @click="$store.discovery.selectFeed(category.key)">
+                type="button"
+                :aria-pressed="$store.discovery.isFeedActive(category.key)"
+                :class="{ active: $store.discovery.isFeedActive(category.key) }"
+                @click="$store.discovery.toggleFeed(category.key)">
                 <span class="layer-dot" :style="'--dot:' + category.color"></span>
                 <span x-text="category.label"></span>
-                <small x-text="$store.discovery.feedCount(category.key)"></small>
+                <small x-show="$store.discovery.isFeedActive(category.key)" x-text="$store.discovery.feedCount(category.key)"></small>
               </button>
             </template>
           </div>
@@ -83,8 +83,8 @@
 
           <template x-if="!$store.discovery.loading && !$store.discovery.activeFeedItems().length">
             <div class="empty-panel wide">
-              <h3>No places surfaced yet</h3>
-              <p>Try another city, open the atlas, or expand the database import for this area.</p>
+              <h3 x-text="$store.discovery.activeFeedKeys.length ? 'No places surfaced yet' : 'No categories selected'"></h3>
+              <p x-text="$store.discovery.activeFeedKeys.length ? 'Try another city, open the atlas, or expand the database import for this area.' : 'Turn on Stay, Eat, or See to show nearby cards.'"></p>
             </div>
           </template>
 
