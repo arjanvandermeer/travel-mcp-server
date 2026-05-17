@@ -33,9 +33,11 @@ export function renderWebIndex(filePath, { versionInfo, measurementId } = {}) {
   let html = fs.readFileSync(filePath, 'utf8');
   const versionParts = [versionInfo?.gitCommitShort || versionInfo?.version, versionInfo?.buildTime].filter(Boolean);
   const assetVersion = encodeURIComponent(versionParts.join('-'));
+  const commitLabel = versionInfo?.gitCommitShort || versionInfo?.version || 'local';
   html = html
     .replace('href="/css/style.css"', `href="/css/style.css?v=${assetVersion}"`)
-    .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`);
+    .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`)
+    .replaceAll('__APP_COMMIT__', commitLabel);
 
   const tag = renderGoogleAnalyticsTag(measurementId);
   if (!tag) return html;

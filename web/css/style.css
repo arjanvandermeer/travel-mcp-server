@@ -57,6 +57,20 @@ button { cursor: pointer; }
   color: white;
   border-radius: 8px;
 }
+.build-chip {
+  margin-left: 10px;
+  margin-right: auto;
+  min-height: 26px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 9px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: rgba(255,255,255,.68);
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11px;
+}
 .nav-actions { display: flex; align-items: center; gap: 10px; }
 .nav-link, .icon-button, .secondary-button, .primary-button, .account-button {
   border: 1px solid var(--line);
@@ -336,6 +350,7 @@ button { cursor: pointer; }
 
 @media (max-width: 680px) {
   .topbar { height: auto; min-height: 64px; align-items: flex-start; gap: 10px; padding: 12px; flex-direction: column; }
+  .build-chip { margin: -4px 0 0 42px; }
   .nav-actions { width: 100%; overflow-x: auto; padding-bottom: 2px; }
   .workspace { min-height: calc(100vh - 100px); }
   .city-pulse { padding: 22px 14px; }
