@@ -322,6 +322,29 @@ describe('renderPOIPreview general rendering', () => {
     assert.ok(html.includes('review-carousel'), 'Should use carousel for reviews');
   });
 
+  it('should render photos as a horizontal scroller', () => {
+    const poi = makePOI({
+      google_photos: [
+        { url: 'https://cdn.example.com/one.jpg' },
+        { url: 'https://cdn.example.com/two.jpg' },
+      ],
+    });
+    const html = renderPOIPreview(poi, render);
+
+    assert.ok(html.includes('photo-scroller'), 'Should use horizontal photo scroller');
+    assert.ok(!html.includes('photo-carousel" data-carousel'), 'Should not use paged vertical/list carousel for photos');
+  });
+
+  it('should hide raw data behind a data modal', () => {
+    const poi = makePOI({ match_confidence: 0.95, mapping_status: 'active' });
+    const html = renderPOIPreview(poi, render);
+    const body = getBody(html);
+
+    assert.ok(body.includes('Raw place data'), 'Should include raw data modal');
+    assert.ok(body.includes('data-open-data'), 'Should include a data button');
+    assert.ok(body.includes('&quot;match_confidence&quot;'), 'Raw data should still be available in the modal');
+  });
+
   it('should not show opening hours for hotels', () => {
     const poi = makePOI({
       poi_type: 'hotel',
@@ -332,11 +355,12 @@ describe('renderPOIPreview general rendering', () => {
       google_utc_offset_minutes: 420,
     });
     const html = renderPOIPreview(poi, render);
+    const body = getBody(html);
 
     // Check for actual rendered content, not CSS class names
-    assert.ok(!html.includes('open-badge is-open'), 'Should not show open badge for hotel');
-    assert.ok(!html.includes('open-badge is-closed'), 'Should not show closed badge for hotel');
-    assert.ok(!html.includes('Monday: Open 24 hours'), 'Should not show hours text for hotel');
+    assert.ok(!body.includes('open-badge is-open'), 'Should not show open badge for hotel');
+    assert.ok(!body.includes('open-badge is-closed'), 'Should not show closed badge for hotel');
+    assert.ok(!body.includes('hours-tooltip'), 'Should not show visible hours tooltip for hotel');
   });
 
   it('should show open/closed badge for restaurants with opening hours', () => {

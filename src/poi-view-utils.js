@@ -194,6 +194,7 @@ export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title =
     : null;
   const opening_hours = !is_accommodation ? opening_hours_list : null;
   const website_url = poi.google_website || poi.osm_website || null;
+  const raw_data_json = JSON.stringify(poi, null, 2);
 
   return render('poi-details', {
     ...poi,
@@ -217,6 +218,7 @@ export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title =
     accessibility_list,
     reviews_list,
     open_status,
+    raw_data_json,
     nearby_pois,
     nearby_title,
   });

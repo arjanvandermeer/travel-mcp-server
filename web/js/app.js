@@ -180,6 +180,7 @@ Alpine.store('discovery', {
   placeSearchQuery: '',
   placeSearchLoading: false,
   placeSearchError: '',
+  placeOpenNow: false,
   heroImageUrl: '',
   heroImageCredit: '',
   locationError: '',
@@ -499,6 +500,7 @@ Alpine.store('discovery', {
           city_name: this.city.name,
           country_code: this.city.country_code || this.country?.code,
           poi_types: category.types.join(','),
+          open_now: this.placeOpenNow ? 'true' : undefined,
           limit: HOME_FEED_PAGE_SIZE * 2,
         });
         return [category.key, data.results || []];
@@ -524,6 +526,13 @@ Alpine.store('discovery', {
       this.placeSearchError = 'Place search is unavailable right now.';
     }
     this.placeSearchLoading = false;
+  },
+  refreshFeedForOptions() {
+    this.feedItems = { accommodation: [], dining: [], attractions: [] };
+    this.feedOffsets = { accommodation: 0, dining: 0, attractions: 0 };
+    this.feedHasMore = { accommodation: true, dining: true, attractions: true };
+    if (this.placeSearchQuery.trim()) return this.searchPlacesByName();
+    for (const key of this.activeFeedKeys) this.loadMoreCategory(key, { keepLoadingState: true });
   },
   canLoadMore() {
     return Alpine.store('route').page === 'home'
@@ -553,6 +562,7 @@ Alpine.store('discovery', {
         city_name: this.city.name,
         country_code: this.city.country_code || this.country?.code,
         poi_types: category.types.join(','),
+        open_now: this.placeOpenNow ? 'true' : undefined,
         limit: HOME_FEED_PAGE_SIZE,
         offset: this.feedOffsets[key] || 0,
       });
@@ -792,6 +802,7 @@ Alpine.store('poi', {
   current: null,
   loading: false,
   enrichmentPolling: false,
+  dataOpen: false,
   note: '',
   _loadId: null,
   _pollTimer: null,
@@ -806,12 +817,14 @@ Alpine.store('poi', {
     this.loading = true;
     try {
       this.current = await apiGet(`/api/v1/poi/${osmId}`);
+      this.dataOpen = false;
       this.note = this.current.favorite_notes || '';
       const enrichmentMessage = this.current?._enrichment?.message;
       if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
       this.startEnrichmentPollIfNeeded();
     } catch {
       this.current = null;
+      this.dataOpen = false;
     }
     this.loading = false;
   },
@@ -884,6 +897,9 @@ Alpine.store('poi', {
   },
   mapsUrl() {
     return Alpine.store('format').bestMapsUrl(this.current || {});
+  },
+  rawJson() {
+    return JSON.stringify(this.current || {}, null, 2);
   },
 });
 

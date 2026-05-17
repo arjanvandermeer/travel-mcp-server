@@ -237,6 +237,25 @@ describe('GET /api/v1/search/pois', () => {
     assert.deepStrictEqual(capturedParams.dietary, ['vegan', 'halal']);
   });
 
+  it('should pass open now filter to POI search', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedParams;
+    const db = createApiMockDb({
+      searchPOIs: async (params) => {
+        capturedParams = params;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/pois?city_name=Berlin&country_code=DE&open_now=true');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedParams.openNow, true);
+  });
+
   it('should return 400 without search criteria', async () => {
     const router = new ApiRouter();
     registerSearchRoutes(router);

@@ -50,19 +50,24 @@
 }
 .hero-actions a { display: inline-flex; align-items: center; color: var(--ink); text-decoration: none; }
 .photo-strip {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  display: flex;
   gap: 8px;
   padding: 8px;
   background: white;
   border-bottom: 1px solid var(--line);
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
 }
 .photo-tile {
+  flex: 0 0 min(72vw, 320px);
   aspect-ratio: 16 / 9;
   border-radius: 8px;
   background-size: cover;
   background-position: center;
   border: 1px solid rgba(216,222,232,.7);
+  scroll-snap-align: start;
 }
 .dossier-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; padding: 22px; }
 .dossier-main, .composer-panel { min-width: 0; }
@@ -153,6 +158,41 @@ textarea {
   padding: 16px;
   font-size: 12px;
 }
+.dossier-data-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0 22px 22px;
+}
+.data-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(15, 23, 42, .62);
+}
+.data-modal {
+  width: min(940px, 100%);
+  max-height: min(760px, 92vh);
+  display: grid;
+  gap: 12px;
+  border-radius: 12px;
+  background: #fffdfa;
+  border: 1px solid var(--line);
+  box-shadow: 0 28px 90px rgba(0,0,0,.28);
+  padding: 16px;
+}
+.data-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.data-modal-header h2 {
+  margin: 0;
+  font-size: 18px;
+}
 .inline-loading {
   display: inline-flex;
   align-items: center;
@@ -180,5 +220,6 @@ textarea {
   .dossier, .composer-page { padding: 16px 10px; }
   .dossier-hero { min-height: 300px; display: grid; padding: 18px; }
   .hero-actions { justify-content: flex-start; }
-  .photo-strip, .property-facts, .nearby-grid, .composer-actions { grid-template-columns: 1fr; }
+  .property-facts, .nearby-grid, .composer-actions { grid-template-columns: 1fr; }
+  .dossier-data-footer { padding: 0 14px 14px; }
 }

@@ -29,6 +29,12 @@ function parseListParam(value) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function parseBooleanParam(value) {
+  if (value === true) return true;
+  if (value === false || value === undefined || value === null || value === '') return false;
+  return ['1', 'true', 'yes', 'on'].includes(String(value).trim().toLowerCase());
+}
+
 export function registerSearchRoutes(router) {
   router.get('/api/v1/search/cities/random', async (req, res, { db, query }) => {
     const minPoiCount = parsePositiveInt(query.min_pois, 25, 1000);
@@ -89,6 +95,7 @@ export function registerSearchRoutes(router) {
     const name = query.q || null;
     const limit = validateLimit(query.limit, 50, 100);
     const offset = Math.max(0, parseInt(query.offset ?? '0', 10) || 0);
+    const openNow = parseBooleanParam(query.open_now);
 
     let latitude = null;
     let longitude = null;
@@ -117,6 +124,7 @@ export function registerSearchRoutes(router) {
       cuisine,
       dietary,
       name,
+      openNow,
       limit,
       offset,
       userId: user?.id || null,

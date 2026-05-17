@@ -257,9 +257,29 @@ button { cursor: pointer; }
 }
 .feed-search-panel {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
   gap: 8px;
   margin: -2px 0 12px;
+}
+.option-toggle {
+  min-height: 48px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 13px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+.option-toggle input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
 }
 .home-card-list {
   display: grid;
@@ -532,6 +552,7 @@ button { cursor: pointer; }
   }
   .home-category-strip button { min-height: 48px; font-size: 18px; }
   .feed-search-panel { grid-template-columns: 1fr; }
+  .option-toggle { justify-content: center; }
   .home-place-card {
     grid-template-columns: 86px minmax(0, 1fr);
     min-height: 120px;

@@ -36,11 +36,19 @@
     .carousel-arrow-left { left: 8px; }
     .carousel-arrow-right { right: 8px; }
     /* Photo carousel */
-    .photo-carousel .carousel-track img {
-      width: 100%;
+    .photo-scroller {
+      display: flex;
+      overflow-x: auto;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+    }
+    .photo-scroller img {
+      width: min(86vw, 360px);
       height: 220px;
       object-fit: cover;
-      flex: 0 0 100%;
+      flex: 0 0 min(86vw, 360px);
+      border-right: 1px solid rgba(255,255,255,.75);
+      scroll-snap-align: start;
     }
     .hero-image {
       width: 100%;
@@ -260,22 +268,55 @@
     .scroll-arrow.hidden { opacity: 0; pointer-events: none; }
     .scroll-arrow-left { left: -4px; }
     .scroll-arrow-right { right: -4px; }
+    .data-footer { display: flex; justify-content: flex-end; padding: 0 20px 20px; }
+    .data-button {
+      border: 1px solid #ddd;
+      border-radius: 20px;
+      background: white;
+      padding: 8px 14px;
+      color: #333;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .data-modal-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      display: none;
+      place-items: center;
+      padding: 18px;
+      background: rgba(0,0,0,.58);
+    }
+    .data-modal-backdrop.open { display: grid; }
+    .data-modal {
+      width: min(900px, 100%);
+      max-height: 90vh;
+      background: white;
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 24px 90px rgba(0,0,0,.28);
+    }
+    .data-modal-header { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .data-modal-header h2 { font-size: 18px; margin: 0; }
+    .data-close { border: 0; background: #f0f0f0; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; }
+    .data-pane {
+      max-height: 68vh;
+      overflow: auto;
+      white-space: pre-wrap;
+      background: #0f172a;
+      color: #e2e8f0;
+      border-radius: 10px;
+      padding: 14px;
+      font-size: 12px;
+    }
   </style>
 </head>
 <body>
   {{#if photo_urls}}
-  <div class="carousel photo-carousel" data-carousel data-auto="5000">
-    {{#if (gt photo_urls.length 1)}}
-    <button class="carousel-arrow carousel-arrow-left hidden" data-dir="prev">&#8249;</button>
-    {{/if}}
-    <div class="carousel-track">
-      {{#each photo_urls}}
-      <img src="{{this}}" alt="Photo {{@index}}">
-      {{/each}}
-    </div>
-    {{#if (gt photo_urls.length 1)}}
-    <button class="carousel-arrow carousel-arrow-right" data-dir="next">&#8250;</button>
-    {{/if}}
+  <div class="photo-scroller" aria-label="Place photos">
+    {{#each photo_urls}}
+    <img src="{{this}}" alt="Photo {{@index}}">
+    {{/each}}
   </div>
   {{else}}
   {{#if photo_url}}
@@ -527,6 +568,18 @@
     </div>
     {{/if}}
   </div>
+  <div class="data-footer">
+    <button class="data-button" data-open-data type="button">Data</button>
+  </div>
+  <div class="data-modal-backdrop" data-data-modal>
+    <section class="data-modal" role="dialog" aria-modal="true" aria-label="Raw place data">
+      <div class="data-modal-header">
+        <h2>Raw place data</h2>
+        <button class="data-close" data-close-data type="button" aria-label="Close raw data">×</button>
+      </div>
+      <pre class="data-pane">{{raw_data_json}}</pre>
+    </section>
+  </div>
 
   <script>
     (function() {
@@ -571,6 +624,16 @@
             startAuto();
           });
         });
+        var dataModal = document.querySelector('[data-data-modal]');
+        var openData = document.querySelector('[data-open-data]');
+        var closeData = document.querySelector('[data-close-data]');
+        if (dataModal && openData && closeData) {
+          openData.addEventListener('click', function() { dataModal.classList.add('open'); });
+          closeData.addEventListener('click', function() { dataModal.classList.remove('open'); });
+          dataModal.addEventListener('click', function(e) {
+            if (e.target === dataModal) dataModal.classList.remove('open');
+          });
+        }
       }
 
       // Boot: detect widget mode (ChatGPT Skybridge) vs server-side rendered

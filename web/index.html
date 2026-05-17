@@ -83,6 +83,10 @@
               type="search"
               placeholder="Name..."
               x-model="$store.discovery.placeSearchQuery">
+            <label class="option-toggle">
+              <input type="checkbox" x-model="$store.discovery.placeOpenNow" @change="$store.discovery.refreshFeedForOptions()">
+              <span>Open now</span>
+            </label>
             <button class="primary-button" type="submit" :disabled="$store.discovery.placeSearchLoading">
               <span x-text="$store.discovery.placeSearchLoading ? 'Searching' : 'Search'"></span>
             </button>
@@ -282,6 +286,18 @@
                   <button class="primary-button" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
                 </div>
               </aside>
+            </div>
+            <div class="dossier-data-footer">
+              <button class="secondary-button compact" @click="$store.poi.dataOpen = true">Data</button>
+            </div>
+            <div class="data-modal-backdrop" x-show="$store.poi.dataOpen" x-transition @click.self="$store.poi.dataOpen = false">
+              <section class="data-modal" role="dialog" aria-modal="true" aria-label="Raw place data">
+                <div class="data-modal-header">
+                  <h2>Raw place data</h2>
+                  <button class="close-button" @click="$store.poi.dataOpen = false">×</button>
+                </div>
+                <pre class="data-pane" x-text="$store.poi.rawJson()"></pre>
+              </section>
             </div>
           </article>
         </template>

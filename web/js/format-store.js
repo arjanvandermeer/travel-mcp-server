@@ -51,13 +51,21 @@ export function createFormatStore() {
         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(poi.name || poi.osm_name || '')}`;
     },
     openStatus(poi = {}) {
-      if (poi.google_business_status) return String(poi.google_business_status).replaceAll('_', ' ').toLowerCase();
+      if (poi.google_business_status === 'CLOSED_PERMANENTLY') return 'Permanently closed';
+      if (poi.google_business_status === 'CLOSED_TEMPORARILY') return 'Temporarily closed';
       if (poi.osm_opening_hours) return poi.osm_opening_hours;
       return 'Hours not listed';
     },
     priceLabel(poi = {}) {
       if (!poi.google_price_level) return '';
-      return String(poi.google_price_level).replace('PRICE_LEVEL_', '').replaceAll('_', ' ').toLowerCase();
+      const labels = {
+        PRICE_LEVEL_FREE: 'Free',
+        PRICE_LEVEL_INEXPENSIVE: '$',
+        PRICE_LEVEL_MODERATE: '$$',
+        PRICE_LEVEL_EXPENSIVE: '$$$',
+        PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
+      };
+      return labels[poi.google_price_level] || String(poi.google_price_level).replace('PRICE_LEVEL_', '').replaceAll('_', ' ').toLowerCase();
     },
     propertyFacts(poi = {}) {
       const facts = [];
@@ -67,8 +75,6 @@ export function createFormatStore() {
       if (poi.osm_cuisine) facts.push({ label: 'Cuisine', value: String(poi.osm_cuisine).replaceAll(';', ', ') });
       if (poi.osm_wheelchair) facts.push({ label: 'Access', value: String(poi.osm_wheelchair).replaceAll('_', ' ') });
       if (poi.google_price_level) facts.push({ label: 'Price', value: this.priceLabel(poi) });
-      if (poi.match_confidence) facts.push({ label: 'Match', value: `${Math.round(Number(poi.match_confidence) * 100)}%` });
-      facts.push({ label: 'Source', value: poi.google_place_id ? 'Google + OSM' : 'OpenStreetMap' });
       return facts.slice(0, 6);
     },
   };
