@@ -686,8 +686,14 @@ Alpine.store('atlas', {
     this.cluster = L.markerClusterGroup({ maxClusterRadius: 44, showCoverageOnHover: false, disableClusteringAtZoom: 16 });
     this.map.addLayer(this.cluster);
     this._fetchDebounced = debounce(() => this.fetchMapPlaces(), 350);
-    this.map.on('moveend zoomend', () => this._fetchDebounced());
+    this.map.on('moveend zoomend dragend', () => this.handleViewportChange());
     this.openAtUserLocation();
+  },
+  handleViewportChange() {
+    this.city = null;
+    this.selected = null;
+    this._lastKey = '';
+    this._fetchDebounced();
   },
   openAtUserLocation() {
     if (this._autoLocateAttempted) {
