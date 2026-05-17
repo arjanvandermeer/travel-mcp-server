@@ -102,6 +102,22 @@ const DINING_PRICE_ESTIMATES_USD = {
 
 const DINING_POI_TYPES = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
 const attractionTypesForClusterNames = ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle'];
+const ACCOMMODATION_POI_TYPES = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'camp_site', 'bed_and_breakfast', 'chalet'];
+const HOTEL_QUALITY_RESTAURANT_RADIUS_METERS = 1500;
+const HOTEL_QUALITY_AMENITY_KEYS = {
+  wifi: ['internet_access'],
+  pool: ['swimming_pool'],
+  parking: ['parking'],
+  breakfast: ['breakfast'],
+  air_conditioning: ['air_conditioning'],
+  pet_friendly: ['pets'],
+  restaurant: ['restaurant'],
+  spa: ['spa'],
+  gym: ['fitness_centre'],
+  bar: ['bar'],
+  elevator: ['elevator'],
+  wheelchair_access: ['wheelchair'],
+};
 
 function normalizeImportKeyword(value) {
   return String(value || '')
@@ -124,6 +140,10 @@ const PENDING_ENRICHMENT_RESTART_COOLDOWN_MS = 5 * 60 * 1000;
 
 function getGoogleQuotaExceededMessage(quota) {
   return `Google Places enrichment is paused because the daily API limit has been reached (${quota.current}/${quota.limit}). Try again after the quota resets.`;
+}
+
+function isPositiveTagValue(value) {
+  return value !== undefined && value !== null && value !== false && String(value).toLowerCase() !== 'no';
 }
 
 export class TravelDatabase {
@@ -634,7 +654,8 @@ export class TravelDatabase {
         g.national_phone as google_phone, g.website_uri as google_website,
         g.google_maps_uri as google_maps_url,
         g.opening_hours as google_opening_hours, g.photos as google_photos,
-        g.utc_offset_minutes as google_utc_offset_minutes
+        g.utc_offset_minutes as google_utc_offset_minutes,
+        g.amenities as google_amenities, g.accessibility as google_accessibility
       FROM osm_google_mappings m
       JOIN google_places g ON m.google_place_id = g.google_place_id
       WHERE m.osm_id = ANY($1) AND m.mapping_status = 'active'
@@ -663,6 +684,122 @@ export class TravelDatabase {
         google_opening_hours: g.google_opening_hours,
         google_photos: g.google_photos,
         google_utc_offset_minutes: g.google_utc_offset_minutes,
+        google_amenities: g.google_amenities,
+        google_accessibility: g.google_accessibility,
+      };
+    });
+  }
+
+  static extractHotelQualityAmenityKeys(poi) {
+    const tags = poi.osm_tags || {};
+    const amenities = new Set();
+
+    for (const [label, keys] of Object.entries(HOTEL_QUALITY_AMENITY_KEYS)) {
+      if (keys.some(key => isPositiveTagValue(tags[key]))) {
+        amenities.add(label);
+      }
+    }
+
+    for (const [key, value] of Object.entries(poi.google_amenities || {})) {
+      if (isPositiveTagValue(value)) amenities.add(key);
+    }
+
+    if (isPositiveTagValue(poi.osm_wheelchair) || isPositiveTagValue(poi.google_accessibility?.wheelchairAccessibleEntrance)) {
+      amenities.add('wheelchair_access');
+    }
+
+    return [...amenities].sort();
+  }
+
+  static walkabilityProxyFromRestaurantCount(count) {
+    if (count >= 10) return 'excellent';
+    if (count >= 5) return 'good';
+    if (count >= 2) return 'fair';
+    return 'limited';
+  }
+
+  static computeStayQualityScore(poi, nearbyRestaurantCount = 0) {
+    const rating = Number(poi.google_rating);
+    const reviewCount = Number(poi.google_review_count ?? poi.google_reviews);
+    const stars = Number(poi.osm_stars ?? poi.stars);
+    const amenityKeys = TravelDatabase.extractHotelQualityAmenityKeys(poi);
+    const restaurantCount = Number.isFinite(Number(nearbyRestaurantCount)) ? Number(nearbyRestaurantCount) : 0;
+
+    const ratingScore = Number.isFinite(rating) && rating > 0 ? Math.min(rating, 5) / 5 : null;
+    const reviewScore = Number.isFinite(reviewCount) && reviewCount > 0 ? Math.min(Math.log10(reviewCount + 1) / Math.log10(1001), 1) : null;
+    const starScore = Number.isFinite(stars) && stars > 0 ? Math.min(stars, 5) / 5 : null;
+    const amenityScore = Math.min(amenityKeys.length / 8, 1);
+    const restaurantScore = Math.min(restaurantCount / 12, 1);
+    const walkabilityScore = Math.min(restaurantCount / 10, 1);
+
+    const components = [
+      { key: 'google_rating', score: ratingScore, weight: 35 },
+      { key: 'review_volume', score: reviewScore, weight: 15 },
+      { key: 'star_classification', score: starScore, weight: 20 },
+      { key: 'amenity_richness', score: amenityScore, weight: 15 },
+      { key: 'nearby_restaurant_density', score: restaurantScore, weight: 10 },
+      { key: 'walkability_proxy', score: walkabilityScore, weight: 5 },
+    ];
+
+    const available = components.filter(component => component.score !== null);
+    const availableWeight = available.reduce((sum, component) => sum + component.weight, 0);
+    const score = availableWeight > 0
+      ? Math.round(available.reduce((sum, component) => sum + component.score * component.weight, 0) / availableWeight * 100)
+      : null;
+
+    return {
+      score,
+      confidence: availableWeight >= 75 ? 'high' : availableWeight >= 45 ? 'medium' : 'low',
+      components: Object.fromEntries(components.map(component => [
+        component.key,
+        component.score === null ? null : Math.round(component.score * 100),
+      ])),
+      available_weight: availableWeight,
+      nearby_restaurant_count: restaurantCount,
+      walkability_proxy: TravelDatabase.walkabilityProxyFromRestaurantCount(restaurantCount),
+      amenity_count: amenityKeys.length,
+      amenity_keys: amenityKeys,
+    };
+  }
+
+  async addStayQualityScores(pois) {
+    if (!pois || pois.length === 0) return pois;
+
+    const hotels = pois.filter(poi => ACCOMMODATION_POI_TYPES.includes(poi.poi_type));
+    if (hotels.length === 0) return pois;
+
+    const hotelIds = hotels.map(poi => poi.osm_id).filter(Boolean);
+    const counts = new Map(hotelIds.map(id => [id, 0]));
+
+    if (hotelIds.length > 0) {
+      const countResult = await this.pool.query(`
+        SELECT h.osm_id, COUNT(r.osm_id)::int as nearby_restaurant_count
+        FROM osm_pois h
+        LEFT JOIN osm_pois r ON r.poi_type = ANY($2)
+          AND r.osm_id != h.osm_id
+          AND ST_DWithin(
+            h.location::geography,
+            r.location::geography,
+            $3::float8
+          )
+        WHERE h.osm_id = ANY($1)
+        GROUP BY h.osm_id
+      `, [hotelIds, DINING_POI_TYPES, HOTEL_QUALITY_RESTAURANT_RADIUS_METERS]);
+
+      for (const row of countResult.rows) {
+        counts.set(row.osm_id, Number(row.nearby_restaurant_count) || 0);
+      }
+    }
+
+    return pois.map(poi => {
+      if (!ACCOMMODATION_POI_TYPES.includes(poi.poi_type)) return poi;
+      const nearbyRestaurantCount = counts.get(poi.osm_id) || 0;
+      const stayQuality = TravelDatabase.computeStayQualityScore(poi, nearbyRestaurantCount);
+      return {
+        ...poi,
+        stay_quality_score: stayQuality.score,
+        stay_quality_confidence: stayQuality.confidence,
+        stay_quality: stayQuality,
       };
     });
   }
@@ -1123,6 +1260,7 @@ export class TravelDatabase {
           p.stars as osm_stars,
           p.cuisine as osm_cuisine,
           p.opening_hours as osm_opening_hours,
+          p.tags as osm_tags,
           p.tags->>'brand' as osm_brand,
           GREATEST(
             similarity(p.name, $1),
@@ -1171,6 +1309,7 @@ export class TravelDatabase {
           p.stars as osm_stars,
           p.cuisine as osm_cuisine,
           p.opening_hours as osm_opening_hours,
+          p.tags as osm_tags,
           p.tags->>'brand' as osm_brand,
           p.tags->>'operator' as osm_operator
         FROM osm_pois p
@@ -1269,6 +1408,7 @@ export class TravelDatabase {
           p.stars as osm_stars,
           p.cuisine as osm_cuisine,
           p.opening_hours as osm_opening_hours,
+          p.tags as osm_tags,
           p.tags->>'brand' as osm_brand,
           GREATEST(
             similarity(p.name, $1),
@@ -1338,6 +1478,7 @@ export class TravelDatabase {
     filtered = filtered.slice(0, limit);
     filtered = TravelDatabase.annotateHotelIntent(filtered, intent);
     filtered = TravelDatabase.annotateRestaurantOccasion(filtered, occasion);
+    filtered = await this.addStayQualityScores(filtered);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
@@ -1628,6 +1769,7 @@ export class TravelDatabase {
         p.stars as osm_stars,
         p.cuisine as osm_cuisine,
         p.opening_hours as osm_opening_hours,
+        p.tags as osm_tags,
         ST_Distance(
           p.location::geography,
           ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography
@@ -1691,6 +1833,7 @@ export class TravelDatabase {
     filtered = filtered.slice(0, limit);
     filtered = TravelDatabase.annotateHotelIntent(filtered, extraFilters?.intent);
     filtered = TravelDatabase.annotateRestaurantOccasion(filtered, extraFilters?.occasion);
+    filtered = await this.addStayQualityScores(filtered);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
@@ -1728,6 +1871,7 @@ export class TravelDatabase {
         p.stars as osm_stars,
         p.cuisine as osm_cuisine,
         p.opening_hours as osm_opening_hours,
+        p.tags as osm_tags,
         g.rating as google_rating,
         g.user_rating_count as google_review_count,
         g.photos->0->>'url' as photo_url
@@ -1949,9 +2093,11 @@ export class TravelDatabase {
     // Photos: URLs are resolved during enrichment and stored in the DB.
     // No runtime URL computation needed — photo urls are direct CDN links.
 
+    const [scoredResponse] = await this.addStayQualityScores([response]);
+
     // Remove null/undefined fields and add resource URIs
     const baseUrl = await this.getServerBaseUrl();
-    const withUris = addResourceUris(removeNullFields(response), baseUrl);
+    const withUris = addResourceUris(removeNullFields(scoredResponse), baseUrl);
 
     // Add favorite status for authenticated users (returns array, we extract single item)
     const withFavorites = await this.addFavoriteStatus([withUris], userId);

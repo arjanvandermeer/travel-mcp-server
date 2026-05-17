@@ -139,8 +139,11 @@
             <span class="card-title">{{or name osm_name "Unknown"}}</span>
             <span class="card-type">{{poi_type}}</span>
           </div>
-          {{#if (or google_rating osm_stars distance_km)}}
+          {{#if (or google_rating osm_stars distance_km stay_quality_score)}}
           <div class="card-meta">
+            {{#if stay_quality_score}}
+            <span class="rating">Stay {{stay_quality_score}}/100</span>
+            {{/if}}
             {{#if google_rating}}
             <span class="rating">&#11088; {{google_rating}}{{#if google_review_count}} ({{google_review_count}}){{/if}}</span>
             {{else}}
@@ -209,6 +212,11 @@
         distance = '<span class="distance">' + escapeHtml(formatDistance(poi.distance_km)) + ' km</span>';
       }
 
+      var stayQuality = '';
+      if (poi.stay_quality_score != null) {
+        stayQuality = '<span class="rating">Stay ' + escapeHtml(String(poi.stay_quality_score)) + '/100</span>';
+      }
+
       var address = '';
       if (poi.osm_city || poi.osm_country_code) {
         address = '<div class="card-address">' + escapeHtml(poi.osm_city || '') + (poi.osm_country_code ? ', ' + escapeHtml(poi.osm_country_code) : '') + '</div>';
@@ -241,7 +249,7 @@
             '<span class="card-title">' + escapeHtml(name) + '</span>' +
             '<span class="card-type">' + escapeHtml(poi.poi_type || '') + '</span>' +
           '</div>' +
-          (rating || distance ? '<div class="card-meta">' + rating + distance + '</div>' : '') +
+          (stayQuality || rating || distance ? '<div class="card-meta">' + stayQuality + rating + distance + '</div>' : '') +
           address +
           cuisine +
         '</div>';

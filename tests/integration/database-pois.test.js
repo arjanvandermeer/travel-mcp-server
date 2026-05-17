@@ -376,6 +376,56 @@ describe('TravelDatabase POI Search Functions', () => {
     });
   });
 
+  describe('stay quality scoring', () => {
+    it('should add hotel stay quality scores with nearby dining query coverage', async () => {
+      mockPool.setResponse('SELECT h.osm_id', dbResult([{ osm_id: 12345, nearby_restaurant_count: 8 }]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const results = await db.addStayQualityScores([{
+        osm_id: 12345,
+        poi_type: 'hotel',
+        name: 'Grand Hotel Bangkok',
+        google_rating: 4.5,
+        google_review_count: 1200,
+        osm_stars: 5,
+        osm_tags: { internet_access: 'wlan', swimming_pool: 'yes', spa: 'yes', parking: 'yes' },
+        google_amenities: { goodForChildren: true },
+      }]);
+
+      assert.strictEqual(results[0].stay_quality_score, 87);
+      assert.strictEqual(results[0].stay_quality_confidence, 'high');
+      assert.strictEqual(results[0].stay_quality.nearby_restaurant_count, 8);
+      assert.strictEqual(results[0].stay_quality.walkability_proxy, 'good');
+      assert.ok(results[0].stay_quality.amenity_keys.includes('wifi'));
+      assert.ok(results[0].stay_quality.components.google_rating > 0);
+
+      const calls = mockPool.getCalls();
+      const qualityCall = calls.find(c => c.sql.includes('COUNT(r.osm_id)::int as nearby_restaurant_count'));
+      assert.ok(qualityCall, 'Should query nearby restaurant density for hotels');
+      assert.ok(qualityCall.sql.includes('ST_DWithin'), 'Should use spatial distance for nearby restaurant density');
+      assert.deepStrictEqual(qualityCall.params[0], [12345]);
+      assert.ok(qualityCall.params[1].includes('restaurant'));
+      assert.strictEqual(qualityCall.params[2], 1500);
+    });
+
+    it('should keep sparse hotel quality scores stable when enrichment fields are missing', () => {
+      const score = TravelDatabase.computeStayQualityScore({
+        osm_id: 12345,
+        poi_type: 'hotel',
+        osm_tags: { internet_access: 'wlan' },
+      }, 0);
+
+      assert.strictEqual(score.score, 6);
+      assert.strictEqual(score.confidence, 'low');
+      assert.strictEqual(score.components.google_rating, null);
+      assert.strictEqual(score.components.review_volume, null);
+      assert.strictEqual(score.components.star_classification, null);
+      assert.strictEqual(score.components.amenity_richness, 13);
+      assert.strictEqual(score.nearby_restaurant_count, 0);
+      assert.strictEqual(score.walkability_proxy, 'limited');
+    });
+  });
+
   describe('searchPOIsNearCoordinates', () => {
     it('should search POIs near coordinates', async () => {
       mockPool.setResponse('osm_pois', dbResult(samplePOIs));

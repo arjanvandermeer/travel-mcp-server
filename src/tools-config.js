@@ -61,7 +61,7 @@ const baseToolsConfig = [
   },
   {
     name: 'search_hotels',
-    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). Returns JSON results with coordinates, ratings, and details. REQUIRES either location (city_name or coordinates) OR query. Supports amenity filtering (e.g., wifi, pool, parking) and open_now. WORKFLOW TIP: To find hotels near a landmark, first use search_pois to get the landmark coordinates, then use search_hotels with those lat/long coordinates.',
+    description: 'Search for accommodations (hotels, hostels, guesthouses, motels, resorts, apartments, B&Bs). Returns JSON results with coordinates, ratings, stay quality scores, and details. REQUIRES either location (city_name or coordinates) OR query. Supports amenity filtering (e.g., wifi, pool, parking) and open_now. WORKFLOW TIP: To find hotels near a landmark, first use search_pois to get the landmark coordinates, then use search_hotels with those lat/long coordinates.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -137,7 +137,7 @@ const baseToolsConfig = [
   },
   {
     name: 'search_hotels_ui',
-    description: 'Search for accommodations with interactive UI card. Same as search_hotels but renders results in a clickable card interface. Supports amenity and open_now filters.',
+    description: 'Search for accommodations with interactive UI card. Same as search_hotels but renders results in a clickable card interface. Includes stay quality scores and supports amenity and open_now filters.',
     inputSchema: {
       type: 'object',
       properties: {

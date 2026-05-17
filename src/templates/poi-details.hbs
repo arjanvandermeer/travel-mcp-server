@@ -388,6 +388,12 @@
     <div class="card">
       <h2>Hotel Details</h2>
       <div class="info-grid">
+        {{#if stay_quality_score}}
+        <div class="info-item">
+          <span class="label">Stay Quality</span>
+          <span class="value">{{stay_quality_score}}/100</span>
+        </div>
+        {{/if}}
         {{#if osm_rooms}}
         <div class="info-item">
           <span class="label">Rooms</span>

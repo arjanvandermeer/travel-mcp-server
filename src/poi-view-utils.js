@@ -90,7 +90,7 @@ export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title =
     : null;
 
   const starDisplay = poi.osm_stars ? '★'.repeat(parseInt(poi.osm_stars, 10) || 0) : null;
-  const has_hotel_info = poi.osm_rooms || poi.osm_beds || poi.osm_stars;
+  const has_hotel_info = poi.osm_rooms || poi.osm_beds || poi.osm_stars || poi.stay_quality_score !== undefined;
   const has_contact = poi.google_phone || poi.osm_phone || poi.osm_email;
 
   const priceLevelMap = {

@@ -568,6 +568,21 @@ ORDER BY brand_name;
 | `accessible` | `wheelchair=yes`, `wheelchair=limited`, or matching wheelchair tag |
 | `pet_friendly` | `pets` present and not `no` |
 
+### Stay quality scores
+
+Hotel search results and hotel POI details include `stay_quality_score`, `stay_quality_confidence`, and a `stay_quality` breakdown when the POI type is an accommodation. The score is a 0-100 composite computed at response time from available OSM and Google Places fields:
+
+| Component | Weight | Data source |
+|-----------|--------|-------------|
+| Google rating | 35 | `google_places.rating` |
+| Review volume | 15 | `google_places.user_rating_count`, log-scaled and capped at 1,000 reviews |
+| Star classification | 20 | `osm_pois.stars`, capped at 5 |
+| Amenity richness | 15 | Positive OSM hotel amenity tags and Google Places amenity flags, capped at 8 signals |
+| Nearby restaurant density | 10 | Count of restaurant/cafe/bar/pub/fast-food/food-court POIs within 1.5 km |
+| Walkability proxy | 5 | Nearby restaurant count, capped at 10 venues |
+
+Missing rating, review, or star fields are omitted from the denominator instead of treated as zero, so sparse records can still receive a low-confidence score. Amenity and nearby-dining components are treated as zero when no matching data is present because those signals come from local POI data rather than optional Google enrichment.
+
 ### Restaurant price levels and dining budgets
 
 Restaurant price filters use Google Places `price_level` values after the initial indexed OSM search has been enriched:
