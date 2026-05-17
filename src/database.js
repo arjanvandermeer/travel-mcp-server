@@ -4,6 +4,7 @@ import * as telemetry from './telemetry.js';
 import dotenv from 'dotenv';
 import { CONFIG_CACHE_TTL_MS, DB_STATEMENT_TIMEOUT_MS, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, HOMEPAGE_CACHE_MAX_SIZE, HOMEPAGE_CACHE_TTL_MS, COUNTRIES_CACHE_TTL_MS, EARTH_RADIUS_METERS, GOOGLE_PLACES_DAILY_LIMIT_DEFAULT } from './config.js';
 import { addResourceUris, removeNullFields } from './response-utils.js';
+import { databaseUserMethods } from './database-user-methods.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
@@ -92,6 +93,10 @@ function withTimeout(promise, timeoutMs, message) {
 
 const PENDING_ENRICHMENT_STALE_MS = 5 * 60 * 1000;
 const PENDING_ENRICHMENT_RESTART_COOLDOWN_MS = 5 * 60 * 1000;
+
+function getGoogleQuotaExceededMessage(quota) {
+  return `Google Places enrichment is paused because the daily API limit has been reached (${quota.current}/${quota.limit}). Try again after the quota resets.`;
+}
 
 export class TravelDatabase {
   // Config cache TTL in milliseconds (5 minutes)
@@ -188,6 +193,16 @@ export class TravelDatabase {
     if (!this.googlePlaces) {
       await this.googlePlacesReady;
     }
+  }
+
+  async markGoogleQuotaExceeded(osmId, quota, detail = null) {
+    const message = getGoogleQuotaExceededMessage(quota);
+    await this.createMapping(osmId, null, {
+      mapping_status: 'error',
+      mapping_notes: detail ? `${message} ${detail}` : message,
+    });
+    this._enrichmentRestartedAt.delete(osmId);
+    return message;
   }
 
   /**
@@ -1264,29 +1279,35 @@ export class TravelDatabase {
         !this._enrichmentLock.has(osmId) &&
         !restartedRecently;
       if (isStale) {
-        // Server restart (or crash) left a stale pending row.
-        // Reset mapped_at so it looks fresh, then re-trigger enrichment immediately.
-        await this.pool.query(
-          `UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP WHERE osm_id = $1`, [osmId]
-        ).catch(() => {});
-
-        const newStartedAt = new Date();
-        this._enrichmentRestartedAt.set(osmId, newStartedAt.getTime());
-        const checkBackAt  = new Date(newStartedAt.getTime() + 60000);
-        enrichment_status  = 'pending';
-        enrichment_message = `Enrichment restarted at ${newStartedAt.toISOString()}. Check back after ${checkBackAt.toISOString()}.`;
-
-        const enrichmentPromise = withTimeout(
-          this.enrichOSMPOI(osmId),
-          120000,
-          'Enrichment timeout after 2 minutes'
-        ).catch(err => {
-          this.pool.query(
-            `UPDATE osm_google_mappings SET mapping_status = 'error', mapping_notes = $1 WHERE osm_id = $2`,
-            [err.message, osmId]
+        const quota = await this.checkGoogleApiLimit();
+        if (!quota.allowed) {
+          enrichment_status = 'failed';
+          enrichment_message = await this.markGoogleQuotaExceeded(osmId, quota);
+        } else {
+          // Server restart (or crash) left a stale pending row.
+          // Reset mapped_at so it looks fresh, then re-trigger enrichment immediately.
+          await this.pool.query(
+            `UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP WHERE osm_id = $1`, [osmId]
           ).catch(() => {});
-        }).finally(() => { this._enrichmentLock.delete(osmId); });
-        this._enrichmentLock.set(osmId, enrichmentPromise);
+
+          const newStartedAt = new Date();
+          this._enrichmentRestartedAt.set(osmId, newStartedAt.getTime());
+          const checkBackAt  = new Date(newStartedAt.getTime() + 60000);
+          enrichment_status  = 'pending';
+          enrichment_message = `Enrichment restarted at ${newStartedAt.toISOString()}. Check back after ${checkBackAt.toISOString()}.`;
+
+          const enrichmentPromise = withTimeout(
+            this.enrichOSMPOI(osmId),
+            120000,
+            'Enrichment timeout after 2 minutes'
+          ).catch(err => {
+            this.pool.query(
+              `UPDATE osm_google_mappings SET mapping_status = 'error', mapping_notes = $1 WHERE osm_id = $2`,
+              [err.message, osmId]
+            ).catch(() => {});
+          }).finally(() => { this._enrichmentLock.delete(osmId); });
+          this._enrichmentLock.set(osmId, enrichmentPromise);
+        }
       } else {
         enrichment_status = 'pending';
         const checkBackAt = new Date(startedAt.getTime() + 60000);
@@ -1301,7 +1322,11 @@ export class TravelDatabase {
       this._enrichmentRestartedAt.delete(osmId);
       enrichment_status = 'failed';
       const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
-      enrichment_message = `Google Places enrichment failed due to an error. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
+      if (poi.mapping_notes?.includes('daily API limit')) {
+        enrichment_message = `${poi.mapping_notes}${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
+      } else {
+        enrichment_message = `Google Places enrichment failed due to an error. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
+      }
     } else if (!poi.mapping_status) {
       // No enrichment attempt yet - trigger it
       await this.ensureGooglePlacesReady();
@@ -1311,37 +1336,43 @@ export class TravelDatabase {
           enrichment_status = 'pending';
           enrichment_message = 'Google Places enrichment already in progress. Check back shortly for complete information.';
         } else {
-          // Mark as pending IMMEDIATELY before starting enrichment
-          await this.pool.query(`
-            INSERT INTO osm_google_mappings (osm_id, mapping_status, mapped_at)
-            VALUES ($1, 'pending', CURRENT_TIMESTAMP)
-            ON CONFLICT (osm_id) DO UPDATE SET mapping_status = 'pending', mapped_at = CURRENT_TIMESTAMP
-          `, [osmId]);
+          const quota = await this.checkGoogleApiLimit();
+          if (!quota.allowed) {
+            enrichment_status = 'failed';
+            enrichment_message = await this.markGoogleQuotaExceeded(osmId, quota);
+          } else {
+            // Mark as pending IMMEDIATELY before starting enrichment
+            await this.pool.query(`
+              INSERT INTO osm_google_mappings (osm_id, mapping_status, mapped_at)
+              VALUES ($1, 'pending', CURRENT_TIMESTAMP)
+              ON CONFLICT (osm_id) DO UPDATE SET mapping_status = 'pending', mapped_at = CURRENT_TIMESTAMP
+            `, [osmId]);
 
-          const startedAt = new Date();
-          const checkBackAt = new Date(startedAt.getTime() + 60000); // 1 minute from now
+            const startedAt = new Date();
+            const checkBackAt = new Date(startedAt.getTime() + 60000); // 1 minute from now
 
-          enrichment_status = 'pending';
-          enrichment_message = `Google Places enrichment started at ${startedAt.toISOString()}. Check back after ${checkBackAt.toISOString()} (approximately 1 minute) for complete information including ratings, reviews, photos, and verified opening hours.`;
+            enrichment_status = 'pending';
+            enrichment_message = `Google Places enrichment started at ${startedAt.toISOString()}. Check back after ${checkBackAt.toISOString()} (approximately 1 minute) for complete information including ratings, reviews, photos, and verified opening hours.`;
 
-          // Fire-and-forget background enrichment with 2-minute timeout and dedup lock
-          const enrichmentPromise = withTimeout(
-            this.enrichOSMPOI(osmId),
-            120000,
-            'Enrichment timeout after 2 minutes'
-          ).catch(err => {
-            console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
-            telemetry.captureException(err, { context: 'background_enrichment', osmId });
-            // Mark as error if enrichment fails
-            this.pool.query(`
-              UPDATE osm_google_mappings
-              SET mapping_status = 'error', mapping_notes = $1
-              WHERE osm_id = $2
-            `, [err.message, osmId]).catch(() => {});
-          }).finally(() => {
-            this._enrichmentLock.delete(osmId);
-          });
-          this._enrichmentLock.set(osmId, enrichmentPromise);
+            // Fire-and-forget background enrichment with 2-minute timeout and dedup lock
+            const enrichmentPromise = withTimeout(
+              this.enrichOSMPOI(osmId),
+              120000,
+              'Enrichment timeout after 2 minutes'
+            ).catch(err => {
+              console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
+              telemetry.captureException(err, { context: 'background_enrichment', osmId });
+              // Mark as error if enrichment fails
+              this.pool.query(`
+                UPDATE osm_google_mappings
+                SET mapping_status = 'error', mapping_notes = $1
+                WHERE osm_id = $2
+              `, [err.message, osmId]).catch(() => {});
+            }).finally(() => {
+              this._enrichmentLock.delete(osmId);
+            });
+            this._enrichmentLock.set(osmId, enrichmentPromise);
+          }
         }
       } else {
         enrichment_status = 'disabled';
@@ -1634,6 +1665,7 @@ export class TravelDatabase {
       const quota1 = await this.consumeGoogleApiQuota();
       if (!quota1.allowed) {
         console.error(`Google API daily limit reached (${quota1.current}/${quota1.limit}). Skipping enrichment for OSM ${osmId}`);
+        await this.markGoogleQuotaExceeded(osmId, quota1);
         return;
       }
 
@@ -1653,10 +1685,11 @@ export class TravelDatabase {
       const quota2 = await this.consumeGoogleApiQuota();
       if (!quota2.allowed) {
         console.error(`Google API daily limit reached (${quota2.current}/${quota2.limit}). Skipping details for OSM ${osmId}`);
-        await this.createMapping(osmId, null, {
-          mapping_status: 'pending',
-          mapping_notes: `Rate limit reached before details fetch (place_id: ${matchResult.place_id})`
-        });
+        await this.markGoogleQuotaExceeded(
+          osmId,
+          quota2,
+          `Details fetch was skipped for place_id: ${matchResult.place_id}.`
+        );
         return;
       }
 
@@ -2113,365 +2146,6 @@ export class TravelDatabase {
     return removeNullFields(stats);
   }
 
-  // =============================================================================
-  // Authentication Methods
-  // =============================================================================
-
-  /**
-   * Get user by API token
-   * Returns user with their config if token is valid, null otherwise
-   */
-  async getUserByToken(token) {
-    if (!token) return null;
-
-    const result = await this.pool.query(`
-      SELECT
-        u.id, u.google_id, u.email, u.name, u.picture_url,
-        u.created_at, u.last_login_at,
-        t.id as token_id,
-        uc.key as config_key, uc.value as config_value
-      FROM user_tokens t
-      JOIN users u ON t.user_id = u.id
-      LEFT JOIN user_config uc ON uc.user_id = u.id
-      WHERE t.token = $1
-        AND t.revoked_at IS NULL
-        AND (t.expires_at IS NULL OR t.expires_at > NOW())
-    `, [token]);
-
-    if (result.rows.length === 0) return null;
-
-    const firstRow = result.rows[0];
-    const user = {
-      id: firstRow.id,
-      google_id: firstRow.google_id,
-      email: firstRow.email,
-      name: firstRow.name,
-      picture_url: firstRow.picture_url,
-      created_at: firstRow.created_at,
-      last_login_at: firstRow.last_login_at,
-      config: {},
-    };
-
-    // Aggregate config rows from the LEFT JOIN
-    for (const row of result.rows) {
-      if (row.config_key) {
-        user.config[row.config_key] = row.config_value;
-      }
-    }
-
-    // Update last_used_at for the token (fire-and-forget)
-    this.pool.query(`
-      UPDATE user_tokens SET last_used_at = NOW() WHERE id = $1
-    `, [firstRow.token_id]).catch(() => {});
-
-    return user;
-  }
-
-  /**
-   * Get or create user by Google OAuth info
-   * Auto-provisions new users and updates existing ones on each login
-   * Returns user with their config loaded
-   *
-   * Handles two conflict scenarios:
-   * 1. User exists with same google_id (ON CONFLICT) - updates their info
-   * 2. User exists with same email but no google_id (exception) - links google_id
-   */
-  async upsertGoogleUser(googleId, email, name, pictureUrl) {
-    let result;
-    try {
-      // Try insert with ON CONFLICT for google_id (common case)
-      result = await this.pool.query(`
-        INSERT INTO users (google_id, email, name, picture_url, last_login_at)
-        VALUES ($1, $2, $3, $4, NOW())
-        ON CONFLICT (google_id) DO UPDATE SET
-          email = EXCLUDED.email,
-          name = EXCLUDED.name,
-          picture_url = EXCLUDED.picture_url,
-          last_login_at = NOW()
-        RETURNING id, google_id, email, name, picture_url, created_at, last_login_at
-      `, [googleId, email, name, pictureUrl]);
-    } catch (err) {
-      // Handle email conflict: user exists with same email but different/no google_id
-      // This happens when a user was created via API token before using OAuth
-      if (err.code === '23505' && err.constraint === 'users_email_key') {
-        result = await this.pool.query(`
-          UPDATE users SET
-            google_id = $1,
-            name = $3,
-            picture_url = $4,
-            last_login_at = NOW()
-          WHERE email = $2
-          RETURNING id, google_id, email, name, picture_url, created_at, last_login_at
-        `, [googleId, email, name, pictureUrl]);
-      } else {
-        throw err;
-      }
-    }
-
-    const user = result.rows[0];
-
-    // Load user config
-    const configResult = await this.pool.query(
-      'SELECT key, value FROM user_config WHERE user_id = $1',
-      [user.id]
-    );
-    user.config = {};
-    for (const row of configResult.rows) {
-      user.config[row.key] = row.value;
-    }
-
-    return user;
-  }
-
-  /**
-   * Create a new API token for a user
-   */
-  async createUserToken(userId, tokenName = null) {
-    // Generate secure random token
-    const crypto = await import('crypto');
-    const token = crypto.randomBytes(32).toString('hex');
-
-    const result = await this.pool.query(`
-      INSERT INTO user_tokens (user_id, token, name)
-      VALUES ($1, $2, $3)
-      RETURNING id, token, name, created_at
-    `, [userId, token, tokenName]);
-
-    return result.rows[0];
-  }
-
-  /**
-   * Get user config value
-   */
-  async getUserConfig(userId, key) {
-    const result = await this.pool.query(`
-      SELECT value FROM user_config WHERE user_id = $1 AND key = $2
-    `, [userId, key]);
-
-    return result.rows.length > 0 ? result.rows[0].value : null;
-  }
-
-  /**
-   * Set user config value
-   */
-  async setUserConfig(userId, key, value) {
-    await this.pool.query(`
-      INSERT INTO user_config (user_id, key, value)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (user_id, key) DO UPDATE SET value = EXCLUDED.value
-    `, [userId, key, value]);
-  }
-
-  /**
-   * Check if user has a specific permission/config
-   */
-  async userHasConfig(userId, key, expectedValue = null) {
-    const value = await this.getUserConfig(userId, key);
-    if (expectedValue === null) {
-      return value !== null;
-    }
-    return value === expectedValue;
-  }
-
-  /**
-   * List all tokens for a user
-   */
-  async listUserTokens(userId) {
-    const result = await this.pool.query(`
-      SELECT id, name, created_at, expires_at, last_used_at,
-             CASE WHEN revoked_at IS NOT NULL THEN 'revoked'
-                  WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired'
-                  ELSE 'active' END as status
-      FROM user_tokens
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-      LIMIT 100
-    `, [userId]);
-
-    return result.rows;
-  }
-
-  /**
-   * Revoke a token
-   */
-  async revokeToken(tokenId, userId) {
-    await this.pool.query(`
-      UPDATE user_tokens SET revoked_at = NOW()
-      WHERE id = $1 AND user_id = $2
-    `, [tokenId, userId]);
-  }
-
-  // =========================================================================
-  // User Favorites
-  // =========================================================================
-
-  /**
-   * Add a POI to user's favorites
-   * @param {number} userId - User ID
-   * @param {number} osmId - OSM ID of the POI
-   * @param {string} notes - Optional notes about the favorite
-   * @returns {object} - The created favorite record with POI details
-   */
-  async addFavorite(userId, osmId, notes = null) {
-    // Verify POI exists first (don't rely solely on FK constraint)
-    const poiCheck = await this.pool.query(
-      'SELECT 1 FROM osm_pois WHERE osm_id = $1',
-      [osmId]
-    );
-    if (poiCheck.rows.length === 0) {
-      return false; // POI not found
-    }
-
-    // Insert the favorite
-    await this.pool.query(`
-      INSERT INTO user_favorites (user_id, poi_osm_id, notes)
-      VALUES ($1, $2, $3)
-      ON CONFLICT (user_id, poi_osm_id) DO UPDATE SET notes = EXCLUDED.notes
-    `, [userId, osmId, notes]);
-
-    return true;
-  }
-
-  /**
-   * Remove a POI from user's favorites
-   * @param {number} userId - User ID
-   * @param {number} osmId - OSM ID of the POI
-   * @returns {boolean} - True if a favorite was removed
-   */
-  async removeFavorite(userId, osmId) {
-    const result = await this.pool.query(`
-      DELETE FROM user_favorites
-      WHERE user_id = $1 AND poi_osm_id = $2
-    `, [userId, osmId]);
-
-    return result.rowCount > 0;
-  }
-
-  /**
-   * Check if a POI is in user's favorites
-   * @param {number} userId - User ID
-   * @param {number} osmId - OSM ID of the POI
-   * @returns {boolean}
-   */
-  async isFavorite(userId, osmId) {
-    const result = await this.pool.query(`
-      SELECT 1 FROM user_favorites WHERE user_id = $1 AND poi_osm_id = $2
-    `, [userId, osmId]);
-
-    return result.rows.length > 0;
-  }
-
-  /**
-   * List user's favorites with optional filters
-   * @param {number} userId - User ID
-   * @param {object} options - Filter options
-   * @param {string} options.cityName - Filter by city name
-   * @param {string} options.countryCode - Filter by country code
-   * @param {string} options.state - Filter by state/province
-   * @param {number} options.latitude - Center latitude for radius search
-   * @param {number} options.longitude - Center longitude for radius search
-   * @param {number} options.radiusKm - Radius in km (default 50)
-   * @param {string[]} options.poiTypes - Filter by POI types (e.g., ['restaurant', 'hotel'])
-   * @param {number} options.limit - Max results (default 100)
-   * @returns {Array} - Favorites with full POI details
-   */
-  async listFavorites(userId, options = {}) {
-    const {
-      cityName,
-      countryCode,
-      state,
-      latitude,
-      longitude,
-      radiusKm = 50,
-      poiTypes,
-      limit = 100,
-    } = options;
-
-    // Debug logging
-    const typeDesc = poiTypes ? poiTypes.join(',') : 'all';
-    console.error(`[listFavorites] userId=${userId}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, types=${typeDesc}, limit=${limit}`);
-
-    const conditions = ['f.user_id = $1'];
-    const params = [userId];
-    let paramIndex = 2;
-
-    // Location filters
-    if (latitude !== undefined && longitude !== undefined) {
-      // Radius search around coordinates
-      conditions.push(`ST_DWithin(
-        e.osm_location::geography,
-        ST_SetSRID(ST_MakePoint($${paramIndex}, $${paramIndex + 1}), 4326)::geography,
-        $${paramIndex + 2}
-      )`);
-      params.push(longitude, latitude, radiusKm * 1000); // Convert km to meters
-      paramIndex += 3;
-    } else if (cityName && countryCode) {
-      // City-based filter - first find the city, then filter by proximity
-      const escapedCity = cityName.replace(/[%_\\]/g, '\\$&');
-      conditions.push(`e.city ILIKE $${paramIndex} AND e.country_code = $${paramIndex + 1}`);
-      params.push(`%${escapedCity}%`, countryCode);
-      paramIndex += 2;
-
-      if (state) {
-        // Get admin1_code from the state name or code
-        conditions.push(`EXISTS (
-          SELECT 1 FROM geonames_cities gc
-          JOIN geonames_admin1_codes a1 ON gc.country_code = a1.country_code AND gc.admin1_code = a1.admin1_code
-          WHERE gc.geoname_id = e.city_geoname_id
-          AND (a1.admin1_code = $${paramIndex} OR a1.name ILIKE $${paramIndex})
-        )`);
-        params.push(state);
-        paramIndex += 1;
-      }
-    } else if (countryCode) {
-      conditions.push(`e.country_code = $${paramIndex}`);
-      params.push(countryCode);
-      paramIndex += 1;
-    }
-
-    // POI type filter
-    if (poiTypes && poiTypes.length > 0) {
-      conditions.push(`e.poi_type = ANY($${paramIndex})`);
-      params.push(poiTypes);
-      paramIndex += 1;
-    }
-
-    // Build query with distance calculation if using coordinates
-    // Use same field names as search results: is_favorite, favorite_since, favorite_notes
-    let selectFields = `
-      TRUE as is_favorite,
-      f.created_at as favorite_since,
-      f.notes as favorite_notes,
-      e.*
-    `;
-
-    if (latitude !== undefined && longitude !== undefined) {
-      selectFields += `,
-        ROUND(ST_Distance(
-          e.osm_location::geography,
-          ST_SetSRID(ST_MakePoint($2, $3), 4326)::geography
-        )::numeric, 0) as distance_meters
-      `;
-    }
-
-    const orderBy = latitude !== undefined && longitude !== undefined
-      ? 'ORDER BY distance_meters ASC'
-      : 'ORDER BY f.created_at DESC';
-
-    const query = `
-      SELECT ${selectFields}
-      FROM user_favorites f
-      JOIN enriched_pois e ON f.poi_osm_id = e.osm_id
-      WHERE ${conditions.join(' AND ')}
-      ${orderBy}
-      LIMIT $${paramIndex}
-    `;
-    params.push(Math.min(limit, SEARCH_LIMIT_MAX));
-
-    const result = await this.pool.query(query, params);
-    return result.rows;
-  }
-
   // =========================================================================
   // Web Frontend API Methods
   // =========================================================================
@@ -2669,15 +2343,8 @@ export class TravelDatabase {
     return result.rows;
   }
 
-  async updateFavoriteNotes(userId, osmId, notes = null) {
-    const result = await this.pool.query(`
-      UPDATE user_favorites
-      SET notes = $3
-      WHERE user_id = $1 AND poi_osm_id = $2
-    `, [userId, osmId, notes]);
-
-    return result.rowCount > 0;
-  }
 }
+
+Object.assign(TravelDatabase.prototype, databaseUserMethods);
 
 export default TravelDatabase;

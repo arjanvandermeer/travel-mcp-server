@@ -4,7 +4,6 @@
  * Used by both stdio (index.js) and HTTP (index-http.js) servers
  */
 
-import { versionInfo } from './version.js';
 import { render } from './templates/index.js';
 import * as telemetry from './telemetry.js';
 import { NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX } from './config.js';
@@ -12,6 +11,7 @@ import { validateCoordinates, validateLimit } from './validation.js';
 import { accommodationTypes, fetchNearbyForPOI, foodTypes, getNearbyTypes, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
 
 export { getPromptMessages, promptsConfig } from './prompts-config.js';
+export { getResourcesConfig, handleReadResource } from './resources-config.js';
 export { accommodationTypes, attractionTypes, fetchNearbyForPOI, foodTypes, getNearbyTitle, getNearbyTypes, isOpenNow, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
 
 // Base tool definitions
@@ -498,90 +498,6 @@ export function getToolsConfig(widgetDomain) {
   });
 }
 
-// Resource definitions
-/**
- * MCP Resources Configuration
- *
- * Resources use custom URI protocols to distinguish different content types:
- *
- * - info:// - Informational JSON resources (version info, config, links)
- * - ui://   - User interface resources (HTML pages for display)
- *
- * The ui:// protocol resources include the server host in the URI:
- *   ui://{host}/poi/{osm_id}
- *   Example: ui://travel.arjanvandermeer.com/poi/1313852747
- *
- * This allows MCP clients to:
- * 1. Recognize these as displayable content (not raw data)
- * 2. Match resources to the correct server in multi-server scenarios
- */
-
-/**
- * Get resources configuration with dynamic widget domain
- * @param {string} widgetDomain - Full URL from server_base_url config (e.g., "https://travel.arjanvandermeer.com")
- * @returns {object} - MCP resources configuration
- */
-export function getResourcesConfig(widgetDomain) {
-  const buildWidgetMeta = (frameDomains = []) => buildOpenAIWidgetMeta(widgetDomain, frameDomains);
-
-  return {
-    // Static resources - fixed URIs that always return the same type of content
-    resources: [
-      {
-        uri: 'info://version',
-        name: 'Server Version',
-        description: 'Returns server version info including git commit hash',
-        mimeType: 'application/json',
-      },
-      {
-        uri: 'info://random-poi',
-        name: 'Random POI Preview',
-        description: 'Returns a link to view a random POI in the browser',
-        mimeType: 'application/json',
-      },
-      {
-        uri: 'samples://queries',
-        name: 'Sample Queries',
-        description: 'Example queries to help you get started with the travel MCP server. Includes sample searches for hotels, restaurants, and attractions in New York City.',
-        mimeType: 'application/json',
-      },
-    ],
-    // Resource templates for ChatGPT Apps SDK widgets
-    // These are referenced by tools via _meta.ui.resourceUri
-    // MIME type text/html+skybridge signals ChatGPT to treat as a sandboxed widget
-    resourceTemplates: [
-      {
-        uriTemplate: 'ui://widget/poi-details.html',
-        name: 'POI Details Widget',
-        description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
-        mimeType: 'text/html+skybridge',
-        _meta: buildWidgetMeta([]),
-      },
-      {
-        uriTemplate: 'ui://widget/search-results.html',
-        name: 'Search Results Widget',
-        description: 'Interactive list of search results. Renders tool output as clickable cards.',
-        mimeType: 'text/html+skybridge',
-        _meta: buildWidgetMeta([]),
-      },
-      {
-        uriTemplate: 'ui://widget/nearby-pois.html',
-        name: 'Nearby POIs Widget',
-        description: 'Horizontal scrollable cards showing nearby points of interest.',
-        mimeType: 'text/html+skybridge',
-        _meta: buildWidgetMeta([]),
-      },
-      {
-        uriTemplate: 'ui://poi/{osm_id}',
-        name: 'POI Detail Page (by ID)',
-        description: 'POI detail page accessed by OSM ID - used when clicking search results.',
-        mimeType: 'text/html+skybridge',
-        _meta: buildWidgetMeta([]),
-      },
-    ],
-  };
-}
-
 /**
  * Helper to build content response for search results
  *
@@ -600,27 +516,6 @@ export function buildSearchResponse(pois) {
     structuredContent: {
       results: pois,
       count: pois.length,
-    },
-  };
-}
-
-function buildOpenAIWidgetMeta(widgetDomain, frameDomains = []) {
-  const csp = {
-    connectDomains: ['https://chatgpt.com', widgetDomain],
-    resourceDomains: [widgetDomain, 'https://*.oaistatic.com'],
-    frameDomains,
-  };
-
-  return {
-    'openai/widgetDomain': widgetDomain,
-    'openai/widgetCSP': {
-      connect_domains: csp.connectDomains,
-      resource_domains: csp.resourceDomains,
-      frame_domains: csp.frameDomains,
-    },
-    ui: {
-      domain: widgetDomain,
-      csp,
     },
   };
 }
@@ -1002,203 +897,4 @@ export async function executeToolHandler(name, args, db, options = {}) {
         isError: true,
       };
   }
-}
-
-/**
- * Handle reading a resource
- * @param {string} uri - Resource URI
- * @param {object} db - Database instance
- * @param {function} render - Template render function
- * @returns {object} - MCP resource contents
- */
-export async function handleReadResource(uri, db, render) {
-  const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
-  const buildHtmlContent = (html, frameDomains = []) => ({
-    uri,
-    mimeType: 'text/html+skybridge',
-    text: html,
-    _meta: buildOpenAIWidgetMeta(widgetDomain, frameDomains),
-  });
-
-  // Version info
-  if (uri === 'info://version') {
-    return {
-      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(versionInfo, null, 2) }],
-    };
-  }
-
-  // Random POI link
-  if (uri === 'info://random-poi') {
-    const serverBaseUrl = await db.getServerBaseUrl(); // Use cached version
-    const baseUrl = serverBaseUrl ? serverBaseUrl.replace(/\/$/, '') : '';
-    const previewUrl = `${baseUrl}/preview/poi/random`;
-    return {
-      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify({ url: previewUrl }, null, 2) }],
-    };
-  }
-
-  // Sample queries resource
-  if (uri === 'samples://queries') {
-    const samples = {
-      description: 'Example queries to help you get started with the travel MCP server',
-      workflow_tips: [
-        {
-          pattern: 'Find [chain/brand] near [landmark]',
-          description: 'To find a chain restaurant or hotel near a landmark, use a two-step approach',
-          steps: [
-            'Step 1: Use search_pois to find the landmark and get its coordinates',
-            'Step 2: Use search_restaurants or search_hotels with those coordinates + query for the brand name',
-          ],
-          example: {
-            query: 'Find Starbucks near Empire State Building',
-            step1: { tool: 'search_pois', args: { query: 'Empire State Building', city_name: 'New York', country_code: 'US' } },
-            step1_result: 'Returns POI with osm_latitude: 40.748, osm_longitude: -73.985',
-            step2: { tool: 'search_restaurants', args: { latitude: 40.748, longitude: -73.985, radius_km: 1, query: 'Starbucks' } },
-            step2_result: 'Returns all Starbucks locations within 1km of Empire State Building',
-          },
-        },
-        {
-          pattern: 'Find [type] near [landmark]',
-          description: 'Same two-step approach works for any type of place near any landmark',
-          examples: [
-            'Hotels near Central Park → search_pois("Central Park") → search_hotels(lat/long)',
-            'Italian restaurants near Times Square → search_pois("Times Square") → search_restaurants(lat/long, query="Italian")',
-            'Museums near Eiffel Tower → search_pois("Eiffel Tower") → search_pois(lat/long, poi_type="museum")',
-          ],
-        },
-      ],
-      examples: [
-        {
-          category: 'Hotels',
-          description: 'Search for hotels in a city',
-          tool: 'search_hotels',
-          example_query: 'Find hotels in New York, US',
-          example_args: { city_name: 'New York', country_code: 'US', limit: 10 },
-          notable_result: 'The Conrad New York Downtown on Vesey Street is a luxury hotel in Lower Manhattan.',
-        },
-        {
-          category: 'Hotel Chains',
-          description: 'Search for a specific hotel brand',
-          tool: 'search_hotels',
-          example_query: 'Find Marriott hotels in Manhattan',
-          example_args: { city_name: 'New York', country_code: 'US', query: 'Marriott', limit: 10 },
-          note: 'The query parameter works with brand names like Marriott, Hilton, Holiday Inn, etc.',
-        },
-        {
-          category: 'Restaurants',
-          description: 'Search for restaurants near a location',
-          tool: 'search_restaurants',
-          example_query: 'Find restaurants near Rockefeller Center in Manhattan',
-          example_args: { latitude: 40.7587, longitude: -73.9787, radius_km: 0.5, limit: 10 },
-          notable_result: 'The Rainbow Room at 30 Rockefeller Plaza is an iconic fine dining restaurant in Midtown Manhattan.',
-        },
-        {
-          category: 'Chain Restaurants',
-          description: 'Search for a chain restaurant brand near coordinates',
-          tool: 'search_restaurants',
-          example_query: 'Find Starbucks near Empire State Building (after getting coordinates)',
-          example_args: { latitude: 40.748, longitude: -73.985, radius_km: 1, query: 'Starbucks', limit: 10 },
-          note: 'The query parameter works with chain brands like Starbucks, McDonald\'s, Chipotle, Subway, etc.',
-        },
-        {
-          category: 'Attractions',
-          description: 'Search for points of interest and tourist attractions',
-          tool: 'search_pois',
-          example_query: 'Find tourist attractions in New York, US',
-          example_args: { city_name: 'New York', country_code: 'US', limit: 10 },
-          notable_result: 'The Statue of Liberty on Liberty Island is one of the most famous attractions in New York.',
-        },
-        {
-          category: 'Landmarks (for coordinates)',
-          description: 'Get coordinates of a landmark to use in subsequent searches',
-          tool: 'search_pois',
-          example_query: 'Find Empire State Building to get its coordinates',
-          example_args: { query: 'Empire State Building', city_name: 'New York', country_code: 'US' },
-          note: 'Results include osm_latitude and osm_longitude - use these for nearby searches.',
-        },
-        {
-          category: 'Cities',
-          description: 'Search for cities in a country or region',
-          tool: 'search_cities',
-          example_query: 'Find cities in New York state, US',
-          example_args: { country_code: 'US', state: 'New York', limit: 10 },
-          notable_result: 'New York City is the most populous city in the United States.',
-        },
-        {
-          category: 'POI Details',
-          description: 'Get detailed information about a specific point of interest',
-          tool: 'get_poi_details',
-          example_query: 'Get details for a specific hotel or restaurant',
-          example_args: { osm_id: 123456789 },
-          note: 'Use an osm_id from search results to get full details including address, phone, website, and hours.',
-        },
-      ],
-    };
-    return {
-      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(samples, null, 2) }],
-    };
-  }
-
-  // Widget: POI details template (used by get_poi_details tool)
-  // URI: ui://widget/poi-details.html
-  if (uri === 'ui://widget/poi-details.html') {
-    // Return empty template - data is populated client-side via window.openai.toolOutput
-    const html = render('poi-details', {});
-    return {
-      contents: [buildHtmlContent(html)],
-    };
-  }
-
-  // Widget: Search results template (used by search_hotels, search_restaurants, search_pois)
-  // URI: ui://widget/search-results.html
-  if (uri === 'ui://widget/search-results.html') {
-    // Return empty template - data is populated client-side via window.openai.toolOutput
-    const html = render('search-results', {
-      title: 'Search Results',
-      count: 0,
-      results: [],
-    });
-    return {
-      contents: [buildHtmlContent(html)],
-    };
-  }
-
-  // URI: ui://widget/nearby-pois.html
-  if (uri === 'ui://widget/nearby-pois.html') {
-    const html = render('nearby-pois', {
-      title: 'Nearby Places',
-      results: [],
-      count: 0,
-    });
-    return {
-      contents: [buildHtmlContent(html)],
-    };
-  }
-
-  // POI detail page by ID: ui://{host}/poi/{osm_id}
-  // Format: ui://travel.arjanvandermeer.com/poi/1313852747
-  // Used when user clicks a search result - the host part is dynamic
-  const poiMatch = uri.match(/^ui:\/\/[^/]+\/poi\/(\d+)$/);
-  if (poiMatch) {
-    const osmId = parseInt(poiMatch[1], 10);
-    const poi = await db.getPOIDetails(osmId);
-
-    if (!poi) {
-      const errorHtml = render('error', {
-        title: 'POI Not Found',
-        message: `No POI found with OSM ID: ${osmId}`,
-        code: osmId,
-      });
-      return {
-        contents: [buildHtmlContent(errorHtml)],
-      };
-    }
-
-    const { nearbyPois: resNearby, nearbyTitle: resNearbyTitle } = await fetchNearbyForPOI(poi, db);
-    return {
-      contents: [buildHtmlContent(renderPOIPreview(poi, render, resNearby, resNearbyTitle))],
-    };
-  }
-
-  throw new Error(`Unknown resource: ${uri}`);
 }
