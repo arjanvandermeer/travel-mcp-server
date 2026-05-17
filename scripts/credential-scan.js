@@ -38,6 +38,10 @@ const DETECTORS = [
     pattern: /gh[pousr]_[A-Za-z0-9_]{36,255}/g,
   },
   {
+    name: 'GitHub fine-grained token',
+    pattern: /github_pat_[A-Za-z0-9_]{22,255}/g,
+  },
+  {
     name: 'Slack token',
     pattern: /xox[baprs]-[A-Za-z0-9-]{10,}/g,
   },

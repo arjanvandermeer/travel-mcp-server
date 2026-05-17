@@ -46,4 +46,11 @@ describe('credential scan', () => {
     assert.equal(findings.length, 1);
     assert.equal(findings[0].detector, 'Private key header');
   });
+
+  it('flags fine-grained GitHub tokens', () => {
+    const findings = scanText('github_pat_1234567890abcdef1234567890abcdef1234567890\n', 'sample.txt'); // credential-scan: allow
+
+    assert.equal(findings.length, 1);
+    assert.equal(findings[0].detector, 'GitHub fine-grained token');
+  });
 });

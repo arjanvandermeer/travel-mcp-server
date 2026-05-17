@@ -50,7 +50,7 @@ sudo systemctl enable --now ec2-pull-deploy.timer
 If GitHub API rate limits become a problem, create `/etc/ec2-pull-deploy.env`:
 
 ```bash
-GITHUB_TOKEN=github_pat_or_fine_grained_token_with_read_only_repo_metadata
+GITHUB_TOKEN=<read-only-github-token>
 ```
 
 The repos are currently public enough for unauthenticated GitHub API reads, so this file is optional.
