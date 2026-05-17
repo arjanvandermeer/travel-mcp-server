@@ -32,6 +32,8 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /\$store\.atlas\.resetView\(\)/, 'Atlas should provide a reset control');
     assert.match(appJs, /activeFeedItems\(\)/, 'Discovery store should provide category-specific feed items');
     assert.match(appJs, /toggleFeed\(key\)/, 'Discovery store should support combined category toggles');
+    assert.match(appJs, /defaultHomeFeedKeys\(\)[\s\S]*return \['dining'\]/, 'Homepage should default to Eat only for new visitors');
+    assert.match(appJs, /HOME_FEED_PREFERENCE_KEY/, 'Homepage category toggles should persist between sessions');
     assert.match(appJs, /searchRestaurantsByName\(\)/, 'Discovery store should search restaurants by name');
     assert.match(appJs, /loadMoreFeed\(\)/, 'Discovery store should support loading more homepage cards');
     assert.match(appJs, /resultsLabel\(\)/, 'Atlas store should provide result status text');

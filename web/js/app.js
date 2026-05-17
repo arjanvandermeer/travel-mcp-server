@@ -7,6 +7,7 @@ import { markerIcon } from './map-utils.js';
 const DISCOVERY_MIN_POIS = 25;
 const LOCATION_SEARCH_RADII_KM = [50, 150, 500, 1000];
 const HOME_FEED_PAGE_SIZE = 12;
+const HOME_FEED_PREFERENCE_KEY = 'travel.home.feedCategories';
 const ENRICHMENT_POLL_INTERVAL_MS = 5000;
 const ENRICHMENT_POLL_MAX_MS = 5 * 60 * 1000;
 
@@ -16,6 +17,32 @@ function debounce(fn, ms) {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), ms);
   };
+}
+
+function defaultHomeFeedKeys() {
+  return ['dining'];
+}
+
+function readHomeFeedPreference() {
+  try {
+    const raw = window.localStorage?.getItem(HOME_FEED_PREFERENCE_KEY);
+    if (!raw) return defaultHomeFeedKeys();
+    const keys = JSON.parse(raw);
+    if (!Array.isArray(keys)) return defaultHomeFeedKeys();
+    const validKeys = new Set(LAYERS.map(category => category.key));
+    const activeKeys = keys.filter(key => validKeys.has(key));
+    return activeKeys.length ? activeKeys : [];
+  } catch {
+    return defaultHomeFeedKeys();
+  }
+}
+
+function writeHomeFeedPreference(keys) {
+  try {
+    window.localStorage?.setItem(HOME_FEED_PREFERENCE_KEY, JSON.stringify(keys));
+  } catch {
+    // Storage can be blocked in private modes; keep the in-memory preference working.
+  }
 }
 
 Alpine.store('auth', {
@@ -132,7 +159,7 @@ Alpine.store('discovery', {
   hotels: [],
   overview: null,
   feedCategories: LAYERS,
-  activeFeedKeys: LAYERS.map(category => category.key),
+  activeFeedKeys: readHomeFeedPreference(),
   feedItems: {
     accommodation: [],
     dining: [],
@@ -442,6 +469,7 @@ Alpine.store('discovery', {
     this.activeFeedKeys = this.isFeedActive(key)
       ? this.activeFeedKeys.filter(activeKey => activeKey !== key)
       : [...this.activeFeedKeys, key];
+    writeHomeFeedPreference(this.activeFeedKeys);
     if (this.isFeedActive(key) && !this.feedItems[key]?.length) this.loadMoreCategory(key);
   },
   toggleRestaurantSearch() {
@@ -479,7 +507,10 @@ Alpine.store('discovery', {
       this.feedItems = { ...this.feedItems, dining: results };
       this.feedOffsets = { ...this.feedOffsets, dining: results.length };
       this.feedHasMore = { ...this.feedHasMore, dining: false };
-      if (!this.isFeedActive('dining')) this.activeFeedKeys = [...this.activeFeedKeys, 'dining'];
+      if (!this.isFeedActive('dining')) {
+        this.activeFeedKeys = [...this.activeFeedKeys, 'dining'];
+        writeHomeFeedPreference(this.activeFeedKeys);
+      }
       if (!results.length) this.restaurantSearchError = `No restaurant matches found for "${query}".`;
     } catch {
       this.restaurantSearchError = 'Restaurant search is unavailable right now.';
