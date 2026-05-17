@@ -544,6 +544,39 @@ describe('Search API edge cases', () => {
     assert.strictEqual(capturedOpts.longitude, 100.5);
   });
 
+  it('GET /api/v1/search/cities should accept zero latitude/longitude', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedOpts;
+    const db = createApiMockDb({
+      searchCities: async (opts) => {
+        capturedOpts = opts;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/cities?latitude=0&longitude=0');
+    const res = fakeRes();
+    await router.handle(req, res, { db });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedOpts.latitude, 0);
+    assert.strictEqual(capturedOpts.longitude, 0);
+  });
+
+  it('GET /api/v1/search/cities should validate partial coordinates', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    const db = createApiMockDb();
+
+    const req = fakeReq('GET', '/api/v1/search/cities?latitude=0');
+    const res = fakeRes();
+    await router.handle(req, res, { db });
+
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.json().error, 'Invalid coordinate values');
+  });
+
   it('GET /api/v1/search/cities should accept radius and POI thresholds', async () => {
     const router = new ApiRouter();
     registerSearchRoutes(router);
@@ -586,6 +619,39 @@ describe('Search API edge cases', () => {
     await router.handle(req, res, { db, user: null });
 
     assert.strictEqual(res.statusCode, 200);
+  });
+
+  it('GET /api/v1/search/pois should accept zero latitude/longitude', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedParams;
+    const db = createApiMockDb({
+      searchPOIs: async (params) => {
+        capturedParams = params;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/pois?latitude=0&longitude=0');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedParams.latitude, 0);
+    assert.strictEqual(capturedParams.longitude, 0);
+  });
+
+  it('GET /api/v1/search/pois should validate partial coordinates', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    const db = createApiMockDb();
+
+    const req = fakeReq('GET', '/api/v1/search/pois?latitude=0');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.json().error, 'Invalid coordinate values');
   });
 });
 

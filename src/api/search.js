@@ -18,6 +18,10 @@ function parsePositiveFloat(value, defaultValue, maxValue) {
   return Math.min(parsed, maxValue);
 }
 
+function hasAnyQueryCoordinate(query) {
+  return query.latitude !== undefined || query.longitude !== undefined;
+}
+
 export function registerSearchRoutes(router) {
   router.get('/api/v1/search/cities/random', async (req, res, { db, query }) => {
     const minPoiCount = parsePositiveInt(query.min_pois, 25, 1000);
@@ -38,13 +42,13 @@ export function registerSearchRoutes(router) {
     const minPoiCount = parsePositiveInt(query.min_pois, 0, 1000);
 
     // searchCities requires either country_code or coordinates
-    if (!countryCode && !query.latitude) {
+    if (!countryCode && !hasAnyQueryCoordinate(query)) {
       return sendJson(res, 400, { error: 'country_code or coordinates required' });
     }
 
     let latitude = null;
     let longitude = null;
-    if (query.latitude) {
+    if (hasAnyQueryCoordinate(query)) {
       const coords = validateCoordinates(query.latitude, query.longitude);
       if (!coords.valid) {
         return sendJson(res, 400, { error: coords.error });
@@ -79,7 +83,7 @@ export function registerSearchRoutes(router) {
 
     let latitude = null;
     let longitude = null;
-    if (query.latitude) {
+    if (hasAnyQueryCoordinate(query)) {
       const coords = validateCoordinates(query.latitude, query.longitude);
       if (!coords.valid) {
         return sendJson(res, 400, { error: coords.error });
@@ -89,7 +93,7 @@ export function registerSearchRoutes(router) {
     }
 
     // Need at least a name, city, or coordinates
-    if (!name && !cityName && !latitude) {
+    if (!name && !cityName && latitude === null) {
       return sendJson(res, 400, { error: 'Provide q (name), city_name, or coordinates' });
     }
 
@@ -111,7 +115,7 @@ export function registerSearchRoutes(router) {
 
     // Fire-and-forget: enrich any returned POIs that haven't been enriched yet.
     // enrichOSMPOI skips already-active entries and enforces daily quota, so this is safe unconditionally.
-    if (results.length > 0) {
+    if (results.length > 0 && typeof db.batchEnrichPOIs === 'function') {
       db.batchEnrichPOIs(results.map(r => r.osm_id)).catch(() => {});
     }
   });

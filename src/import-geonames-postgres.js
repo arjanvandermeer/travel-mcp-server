@@ -97,7 +97,6 @@ async function importCountries(pool) {
   console.log('\n=== Importing Countries ===');
 
   const filePath = join(DATA_DIR, 'countryInfo.txt');
-  let importId;
 
   if (!fs.existsSync(filePath)) {
     console.log('Downloading countryInfo.txt...');
@@ -119,7 +118,7 @@ async function importCountries(pool) {
     RETURNING id
   `, ['geonames_countries', 'countryInfo.txt', GEONAMES_URLS.countries, null]);
 
-  importId = importResult.rows[0].id;
+  const importId = importResult.rows[0].id;
 
   const client = await pool.connect();
 
@@ -222,7 +221,6 @@ async function importCities(pool) {
 
   const zipPath = join(DATA_DIR, 'cities1000.zip');
   const txtPath = join(DATA_DIR, 'cities1000.txt');
-  let importId;
 
   if (!fs.existsSync(txtPath)) {
     if (!fs.existsSync(zipPath)) {
@@ -250,7 +248,7 @@ async function importCities(pool) {
     RETURNING id
   `, ['geonames_cities', 'cities1000.txt', GEONAMES_URLS.cities, JSON.stringify({ min_population: 1000 })]);
 
-  importId = importResult.rows[0].id;
+  const importId = importResult.rows[0].id;
 
   const client = await pool.connect();
 
@@ -360,7 +358,6 @@ async function importAdmin1Codes(pool) {
   console.log('\n=== Importing Admin1 Codes (States/Provinces) ===');
 
   const filePath = join(DATA_DIR, 'admin1CodesASCII.txt');
-  let importId;
 
   if (!fs.existsSync(filePath)) {
     console.log('Downloading admin1CodesASCII.txt...');
@@ -382,7 +379,7 @@ async function importAdmin1Codes(pool) {
     RETURNING id
   `, ['geonames_admin1', 'admin1CodesASCII.txt', GEONAMES_URLS.admin1, null]);
 
-  importId = importResult.rows[0].id;
+  const importId = importResult.rows[0].id;
 
   const client = await pool.connect();
 

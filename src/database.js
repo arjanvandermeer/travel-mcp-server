@@ -97,6 +97,15 @@ function removeNullFields(obj) {
   return obj;
 }
 
+function withTimeout(promise, timeoutMs, message) {
+  let timeoutId;
+  const timeout = new Promise((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs);
+  });
+
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
 /**
  * Add resource_uri and preview_url to POI results
  *
@@ -841,7 +850,8 @@ export class TravelDatabase {
     // Determine search strategy based on provided parameters
     const hasName = !!name;
     const hasCity = !!cityName;
-    const hasCoords = !!(latitude && longitude);
+    const hasCoords = latitude !== null && latitude !== undefined &&
+      longitude !== null && longitude !== undefined;
 
     // Case 1: Name search (optionally filtered by country)
     // Supports: query only, query + country
@@ -1322,10 +1332,11 @@ export class TravelDatabase {
         enrichment_status  = 'pending';
         enrichment_message = `Enrichment restarted at ${newStartedAt.toISOString()}. Check back after ${checkBackAt.toISOString()}.`;
 
-        const enrichmentPromise = Promise.race([
+        const enrichmentPromise = withTimeout(
           this.enrichOSMPOI(osmId),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('Enrichment timeout after 2 minutes')), 120000)),
-        ]).catch(err => {
+          120000,
+          'Enrichment timeout after 2 minutes'
+        ).catch(err => {
           this.pool.query(
             `UPDATE osm_google_mappings SET mapping_status = 'error', mapping_notes = $1 WHERE osm_id = $2`,
             [err.message, osmId]
@@ -1368,10 +1379,11 @@ export class TravelDatabase {
           enrichment_message = `Google Places enrichment started at ${startedAt.toISOString()}. Check back after ${checkBackAt.toISOString()} (approximately 1 minute) for complete information including ratings, reviews, photos, and verified opening hours.`;
 
           // Fire-and-forget background enrichment with 2-minute timeout and dedup lock
-          const enrichmentPromise = Promise.race([
+          const enrichmentPromise = withTimeout(
             this.enrichOSMPOI(osmId),
-            new Promise((_, reject) => setTimeout(() => reject(new Error('Enrichment timeout after 2 minutes')), 120000))
-          ]).catch(err => {
+            120000,
+            'Enrichment timeout after 2 minutes'
+          ).catch(err => {
             console.error(`Background enrichment failed for POI ${osmId}:`, err.message);
             telemetry.captureException(err, { context: 'background_enrichment', osmId });
             // Mark as error if enrichment fails

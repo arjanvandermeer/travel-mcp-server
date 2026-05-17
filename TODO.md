@@ -37,6 +37,13 @@
 
 ## Medium Priority
 
+### Regular Codebase Review Process
+- [x] Add a recurring maintenance review prompt in `doc/regular-codebase-review.md`
+- [x] Add a push-triggered CI/CD workflow that runs only when the last review is 7+ days old
+- [x] Gate the workflow on meaningful commits so idle periods do not produce review noise
+- [x] Open a PR for `TODO.md` updates instead of committing review output directly to `main`
+- [ ] Configure `OPENAI_API_KEY` in GitHub Actions secrets and run `Codebase Maintenance Review` once with `workflow_dispatch` + `force=true`
+
 ### MCP Apps: Rich Interactive UI
 - [ ] Interactive map with hotel/restaurant markers, filterable list, photo galleries
 - [ ] `ui://` URI scheme per MCP Apps spec (ChatGPT supports now; Claude TBD)
@@ -266,6 +273,42 @@ already store but don't yet expose through search parameters.
 - Wikidata events and attractions
 - Other enrichment sources (Yelp, TripAdvisor, Foursquare)
 
+## Regular Codebase Review
+
+### 2026-05-17
+
+#### Approval Needed
+- [ ] **High** `.github/workflows/codebase-maintenance.yml`: Confirm the repository is allowed to run `openai/codex-action@v1` with `OPENAI_API_KEY` and to create automated TODO update PRs via `peter-evans/create-pull-request@v7`. Recommended next action: add the secret, verify branch protection permits PR creation, and run the workflow manually with `force=true` before relying on automated runs.
+- [x] **High** `.github/workflows/ci.yml`: CI now blocks on `npm audit --audit-level=high`; fixed current dependency advisories with `npm audit fix` and confirmed `npm audit --audit-level=moderate` reports 0 vulnerabilities.
+
+#### Fixes And Risks
+- [x] **High** `src/database.js`, `src/google-places.js`, `src/api/search.js`: Replaced truthy/falsy coordinate checks with explicit null/undefined validation and added zero-coordinate regressions for REST, DB search, and Google Places paths.
+- [x] **High** `tests/integration/nearby-pois.test.js`: Fixed the full-suite cancellation by clearing background enrichment timeout timers after the raced enrichment promise settles. Verified full `npm test` completes with 582 passing tests.
+- [x] **Medium** `src/api/search.js`: Guarded optional background enrichment so route tests and partial DB mocks no longer emit noisy `batchEnrichPOIs` errors.
+
+#### Test Coverage
+- [ ] **Medium** `.github/workflows/codebase-maintenance.yml`: The new maintenance workflow has unit coverage for the gate script but has not been exercised end-to-end in GitHub Actions. Recommended next action: use `workflow_dispatch` with `force=true` after secrets are configured and confirm it opens a PR containing only `TODO.md`.
+- [ ] **Medium** `scripts/maintenance-review-gate.js`: Gate tests cover actor, age, force, and path filters, but not the real GitHub `workflow_run` checkout/diff behavior. Recommended next action: add a lightweight CI smoke check or document the manual verification result after the first run.
+
+#### Code Sprawl And Maintainability
+- [ ] **Medium** `src/database.js`: File is about 2,725 lines and remains the broadest ownership hotspot in the repo. Recommended next action: split by domain when touching related code, starting with POI search/enrichment and import/logging helpers.
+- [ ] **Medium** `src/tools-config.js`: File is about 1,694 lines and combines MCP schemas, descriptions, and handler wiring. Recommended next action: split large tool groups into focused modules while preserving the exported contract.
+- [ ] **Medium** `web/js/app.js`, `src/index-http.js`, `src/google-places.js`: These files are each over 800 lines and are likely to keep accumulating responsibilities. Recommended next action: avoid adding new feature work directly to these files without extracting route/client/enrichment helpers first.
+
+#### Performance And Operations
+- [ ] **Medium** `.github/workflows/codebase-maintenance.yml`: The long-running review job captures lint, tests, and audit output before invoking Codex, which is useful but can become expensive once the suite grows. Recommended next action: after the first GitHub run, review runtime and consider targeted test subsets plus a manual full-suite mode if necessary.
+- [x] **Low** `src/import-geonames-postgres.js`: Converted the three `importId` bindings to `const`; `npm run lint` now reports no warnings.
+
+#### Dependency Audit
+- [x] **High** `package-lock.json`: Updated transitive `fast-uri` to a non-vulnerable version via `npm audit fix`; audit now reports 0 vulnerabilities.
+- [x] **Medium** `package-lock.json`: Updated transitive `hono` and `@hono/node-server` via `npm audit fix`; audit now reports 0 vulnerabilities.
+- [x] **Medium** `package-lock.json`: Updated transitive `ip-address` and `express-rate-limit` via `npm audit fix`; audit now reports 0 vulnerabilities.
+- [x] **Medium** `package-lock.json`: Updated transitive `protocol-buffers-schema` via `npm audit fix`; audit now reports 0 vulnerabilities.
+
+#### Documentation And Hygiene
+- [x] **Low** `tests/.DS_Store`: Removed the ignored local macOS artifact.
+- [ ] **Low** `doc/regular-codebase-review.md`: The review prompt is now the source of truth for scheduled maintenance behavior. Recommended next action: after the first automated run, update the document with the observed runtime, any skipped checks, and any workflow permission adjustments.
+
 ## Codebase Analysis Notes
 
 Analysis date: 2026-04-07
@@ -304,14 +347,14 @@ Analysis date: 2026-04-07
 ### High-Priority Follow-Ups From Analysis
 
 #### Correctness: Fix Zero-Coordinate Bugs
-- [ ] Fix truthy/falsy coordinate detection in `src/database.js`
+- [x] Fix truthy/falsy coordinate detection in `src/database.js`
   - Current bug: `const hasCoords = !!(latitude && longitude)` fails for valid `0` latitude or longitude
   - Use explicit null/undefined checks instead
-- [ ] Audit all coordinate checks for the same bug pattern
+- [x] Audit all coordinate checks for the same bug pattern
   - Confirm in `searchPOIs()`
   - Confirm in any nearby/map/search helpers
   - Confirm frontend/API query handling too
-- [ ] Fix Google Places location bias condition in `src/google-places.js`
+- [x] Fix Google Places location bias condition in `src/google-places.js`
   - Current bug: `if (latitude && longitude)` skips valid zero coordinates
 
 #### Safety: Make Schema Initialization Non-Destructive By Default

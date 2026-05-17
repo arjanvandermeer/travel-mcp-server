@@ -888,7 +888,7 @@ function triggerBackgroundEnrichment(pois, db) {
     .filter(poi => poi.osm_id)
     .map(poi => poi.osm_id);
 
-  if (osmIds.length > 0) {
+  if (osmIds.length > 0 && typeof db.batchEnrichPOIs === 'function') {
     // Fire-and-forget - don't await, don't block response
     db.batchEnrichPOIs(osmIds).catch(err => {
       console.error('Background batch enrichment error:', err.message);

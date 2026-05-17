@@ -141,6 +141,22 @@ describe('TravelDatabase POI Search Functions', () => {
         assert.ok(Array.isArray(results));
       });
 
+      it('should search by zero latitude/longitude coordinates', async () => {
+        mockPool.setResponse('osm_pois', dbResult(samplePOIs));
+
+        db = new TravelDatabase({ pool: mockPool });
+        const results = await db.searchPOIs({
+          latitude: 0,
+          longitude: 0,
+        });
+
+        assert.ok(Array.isArray(results));
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('ST_DWithin'));
+        assert.ok(searchCall, 'Should use coordinate search for zero values');
+        assert.ok(searchCall.params.includes(0), 'Should pass zero coordinate values');
+      });
+
       it('should return empty array when city not found', async () => {
         mockPool.setResponse('geonames_cities', emptyResult());
 

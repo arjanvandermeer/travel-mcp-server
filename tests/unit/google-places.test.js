@@ -402,6 +402,15 @@ describe('GooglePlacesClient', () => {
       assert.strictEqual(capturedBody.locationBias, undefined);
     });
 
+    it('should add locationRestriction rectangle for zero coordinates', async () => {
+      const client = new GooglePlacesClient('key', true);
+      let capturedBody;
+      client.makeRequest = async (_url, body) => { capturedBody = body; return { places: [] }; };
+
+      await client.searchText('Hotel', 0, 0);
+      assert.ok(capturedBody.locationRestriction?.rectangle, 'should use rectangle for zero coordinates');
+    });
+
     it('should not add locationRestriction without coordinates', async () => {
       const client = new GooglePlacesClient('key', true);
       let capturedBody;
@@ -477,6 +486,25 @@ describe('GooglePlacesClient', () => {
       const client = new GooglePlacesClient('key', true);
       assert.strictEqual(await client.findMatchingPlace({ name: null, latitude: 40.7, longitude: -73.9 }), null);
       assert.strictEqual(await client.findMatchingPlace({ name: 'Hotel', latitude: null, longitude: -73.9 }), null);
+    });
+
+    it('should accept zero coordinates when matching places', async () => {
+      const client = new GooglePlacesClient('key', true);
+      let nearbyLatitude, nearbyLongitude;
+      client.searchNearby = async (lat, lon) => {
+        nearbyLatitude = lat;
+        nearbyLongitude = lon;
+        return [];
+      };
+      client.searchText = async () => [];
+
+      const result = await client.findMatchingPlace({
+        name: 'Equator Hotel', latitude: 0, longitude: 0, poi_type: 'hotel',
+      });
+
+      assert.strictEqual(result, null);
+      assert.strictEqual(nearbyLatitude, 0);
+      assert.strictEqual(nearbyLongitude, 0);
     });
 
     it('should find match via nearby search', async () => {

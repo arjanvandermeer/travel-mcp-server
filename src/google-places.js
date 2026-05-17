@@ -226,7 +226,7 @@ export class GooglePlacesClient {
       body.includedType = includedType;
     }
 
-    if (latitude && longitude) {
+    if (latitude !== null && latitude !== undefined && longitude !== null && longitude !== undefined) {
       // Text Search only accepts rectangle for locationRestriction (not circle).
       // Convert radius to a bounding box so we get a hard geographic filter.
       body.locationRestriction = {
@@ -353,7 +353,7 @@ export class GooglePlacesClient {
 
     const { name, name_en, latitude, longitude, poi_type } = poi;
 
-    if (!name || !latitude || !longitude) {
+    if (!name || latitude === null || latitude === undefined || longitude === null || longitude === undefined) {
       return null;
     }
 
