@@ -115,6 +115,7 @@ button { cursor: pointer; }
 .workspace { min-height: calc(100vh - 64px); }
 
 .city-pulse {
+  position: relative;
   min-height: min(760px, calc(100vh - 64px));
   display: flex;
   align-items: flex-end;
@@ -186,8 +187,20 @@ button { cursor: pointer; }
 .suggestion-name { font-weight: 750; }
 .suggestion-meta { color: var(--muted); font-size: 12px; }
 .pulse-actions { margin-top: 18px; display: flex; gap: 10px; }
+.hero-credit {
+  position: absolute;
+  right: clamp(14px, 4vw, 48px);
+  bottom: 14px;
+  max-width: min(420px, calc(100% - 28px));
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: rgba(255,255,255,.68);
+  color: rgba(23,32,51,.72);
+  font-size: 11px;
+  backdrop-filter: blur(12px);
+}
 .home-feed {
-  padding: 24px clamp(14px, 4vw, 64px) 70px;
+  padding: 12px clamp(14px, 4vw, 64px) 70px;
   background:
     radial-gradient(circle at 12% 0%, rgba(15,118,110,.12), transparent 34%),
     linear-gradient(180deg, #f6f8f3 0%, var(--paper) 38%);
@@ -195,26 +208,6 @@ button { cursor: pointer; }
 .home-feed-inner {
   max-width: 980px;
   margin: 0 auto;
-}
-.feed-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(280px, 420px);
-  gap: 22px;
-  align-items: end;
-  margin-bottom: 16px;
-}
-.feed-head h2 {
-  margin: 4px 0 6px;
-  font-size: clamp(28px, 4vw, 44px);
-  line-height: 1;
-}
-.feed-head p {
-  margin: 0;
-  color: var(--muted);
-}
-.compact-status {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 0;
 }
 .home-category-strip {
   position: sticky;
@@ -496,7 +489,6 @@ button { cursor: pointer; }
 
 @media (max-width: 980px) {
   .atlas, .board { grid-template-columns: 1fr; }
-  .feed-head { grid-template-columns: 1fr; }
   .atlas { height: auto; min-height: calc(100vh - 64px); }
   .atlas-rail { max-height: none; border-right: 0; border-bottom: 1px solid var(--line); }
   .map-stage { height: 62vh; }
@@ -509,6 +501,11 @@ button { cursor: pointer; }
   .nav-link { white-space: nowrap; }
   .workspace { min-height: calc(100vh - 100px); }
   .city-pulse { padding: 22px 14px; }
+  .hero-credit {
+    left: 14px;
+    right: auto;
+    bottom: 8px;
+  }
   .pulse-panel { padding: 18px; }
   .pulse-panel h1 { font-size: 42px; }
   .command-wrap { display: grid; }

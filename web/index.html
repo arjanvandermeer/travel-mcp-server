@@ -76,26 +76,11 @@
             <button class="secondary-button" @click="$store.discovery.openAtlas()">Open map</button>
           </div>
         </div>
+        <div class="hero-credit" x-show="$store.discovery.heroImageCredit" x-text="$store.discovery.heroImageCredit"></div>
       </section>
 
       <section class="home-feed" x-show="$store.route.page === 'home'" x-cloak>
         <div class="home-feed-inner">
-          <div class="feed-head">
-            <div>
-              <div class="eyebrow">Closest Places</div>
-              <h2 x-text="$store.discovery.feedTitle()"></h2>
-              <p x-text="$store.discovery.feedSubtitle()"></p>
-            </div>
-            <div class="data-status-grid compact-status">
-              <template x-for="item in $store.discovery.statusItems()" :key="item.label">
-                <div>
-                  <span x-text="item.label"></span>
-                  <strong x-text="item.value"></strong>
-                </div>
-              </template>
-            </div>
-          </div>
-
           <div class="home-category-strip" role="tablist" aria-label="Place category">
             <template x-for="category in $store.discovery.feedCategories" :key="category.key">
               <button
@@ -317,7 +302,7 @@
           <button class="primary-button compact" @click="$store.route.goAtlas()">Add places</button>
         </div>
         <template x-if="!$store.auth.authenticated && $store.auth.checked">
-          <div class="empty-panel wide"><h3>Sign in to compose a trip</h3><p>Your saved places, notes, and comparisons live here.</p><button class="primary-button compact" @click="$store.auth.login()">Sign in</button></div>
+          <div class="empty-panel wide"><h3>Sign in to compose a trip</h3><p>Your saved places and notes live here.</p><button class="primary-button compact" @click="$store.auth.login()">Sign in</button></div>
         </template>
         <template x-if="$store.auth.authenticated">
           <div class="board">

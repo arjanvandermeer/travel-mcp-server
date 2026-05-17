@@ -349,7 +349,7 @@ Alpine.store('discovery', {
       const data = await response.json();
       const page = Object.values(data.query?.pages || {})[0];
       this.heroImageUrl = page?.original?.source || page?.thumbnail?.source || '';
-      this.heroImageCredit = page?.title ? `Image from Wikipedia: ${page.title}` : '';
+      this.heroImageCredit = page?.title ? `Wikipedia: ${page.title}` : '';
     } catch {
       this.heroImageUrl = '';
     }
@@ -379,33 +379,6 @@ Alpine.store('discovery', {
   },
   countryLabel() {
     return this.country?.name || 'Global';
-  },
-  feedTitle() {
-    if (!this.city?.name) return 'Places near the city';
-    const category = this.feedCategories.find(item => item.key === this.activeFeed);
-    return `${category?.label || 'Places'} near ${this.city.name}`;
-  },
-  feedSubtitle() {
-    if (this.loading) return 'Loading the closest places from the travel database.';
-    if (!this.city?.name) return 'Pick a city to surface stay, eat, and see cards.';
-    return `Switch between Stay, Eat, and See. The list keeps loading more nearby cards as you scroll.`;
-  },
-  statusItems() {
-    const counts = this.overview?.counts || {};
-    const placeCount = Number(counts.total_pois || counts.stays + counts.food + counts.attractions || 0);
-    const source = this.source === 'local'
-      ? 'Nearest city'
-      : this.source === 'location'
-        ? 'Saved route'
-        : 'Random city';
-    const items = [
-      { label: 'Loaded place graph', value: placeCount ? `${placeCount.toLocaleString()} places` : 'Awaiting data' },
-      { label: 'Discovery mode', value: source },
-      { label: 'Country', value: this.country?.name || this.city?.country_code || 'Not selected' },
-    ];
-    if (this.locationError) items.push({ label: 'Location fallback', value: this.locationError });
-    else if (this.heroImageCredit) items.push({ label: 'Hero image', value: this.heroImageCredit });
-    return items.slice(0, 4);
   },
   featuredPlaces() {
     return [
