@@ -121,7 +121,8 @@ Alpine.store('route', {
 
 Alpine.store('ui', {
   focusCommand() {
-    document.getElementById('command-search')?.focus();
+    Alpine.store('route').goAtlas();
+    requestAnimationFrame(() => document.getElementById('command-search')?.focus());
   },
 });
 
@@ -367,26 +368,6 @@ Alpine.store('discovery', {
     if (this.locationState === 'requesting') return 'Locating you';
     return this.city?.name ? `${this.city.name} today` : 'Choose a city';
   },
-  subtitle() {
-    if (this.locationState === 'requesting') return 'Allow location access and I will resolve the nearest city from the travel database.';
-    if (!this.city?.name) return 'Start with live places from the travel database, then move into the atlas.';
-    const localPrefix = this.source === 'local'
-      ? 'Your nearest city view'
-      : this.source === 'location'
-        ? 'A loaded city view'
-        : 'A random loaded city view';
-    return `${localPrefix} for ${this.city.name}${this.country?.name ? `, ${this.country.name}` : ''}: stays, food leads, anchors, and nearby pivots.`;
-  },
-  countryLabel() {
-    return this.country?.name || 'Global';
-  },
-  featuredPlaces() {
-    return [
-      ...(this.hotels || []),
-      ...(this.overview?.top?.food || []),
-      ...(this.overview?.top?.attractions || []),
-    ].slice(0, 6);
-  },
   feedCount(key) {
     const count = this.feedItems[key]?.length || 0;
     return count ? `${count}` : '0';
@@ -443,10 +424,6 @@ Alpine.store('discovery', {
     if (Alpine.store('route').page !== 'home') return;
     const distanceFromBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
     if (distanceFromBottom < 700) this.loadMoreFeed();
-  },
-  openAtlas(layer = null) {
-    Alpine.store('atlas').seedFromDiscovery(layer);
-    Alpine.store('route').goAtlas();
   },
 });
 

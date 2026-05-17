@@ -53,28 +53,6 @@
           <h1>
             <span x-text="$store.discovery.cityTitle()"></span>
           </h1>
-          <p x-text="$store.discovery.subtitle()"></p>
-          <div class="command-wrap">
-            <input id="command-search" class="command-input" type="search" placeholder="Search a city, hotel, restaurant, or landmark"
-              x-model="$store.search.query"
-              @input="$store.search.autocomplete()"
-              @keydown="$store.search.onKeydown($event)"
-              @focus="$store.search.open = $store.search.suggestions.length > 0">
-            <button class="primary-button" @click="$store.search.commit()">Explore</button>
-            <div class="suggestions" x-show="$store.search.open" x-transition @click.outside="$store.search.open = false">
-              <template x-for="(item, index) in $store.search.suggestions" :key="item.osm_id">
-                <button class="suggestion" :class="{ active: index === $store.search.highlight }" @click="$store.search.select(item)">
-                  <span class="suggestion-name" x-text="item.name"></span>
-                  <span class="suggestion-meta" x-text="$store.format.placeMeta(item)"></span>
-                </button>
-              </template>
-            </div>
-          </div>
-          <div class="pulse-actions">
-            <button class="secondary-button" @click="$store.discovery.useLocation()">Use my location</button>
-            <button class="secondary-button" @click="$store.discovery.loadRandomCity()">Random city</button>
-            <button class="secondary-button" @click="$store.discovery.openAtlas()">Open map</button>
-          </div>
         </div>
         <div class="hero-credit" x-show="$store.discovery.heroImageCredit" x-text="$store.discovery.heroImageCredit"></div>
       </section>
@@ -152,7 +130,7 @@
             </div>
           </div>
           <div class="command-wrap rail-command">
-            <input class="command-input" type="search" placeholder="Search inside the atlas"
+            <input id="command-search" class="command-input" type="search" placeholder="Search inside the atlas"
               x-model="$store.search.query"
               @input="$store.search.autocomplete()"
               @keydown="$store.search.onKeydown($event)"
