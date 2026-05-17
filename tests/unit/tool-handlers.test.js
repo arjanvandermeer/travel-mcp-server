@@ -25,6 +25,7 @@ function createMockDb(overrides = {}) {
     removeFavorite: async () => true,
     listFavorites: async () => [],
     getServerBaseUrl: async () => 'https://mcp.example.com',
+    setUserConfig: async () => {},
     ...overrides,
   };
 }
@@ -335,6 +336,81 @@ describe('executeToolHandler: whoami', () => {
     // Null fields should be stripped
     assert.strictEqual(parsed.picture_url, undefined);
     assert.strictEqual(parsed.last_login_at, undefined);
+  });
+
+  it('should include parsed preferences when authenticated', async () => {
+    const db = createMockDb();
+    const user = {
+      id: 1,
+      email: 'test@example.com',
+      name: 'Test User',
+      config: {
+        currency: 'THB',
+        language: 'th',
+        home_location: '{"city_name":"Bangkok","country_code":"TH"}',
+      },
+    };
+    const result = await executeToolHandler('whoami', {}, db, { user });
+    const parsed = parseResponse(result);
+    assert.deepStrictEqual(parsed.preferences, {
+      currency: 'THB',
+      language: 'th',
+      home_location: { city_name: 'Bangkok', country_code: 'TH' },
+    });
+  });
+});
+
+// =============================================================================
+// user preferences
+// =============================================================================
+
+describe('executeToolHandler: user preferences', () => {
+  const user = { id: 1, email: 'test@example.com', config: { currency: 'EUR' } };
+
+  it('should require authentication for get_user_preferences', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('get_user_preferences', {}, db);
+    assert.strictEqual(result.isError, true);
+  });
+
+  it('should get user preferences', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('get_user_preferences', {}, db, { user });
+    const parsed = parseResponse(result);
+    assert.deepStrictEqual(parsed, { currency: 'EUR' });
+  });
+
+  it('should save normalized user preferences', async () => {
+    const writes = [];
+    const db = createMockDb({
+      setUserConfig: async (userId, key, value) => writes.push({ userId, key, value }),
+    });
+
+    const result = await executeToolHandler('set_user_preferences', {
+      currency: 'usd',
+      language: 'en-us',
+      home_location: { city_name: 'New York', country_code: 'us' },
+    }, db, { user: { id: 1, email: 'test@example.com', config: {} } });
+    const parsed = parseResponse(result);
+
+    assert.strictEqual(parsed.success, true);
+    assert.deepStrictEqual(parsed.preferences, {
+      currency: 'USD',
+      language: 'en-US',
+      home_location: { city_name: 'New York', country_code: 'US' },
+    });
+    assert.deepStrictEqual(writes, [
+      { userId: 1, key: 'currency', value: 'USD' },
+      { userId: 1, key: 'language', value: 'en-US' },
+      { userId: 1, key: 'home_location', value: '{"city_name":"New York","country_code":"US"}' },
+    ]);
+  });
+
+  it('should reject invalid preference values', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('set_user_preferences', { currency: 'US' }, db, { user });
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /3-letter/);
   });
 });
 

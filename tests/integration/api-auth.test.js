@@ -39,7 +39,16 @@ describe('GET /auth/me', () => {
     const req = fakeReq('GET', '/auth/me');
     const res = fakeRes();
     await router.handle(req, res, {
-      user: { email: 'alice@example.com', name: 'Alice', picture_url: 'https://example.com/pic.jpg' },
+      user: {
+        email: 'alice@example.com',
+        name: 'Alice',
+        picture_url: 'https://example.com/pic.jpg',
+        config: {
+          currency: 'USD',
+          language: 'en-US',
+          home_location: '{"city_name":"New York","country_code":"US"}',
+        },
+      },
     });
 
     assert.strictEqual(res.statusCode, 200);
@@ -48,6 +57,11 @@ describe('GET /auth/me', () => {
     assert.strictEqual(data.email, 'alice@example.com');
     assert.strictEqual(data.name, 'Alice');
     assert.strictEqual(data.picture_url, 'https://example.com/pic.jpg');
+    assert.deepStrictEqual(data.preferences, {
+      currency: 'USD',
+      language: 'en-US',
+      home_location: { city_name: 'New York', country_code: 'US' },
+    });
   });
 
   it('should return unauthenticated when no user', async () => {

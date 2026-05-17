@@ -494,12 +494,24 @@ The Inspector will:
 4. Open browser for Google login
 5. Exchange tokens and connect
 
+After connection, call `whoami`. A successful OAuth connector session returns
+`authenticated: true` plus the user's saved preferences. To validate preference
+write access, call `set_user_preferences` with a currency, language, or
+home_location, then call `get_user_preferences` and confirm the normalized
+values are returned.
+
 **ChatGPT Configuration:**
 
 In ChatGPT's MCP connector settings:
 1. **MCP Server URL**: `https://<mcp-server-url>/mcp`
 2. **Authentication**: OAuth
 3. ChatGPT will automatically discover endpoints via well-known metadata
+
+Use the same validation sequence in ChatGPT: connect with OAuth, run `whoami`,
+save preferences with `set_user_preferences`, and read them back with
+`get_user_preferences`. Anonymous connector sessions should still be able to use
+public search tools, but preference and favorites tools should report that
+authentication is required.
 
 ### OAuth Endpoints Reference
 

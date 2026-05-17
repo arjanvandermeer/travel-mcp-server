@@ -6,6 +6,7 @@
 
 import { render } from './templates/index.js';
 import * as telemetry from './telemetry.js';
+import { normalizeUserPreferenceInput, saveUserPreferences, userPreferencesFromConfig } from './user-preferences.js';
 import { NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX } from './config.js';
 import { validateCoordinates, validateLimit } from './validation.js';
 import { accommodationTypes, fetchNearbyForPOI, foodTypes, getNearbyTypes, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
@@ -373,10 +374,46 @@ const baseToolsConfig = [
   },
   {
     name: 'whoami',
-    description: 'Check authentication status and get current user info. Returns user details if authenticated, or { authenticated: false } for anonymous sessions.',
+    description: 'Check authentication status and get current user info, including saved travel preferences. Returns user details if authenticated, or { authenticated: false } for anonymous sessions.',
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'get_user_preferences',
+    description: 'Get the authenticated user travel preferences for currency, language, and home location. Requires authentication.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'set_user_preferences',
+    description: 'Save authenticated user travel preferences. Supports currency, language, and home location. Requires authentication.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        currency: {
+          type: 'string',
+          description: 'Preferred 3-letter ISO 4217 currency code, e.g. USD, EUR, THB.',
+        },
+        language: {
+          type: 'string',
+          description: 'Preferred BCP 47 language tag, e.g. en, en-US, th.',
+        },
+        home_location: {
+          type: 'object',
+          description: 'Home location as city/country and optionally coordinates.',
+          properties: {
+            city_name: { type: 'string', description: 'Home city name.' },
+            country_code: { type: 'string', description: '2-letter country code, e.g. US, NL, TH.' },
+            state: { type: 'string', description: 'Optional state or region.' },
+            latitude: { type: 'number', description: 'Home latitude. Must be paired with longitude.' },
+            longitude: { type: 'number', description: 'Home longitude. Must be paired with latitude.' },
+          },
+        },
+      },
     },
   },
   // =========================================================================
@@ -814,6 +851,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         name: user.name,
         picture_url: user.picture_url,
         config: user.config,
+        preferences: userPreferencesFromConfig(user.config),
         created_at: user.created_at,
         last_login_at: user.last_login_at,
       };
@@ -828,6 +866,49 @@ export async function executeToolHandler(name, args, db, options = {}) {
           text: JSON.stringify(response, null, 2),
         }],
       };
+    }
+
+    case 'get_user_preferences': {
+      const user = options.user;
+      if (!user) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Authentication required. Please provide a valid token.' }, null, 2) }],
+          isError: true,
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(userPreferencesFromConfig(user.config), null, 2) }],
+      };
+    }
+
+    case 'set_user_preferences': {
+      const user = options.user;
+      if (!user) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Authentication required. Please provide a valid token.' }, null, 2) }],
+          isError: true,
+        };
+      }
+
+      try {
+        const preferences = normalizeUserPreferenceInput(args);
+        await saveUserPreferences(db, user.id, preferences);
+        user.config = {
+          ...user.config,
+          ...Object.fromEntries(Object.entries(preferences).map(([key, value]) => [
+            key,
+            key === 'home_location' ? JSON.stringify(value) : value,
+          ])),
+        };
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ success: true, preferences }, null, 2) }],
+        };
+      } catch (err) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({ error: err.message }, null, 2) }],
+          isError: true,
+        };
+      }
     }
 
     // =========================================================================

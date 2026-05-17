@@ -46,6 +46,8 @@ All search tools enforce a max of 100 results. Each has a `_ui` variant for Chat
 | `remove_favorite` | Remove a bookmark |
 | `list_favorites` | Retrieve saved POIs, filtered by location/type |
 | `whoami` | Current user identity |
+| `get_user_preferences` | Retrieve saved currency, language, and home location |
+| `set_user_preferences` | Save currency, language, and home location |
 | `get_stats` | Database statistics and recent imports |
 
 ## Architecture

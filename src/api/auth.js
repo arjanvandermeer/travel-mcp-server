@@ -9,6 +9,7 @@
 import crypto from 'crypto';
 import { sendJson } from '../api-router.js';
 import * as telemetry from '../telemetry.js';
+import { userPreferencesFromConfig } from '../user-preferences.js';
 import { AUTH_PENDING_CLEANUP_INTERVAL_MS, AUTH_CHALLENGE_TTL_MS, AUTH_PENDING_MAX_SIZE, AUTH_SESSION_COOKIE_MAX_AGE_S } from '../config.js';
 
 // In-memory store for pending PKCE challenges (short-lived)
@@ -199,6 +200,7 @@ export function registerAuthRoutes(router) {
         email: user.email,
         name: user.name,
         picture_url: user.picture_url,
+        preferences: userPreferencesFromConfig(user.config),
       });
     } else {
       sendJson(res, 200, { authenticated: false });
