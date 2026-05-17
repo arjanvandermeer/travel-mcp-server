@@ -4,26 +4,26 @@ This prompt is for a scheduled maintenance review of the whole repository. It is
 
 ## Recommended Scheduling
 
-Prefer an event-gated CI/CD workflow over a plain cron schedule.
+Run this review from a trusted local machine, not from GitHub Actions. The review needs local agent credentials and should reconcile GitHub issues using the local `gh`/`rtk gh` setup.
 
 Recommended trigger model:
 
-- Trigger after successful `CI` runs on `main`, plus `workflow_dispatch` for manual runs.
+- Trigger from a local scheduler every 7 days, plus an on-demand manual run when needed.
 - Skip commits made by automation/bots.
 - Skip if the push only changes low-signal files such as this review prompt or generated files.
-- Run only if the latest successful `Codebase Maintenance Review` workflow run is at least 7 days old.
-- If the review runs and finds no new actionable items, leave a concise comment on the newest open maintenance issue if one exists, or create a small dated "maintenance review: no new findings" issue and close it. This gives the workflow history an auditable run without changing source files.
+- Run only if the latest successful local maintenance review marker is at least 7 days old.
+- If the review runs and finds no new actionable items, leave a concise comment on the newest open maintenance issue if one exists, or create a small dated "maintenance review: no new findings" issue and close it. This gives the local run an auditable GitHub trail without changing source files.
 
-Use a GitHub Action for this workflow because the desired output is GitHub issue reconciliation. It requires an LLM/API secret plus `issues: write` permission.
+Do not add GitHub Actions that perform code review. GitHub Actions should stay focused on deterministic CI. Codebase reviews should run locally and create/close GitHub issues from there.
 
-## CI/CD Gate Design
+## Local Gate Design
 
-The workflow should have separate gate steps before invoking any AI agent:
+The local runner should have separate gate steps before invoking any AI agent:
 
 1. Detect whether the push contains code-impacting changes.
-2. Read the latest successful `Codebase Maintenance Review` workflow run timestamp.
+2. Read the latest successful local review timestamp from a local marker file or another local state store.
 3. Compare that timestamp to the current UTC date.
-4. Run the review only when both gates pass, unless `workflow_dispatch` sets `force=true`.
+4. Run the review only when both gates pass, unless the local command is run with a force flag.
 
 Suggested code-impacting paths:
 
@@ -46,7 +46,7 @@ Suggested low-signal paths to ignore for triggering:
 
 ## Manual Use
 
-Paste the prompt below into Codex from the repository root. Do not run implementation work discovered by the review unless explicitly requested.
+Paste the prompt below into Codex from the repository root, or have a local scheduler invoke Codex with this prompt. Do not run implementation work discovered by the review unless explicitly requested.
 
 ## Prompt
 
@@ -100,6 +100,7 @@ gh issue create --title "<clear actionable title>" --body "<markdown body>"
 - Find code sprawl: files or functions becoming too long, modules taking on too many responsibilities, duplicate logic, or unclear ownership boundaries.
 - Find possible optimizations in database queries, indexing, caching, API calls, import jobs, frontend request patterns, startup behavior, and test runtime.
 - Find documentation drift between code, `README.md`, `doc/getting-started.md`, `doc/`, and workflow files.
+- Check deterministic CI workflows for drift, but do not recommend adding AI/code-review jobs to GitHub Actions.
 - Find repo hygiene issues such as generated files, local artifacts, stale docs, unused files, inconsistent naming, or old migration assumptions.
 - Find dependency vulnerabilities from `npm audit` and create or update actionable GitHub issues.
 
@@ -118,7 +119,7 @@ Review these areas:
 - OAuth worker under `cloudflare-oauth-worker/`
 - Local SLM agent under `slm/`
 - Tests under `tests/`
-- CI and review workflows under `.github/`
+- CI workflows under `.github/`
 - Existing documentation under `README.md`, `doc/getting-started.md`, and `doc/`
 - Current GitHub issues
 
