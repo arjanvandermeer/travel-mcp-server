@@ -3,6 +3,7 @@ import { GooglePlacesClient } from './google-places.js';
 import * as telemetry from './telemetry.js';
 import dotenv from 'dotenv';
 import { CONFIG_CACHE_TTL_MS, DB_STATEMENT_TIMEOUT_MS, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, HOMEPAGE_CACHE_MAX_SIZE, HOMEPAGE_CACHE_TTL_MS, COUNTRIES_CACHE_TTL_MS, EARTH_RADIUS_METERS, GOOGLE_PLACES_DAILY_LIMIT_DEFAULT } from './config.js';
+import { addResourceUris, removeNullFields } from './response-utils.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
@@ -80,23 +81,6 @@ function normalizeImportKeyword(value) {
     .replace(/\.osm\.pbf$/, '');
 }
 
-/**
- * Recursively removes null and undefined fields from objects and arrays
- * @param {*} obj - Object, array, or primitive value to clean
- * @returns {*} Cleaned object/array/value with null/undefined fields removed
- */
-function removeNullFields(obj) {
-  if (Array.isArray(obj)) {
-    return obj.map(removeNullFields);
-  }
-  if (obj !== null && typeof obj === 'object' && !(obj instanceof Date)) {
-    return Object.entries(obj)
-      .filter(([_, v]) => v !== null && v !== undefined)
-      .reduce((acc, [k, v]) => ({ ...acc, [k]: removeNullFields(v) }), {});
-  }
-  return obj;
-}
-
 function withTimeout(promise, timeoutMs, message) {
   let timeoutId;
   const timeout = new Promise((_, reject) => {
@@ -104,59 +88,6 @@ function withTimeout(promise, timeoutMs, message) {
   });
 
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
-}
-
-/**
- * Add resource_uri and preview_url to POI results
- *
- * Each POI gets two URLs for different use cases:
- *
- * 1. resource_uri (ui:// protocol) - MCP resource identifier
- *    Format: ui://{host}/poi/{osm_id}
- *    Example: ui://travel.arjanvandermeer.com/poi/1313852747
- *    Purpose: MCP clients can request this URI to get the rich POI detail page
- *    via the ReadResource method. The ui:// protocol indicates this is a
- *    user-interface resource (rendered HTML for display).
- *
- * 2. preview_url (https:// protocol) - Direct browser link
- *    Format: {baseUrl}/preview/poi/{osm_id}
- *    Example: https://travel.arjanvandermeer.com/preview/poi/1313852747
- *    Purpose: Direct HTTP URL that users can click to open the POI preview
- *    in their browser. Served by the HTTP server's /preview endpoint.
- *
- * @param {Array|Object} pois - POI(s) to add URIs to
- * @param {string} baseUrl - Base URL from server_base_url config (e.g., "https://mcp.example.com")
- */
-function addResourceUris(pois, baseUrl) {
-  // Normalize base URL (remove trailing slash for consistent concatenation)
-  const base = baseUrl ? baseUrl.replace(/\/$/, '') : '';
-
-  // Extract host from baseUrl for ui:// protocol
-  // e.g., "https://mcp.example.com" -> "mcp.example.com"
-  let uiHost = '';
-  if (baseUrl) {
-    try {
-      uiHost = new URL(baseUrl).host;
-    } catch {
-      uiHost = '';
-    }
-  }
-
-  if (Array.isArray(pois)) {
-    return pois.map(poi => ({
-      ...poi,
-      resource_uri: `ui://${uiHost}/poi/${poi.osm_id}`,
-      preview_url: `${base}/preview/poi/${poi.osm_id}`,
-    }));
-  }
-  if (pois && pois.osm_id) {
-    return {
-      ...pois,
-      resource_uri: `ui://${uiHost}/poi/${pois.osm_id}`,
-      preview_url: `${base}/preview/poi/${pois.osm_id}`,
-    };
-  }
-  return pois;
 }
 
 export class TravelDatabase {
