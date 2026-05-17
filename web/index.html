@@ -19,7 +19,6 @@
   <div class="app-shell">
     <header class="topbar">
       <nav class="nav-actions" aria-label="Primary">
-        <button class="icon-button" title="Command search" @click="$store.ui.focusCommand()">⌘</button>
         <button class="nav-link" :class="{ active: $store.route.page === 'home' }" @click="$store.route.goHome()">City Pulse</button>
         <button class="nav-link" :class="{ active: $store.route.page === 'atlas' }" @click="$store.route.goAtlas()">Atlas</button>
         <button class="nav-link" :class="{ active: $store.route.page === 'composer' }" @click="$store.route.goComposer()">Trip Composer</button>
@@ -67,7 +66,28 @@
                 <small x-show="$store.discovery.isFeedActive(category.key)" x-text="$store.discovery.feedCount(category.key)"></small>
               </button>
             </template>
+            <button
+              type="button"
+              class="feed-search-toggle"
+              :class="{ active: $store.discovery.restaurantSearchOpen }"
+              aria-label="Search restaurants by name"
+              :aria-expanded="$store.discovery.restaurantSearchOpen"
+              @click="$store.discovery.toggleRestaurantSearch()">
+              ⌘
+            </button>
           </div>
+          <form class="feed-search-panel" x-show="$store.discovery.restaurantSearchOpen" x-transition @submit.prevent="$store.discovery.searchRestaurantsByName()">
+            <input
+              id="restaurant-name-search"
+              class="command-input"
+              type="search"
+              placeholder="Name..."
+              x-model="$store.discovery.restaurantSearchQuery">
+            <button class="primary-button" type="submit" :disabled="$store.discovery.restaurantSearchLoading">
+              <span x-text="$store.discovery.restaurantSearchLoading ? 'Searching' : 'Search'"></span>
+            </button>
+          </form>
+          <p class="state-callout" x-show="$store.discovery.restaurantSearchError" x-text="$store.discovery.restaurantSearchError"></p>
 
           <template x-if="$store.discovery.loading && !$store.discovery.activeFeedItems().length">
             <div class="home-card-list">
