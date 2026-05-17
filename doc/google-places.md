@@ -5,7 +5,7 @@ This MCP server supports automatic enrichment of POI data (hotels, restaurants, 
 ## Features
 
 - **Lazy Loading**: Google Places data is automatically fetched in the background when POIs are searched
-- **Smart Caching**: Enrichment data is cached for 7 days (configurable) to minimize API costs
+- **Smart Scheduling**: Enrichment uses `next_enrichment_at` for quota pauses, failures, not-found retries, and active-data refreshes
 - **Automatic Matching**: POIs are automatically matched to Google Places using name + location
 - **Rich Data**: Get ratings, review counts, photos, verified phone numbers, websites, and opening hours
 
@@ -33,7 +33,7 @@ node scripts/manage-config.js set google_places_api_key <google-api-key>
 # Enable Google Places enrichment
 node scripts/manage-config.js set google_places_enabled true
 
-# Set cache duration (default: 168 hours = 7 days)
+# Set cache duration used for active Google details (default: 168 hours = 7 days)
 node scripts/manage-config.js set google_places_cache_hours 168
 
 # View current configuration
@@ -70,9 +70,9 @@ The MCP server needs to be restarted to pick up configuration changes.
 When you search for hotels or restaurants using MCP tools (`search_hotels`, `search_restaurants`, `search_pois`):
 
 1. OSM data is returned immediately (fast response)
-2. Background enrichment triggers for top 10 results
+2. Background enrichment queues due POIs for serial processing
 3. Google Places data is fetched and stored
-4. Subsequent searches return enriched data instantly (from cache)
+4. Subsequent searches return enriched data instantly when the mapping is active and fresh enough
 
 ### Manual Detail Fetching
 
@@ -150,9 +150,9 @@ SELECT * FROM google_api_usage WHERE date_key = CURRENT_DATE::text;
 
 1. **Daily Limit**: Hard cap prevents runaway costs (default: 100 calls)
 2. **Caching**: Data cached for 7 days (configurable)
-3. **Lazy Loading**: Only enriches POIs that are actually searched
-4. **Batch Limiting**: Only enriches top 10 results per search
-5. **Retry Prevention**: Failed lookups cached for 7 days
+3. **Lazy Loading**: Only enriches POIs that are actually searched or refreshed by the maintenance job
+4. **Serial Queueing**: Due enrichment jobs are processed one at a time to avoid request spikes
+5. **Retry Prevention**: Failed and not-found lookups are deferred with `next_enrichment_at`
 
 ### Free Tier
 
@@ -167,7 +167,7 @@ With the default 100-call daily limit, you'll stay well within the free tier.
 ### Check if Google Places is Working
 
 ```bash
-node tests/test-enrichment.js
+node --test tests/unit/google-places.test.js
 ```
 
 ### API Key Not Working
@@ -179,7 +179,7 @@ node tests/test-enrichment.js
 
 ### Enrichment Not Completing
 
-1. Run `tests/test-enrichment.js` which waits for completion
+1. Run `node --test tests/unit/google-places.test.js` for client and scheduling coverage
 2. Check that `GOOGLE_PLACES_ENABLED=true`
 3. Verify searches are for hotels/restaurants
 

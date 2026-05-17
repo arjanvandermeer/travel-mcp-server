@@ -37,46 +37,35 @@ This installs all required packages including:
 
 ## Step 3: Set Up PostgreSQL Database
 
-You have two options: **Docker** (easier) or **Native Installation** (better for production).
+You have two options: **Docker Compose** (easier) or **Native Installation** (better for production).
 
-### Option A: PostgreSQL with Docker (Recommended for Development)
+### Option A: PostgreSQL with Docker Compose (Recommended for Development)
 
 **1. Install Docker Desktop** (if not already installed)
 - macOS: https://docs.docker.com/desktop/install/mac-install/
 - Windows: https://docs.docker.com/desktop/install/windows-install/
 - Linux: https://docs.docker.com/desktop/install/linux-install/
 
-**2. Create a PostgreSQL container and install PostGIS**
+**2. Start the bundled PostgreSQL/PostGIS service**
 
-We'll use the standard PostgreSQL image and install PostGIS manually since platform-specific PostGIS images may not be available:
+The repository includes `docker-compose.yml`, which runs PostgreSQL 17 with PostGIS 3.5 and pg_trgm support. The compose file expects an external volume named `hotel-mcp-server_pgdata` and a `POSTGRES_PASSWORD` value.
 
 ```bash
-# Create and start PostgreSQL container
-docker run -d \
-  --name travel-postgres \
-  -e POSTGRES_USER=traveluser \
-  -e POSTGRES_PASSWORD=travelpass \
-  -e POSTGRES_DB=travel \
-  -p 5432:5432 \
-  postgres:16
+# Create the named volume once
+docker volume create hotel-mcp-server_pgdata
 
-# Wait a few seconds for PostgreSQL to start
-sleep 5
+# Start PostgreSQL/PostGIS
+POSTGRES_PASSWORD=travelpass docker compose up -d
 
 # Verify it's running
-docker ps | grep travel-postgres
+docker compose ps
 ```
 
-**3. Install PostGIS in the container**
+**3. Enable database extensions**
 
 ```bash
-# Install PostGIS packages in the container
-docker exec -it travel-postgres bash -c "apt-get update && apt-get install -y postgresql-16-postgis-3 postgresql-contrib-16"
-
-# Enable PostGIS extension in the database
+# Enable PostGIS and pg_trgm
 docker exec -it travel-postgres psql -U traveluser -d travel -c "CREATE EXTENSION postgis;"
-
-# Enable pg_trgm extension (required for fuzzy text search)
 docker exec -it travel-postgres psql -U traveluser -d travel -c "CREATE EXTENSION pg_trgm;"
 
 # Verify PostGIS is installed
@@ -87,7 +76,7 @@ docker exec -it travel-postgres psql -U traveluser -d travel -c "SELECT PostGIS_
 ```
              postgis_version
 -----------------------------------------
- 3.4 USE_GEOS=1 USE_PROJ=1 USE_STATS=1
+ 3.5 USE_GEOS=1 USE_PROJ=1 USE_STATS=1
 (1 row)
 ```
 
@@ -107,7 +96,7 @@ SELECT ST_AsText(ST_Point(100.5018, 13.7563));
 \q
 ```
 
-**4. Create `.env` file for database configuration**
+**5. Create `.env` file for database configuration**
 
 ```bash
 cat > .env << 'EOF'
@@ -118,17 +107,17 @@ EOF
 **Docker Management Commands:**
 
 ```bash
-# Start the container (if stopped)
-docker start travel-postgres
+# Start the service
+POSTGRES_PASSWORD=travelpass docker compose up -d
 
-# Stop the container
-docker stop travel-postgres
+# Stop the service
+docker compose stop
 
 # View logs
-docker logs travel-postgres
+docker compose logs postgres
 
-# Remove container (WARNING: deletes all data)
-docker rm -f travel-postgres
+# Remove container only; the external volume keeps data
+docker compose down
 ```
 
 ---
@@ -344,7 +333,7 @@ Google Places API enriches POIs with ratings, reviews, photos, and verified busi
 4. Go to **Credentials** → **Create Credentials** → **API Key**
 5. Copy your API key
 
-**Cost estimate:** ~$0.05 per POI enrichment.With 7-day caching and batch limiting, it tries to save some money.
+**Cost estimate:** roughly a few cents per POI enrichment, depending on the Google Places calls used. Daily quota limits, caching, and scheduled refreshes are used to control spend.
 
 ### 6.2 Store API Key in Database (Recommended)
 
@@ -371,8 +360,8 @@ GOOGLE_PLACES_CACHE_HOURS=168  # 7 days
 ### 6.4 Test Google Places Integration
 
 ```bash
-# Test with a sample query
-node tests/test-google-places.js
+# Run the Google Places unit coverage
+node --test tests/unit/google-places.test.js
 ```
 
 ---
@@ -466,28 +455,23 @@ Press `Ctrl+C` to stop.
 
 ### Test HTTP server (for web clients):
 
-The HTTP server supports two MCP transport protocols simultaneously:
+The HTTP server exposes Streamable HTTP for MCP clients:
 
 | Endpoint | Protocol | Use Case |
 |----------|----------|----------|
-| `POST /` | StreamableHTTP | ChatGPT and modern MCP clients |
-| `GET /sse` | SSE | MCP Inspector and legacy SSE clients |
-| `GET /mcp` | SSE (alt) | Alternative SSE endpoint |
+| `/mcp` | Streamable HTTP | ChatGPT, MCP Inspector, and modern MCP clients |
 | `GET /health` | JSON | Health check endpoint |
 
 ```bash
 # Terminal 1: Start server
 npm run start:http
 # Output shows:
-#   Travel MCP Server running on http://localhost:3000
-#   Endpoints:
-#     - StreamableHTTP: POST http://localhost:3000/
-#     - SSE:            GET  http://localhost:3000/sse
-#     - SSE (alt):      GET  http://localhost:3000/mcp
-#     - Health:         GET  http://localhost:3000/health
+#   Travel MCP Server (Streamable HTTP) running on port 3000
+#   MCP endpoint: /mcp
+#   Health check: /health
 
-# Terminal 2: Test with client
-node tests/test-http-client.js
+# Terminal 2: Check health
+curl http://localhost:3000/health
 ```
 
 ### Connecting ChatGPT to Your Server
@@ -509,12 +493,11 @@ MCP Inspector provides a web-based UI to interactively test your MCP server with
 # Run stdio server with Inspector
 npm run inspect
 
-# Run HTTP server with Inspector (connects to /sse SSE endpoint)
+# Run HTTP server with Inspector (connects to /mcp Streamable HTTP endpoint)
 npm run inspect:http
 
 # With auto-reload on code changes
 npm run inspect:watch
-npm run inspect:watch:http
 ```
 
 This opens a browser UI where you can:
@@ -787,12 +770,12 @@ Now that your server is running:
    - "Show me cafes in London with high ratings"
 
 2. **Import more regions:**
-   - Run `npm run db:import-all-pois` to add more cities/countries
+   - Run `npm run db:import -- france` or `npm run init:osm -- france` to add another OSM region
 
 3. **Review documentation:**
-   - [README.md](README.md) - Full feature documentation
+   - [README.md](../README.md) - Full feature documentation
    - [GitHub Issues](https://github.com/arjanvandermeer/travel-mcp-server/issues) - Planned improvements and known issues
-   - [google-places.md](doc/google-places.md) - Google Places API integration
+   - [google-places.md](google-places.md) - Google Places API integration
 
 4. **Customize configuration:**
    - Adjust cache duration in `.env`

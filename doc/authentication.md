@@ -270,7 +270,7 @@ Before horizontal scaling, redesign these boundaries explicitly:
 
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select existing
-3. Enable the **Google+ API** (for user info)
+3. Enable the Google userinfo/OpenID scopes required by your OAuth consent configuration
 
 #### 1.2 Create OAuth Credentials
 

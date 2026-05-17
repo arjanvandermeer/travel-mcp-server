@@ -22,6 +22,7 @@ postgresql://<user>:<password>@<host>:5432/<database>
 | `google_api_usage` | Daily API call tracking for rate limiting | Read-write |
 | `app_config` | Application configuration settings | Read-heavy |
 | `regions` | Named geographic regions (future use) | Read-heavy |
+| `hotel_chains` | Chain, brand, Wikidata ID, and alias reference data | Read-heavy |
 | `import_log` | Import tracking and history | Read-heavy |
 | `import_sources` | Geofabrik source registry and refresh metadata | Read-heavy |
 | `users` | User accounts | Read-write |
@@ -43,7 +44,7 @@ The geographic data tables (`geonames_*`, `osm_pois`, `regions`) are **read-heav
 - `geonames_cities`: 9 indexes (74 MB)
 - `geonames_admin1_codes`: 4 indexes
 
-Data is refreshed via periodic imports (see `src/import-*.js` scripts), not real-time updates.
+Data is refreshed via periodic imports (see `scripts/import-*.js`), not real-time updates.
 
 ## Core Tables
 
@@ -106,6 +107,7 @@ CREATE TABLE osm_pois (
     osm_type VARCHAR(10) NOT NULL,              -- 'node', 'way', 'relation'
     poi_type VARCHAR(50) NOT NULL,              -- 'hotel', 'restaurant', 'attraction', etc.
     name VARCHAR(500),
+    name_en VARCHAR(500),                       -- English transliteration where available
     location geometry(Point, 4326) NOT NULL,
     latitude DOUBLE PRECISION NOT NULL,
     longitude DOUBLE PRECISION NOT NULL,
@@ -233,6 +235,23 @@ CREATE TABLE regions (
     tags JSONB,
     source VARCHAR(100),
     imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### hotel_chains
+
+Reference data for hotel chain and brand filtering.
+
+```sql
+CREATE TABLE hotel_chains (
+    id SERIAL PRIMARY KEY,
+    chain_name VARCHAR(200) NOT NULL,
+    brand_name VARCHAR(200) NOT NULL,
+    parent_chain VARCHAR(200),
+    wikidata_id VARCHAR(50),
+    aliases TEXT[],
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(chain_name, brand_name)
 );
 ```
 
@@ -723,7 +742,7 @@ npm run db:reset
 node scripts/import-geonames.js
 
 # Import OSM data
-node scripts/import-osm.js thailand-latest.osm.pbf
+node scripts/import-osm.js data/thailand-latest.osm.pbf all
 ```
 
 ### Backup/Restore
