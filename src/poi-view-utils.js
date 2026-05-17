@@ -1,0 +1,259 @@
+// Shared POI groups used by tools, web APIs, and template rendering.
+export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
+export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
+export const attractionTypes = ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'];
+
+const nearbyTypeMap = new Map([
+  ...accommodationTypes.map(t => [t, foodTypes]),
+  ...foodTypes.map(t => [t, accommodationTypes]),
+]);
+
+/**
+ * Get the nearby result types for a given POI type.
+ * Hotels/accommodation -> restaurants/food; restaurants/food -> hotels/accommodation; other -> both.
+ */
+export function getNearbyTypes(poiType) {
+  return nearbyTypeMap.get(poiType) || [...foodTypes, ...accommodationTypes];
+}
+
+/**
+ * Determine section title based on which types are being shown nearby.
+ */
+export function getNearbyTitle(resultTypes) {
+  const isFood = resultTypes.some(t => foodTypes.includes(t));
+  const isAccom = resultTypes.some(t => accommodationTypes.includes(t));
+  if (isFood && !isAccom) return 'Nearby Restaurants & Cafes';
+  if (isAccom && !isFood) return 'Nearby Hotels';
+  return 'Nearby Places';
+}
+
+/**
+ * Fetch nearby POIs for a given source POI.
+ * Returns { nearbyPois, nearbyTitle } or { nearbyPois: null, nearbyTitle: null } if coords missing.
+ */
+export async function fetchNearbyForPOI(poi, db, userId = null) {
+  if (!poi.osm_latitude || !poi.osm_longitude) {
+    return { nearbyPois: null, nearbyTitle: null };
+  }
+
+  const types = getNearbyTypes(poi.poi_type);
+  const nearbyPois = await db.searchPOIsNearCoordinates(
+    poi.osm_latitude, poi.osm_longitude,
+    1.5, types, 10, userId, [poi.osm_id],
+  );
+
+  return { nearbyPois, nearbyTitle: getNearbyTitle(types) };
+}
+
+/**
+ * Determine if a POI is currently open based on Google Places opening hours periods
+ * and the venue's UTC offset.
+ *
+ * @param {object|null} openingHours - Google Places opening_hours object with periods array
+ * @param {number|null} utcOffsetMinutes - The venue's UTC offset in minutes (e.g. 420 for UTC+7)
+ * @returns {{ isOpen: boolean, label: string }|null} - null if no hours data available
+ */
+export function isOpenNow(openingHours, utcOffsetMinutes) {
+  if (!openingHours?.periods || !Array.isArray(openingHours.periods) || utcOffsetMinutes == null) {
+    return null;
+  }
+
+  const now = new Date();
+  const utcMs = now.getTime() + now.getTimezoneOffset() * 60000;
+  const localMs = utcMs + utcOffsetMinutes * 60000;
+  const localDate = new Date(localMs);
+  const day = localDate.getDay();
+  const hour = localDate.getHours();
+  const minute = localDate.getMinutes();
+  const currentMinutes = hour * 60 + minute;
+
+  for (const period of openingHours.periods) {
+    if (!period.open) continue;
+    const openDay = period.open.day;
+    const openMin = period.open.hour * 60 + period.open.minute;
+
+    if (!period.close) {
+      if (openDay === day) return { isOpen: true, label: 'Open 24 hours' };
+      continue;
+    }
+
+    const closeDay = period.close.day;
+    const closeMin = period.close.hour * 60 + period.close.minute;
+
+    if (openDay === closeDay && openDay === day) {
+      if (currentMinutes >= openMin && currentMinutes < closeMin) {
+        return { isOpen: true, label: 'Open now' };
+      }
+    } else if (openDay !== closeDay) {
+      if (day === openDay && currentMinutes >= openMin) {
+        return { isOpen: true, label: 'Open now' };
+      }
+      if (day === closeDay && currentMinutes < closeMin) {
+        return { isOpen: true, label: 'Open now' };
+      }
+    }
+  }
+
+  return { isOpen: false, label: 'Closed' };
+}
+
+export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title = null) {
+  const opening_hours_list = poi.google_opening_hours?.weekdayDescriptions || null;
+  const photo_url = poi.google_photos?.[0]?.url || null;
+  const photo_urls = poi.google_photos?.map(p => p.url).filter(Boolean) || null;
+  const address = poi.osm_address || poi.google_address || '';
+  const address_lines = address.split(',').map(s => s.trim()).filter(Boolean);
+
+  const is_food = foodTypes.includes(poi.poi_type);
+  const is_accommodation = accommodationTypes.includes(poi.poi_type);
+
+  const cuisine_list = poi.osm_cuisine
+    ? poi.osm_cuisine.split(/[;,]/).map(c => c.trim().replace(/_/g, ' ')).filter(Boolean)
+    : null;
+
+  const starDisplay = poi.osm_stars ? '★'.repeat(parseInt(poi.osm_stars, 10) || 0) : null;
+  const has_hotel_info = poi.osm_rooms || poi.osm_beds || poi.osm_stars;
+  const has_contact = poi.google_phone || poi.osm_phone || poi.osm_email;
+
+  const priceLevelMap = {
+    PRICE_LEVEL_FREE: 'Free',
+    PRICE_LEVEL_INEXPENSIVE: '$',
+    PRICE_LEVEL_MODERATE: '$$',
+    PRICE_LEVEL_EXPENSIVE: '$$$',
+    PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
+  };
+  const price_display = poi.google_price_level ? priceLevelMap[poi.google_price_level] || null : null;
+
+  let business_status_display = null;
+  let business_status_class = null;
+  if (poi.google_business_status) {
+    if (poi.google_business_status === 'CLOSED_PERMANENTLY') {
+      business_status_display = 'Permanently Closed';
+      business_status_class = 'status-closed';
+    } else if (poi.google_business_status === 'CLOSED_TEMPORARILY') {
+      business_status_display = 'Temporarily Closed';
+      business_status_class = 'status-temp-closed';
+    }
+  }
+
+  let website_display = null;
+  if (poi.google_website) {
+    try {
+      const url = new URL(poi.google_website);
+      website_display = url.hostname.replace(/^www\./, '');
+    } catch {
+      website_display = poi.google_website;
+    }
+  }
+
+  let service_options_list = null;
+  if (poi.google_service_options) {
+    const opts = poi.google_service_options;
+    const services = [];
+    if (opts.dineIn) services.push('Dine-in');
+    if (opts.takeout) services.push('Takeout');
+    if (opts.delivery) services.push('Delivery');
+    if (opts.curbsidePickup) services.push('Curbside pickup');
+    if (opts.servesBreakfast) services.push('Breakfast');
+    if (opts.servesLunch) services.push('Lunch');
+    if (opts.servesDinner) services.push('Dinner');
+    if (opts.servesBrunch) services.push('Brunch');
+    if (opts.servesBeer) services.push('Beer');
+    if (opts.servesWine) services.push('Wine');
+    if (opts.servesCocktails) services.push('Cocktails');
+    if (opts.servesCoffee) services.push('Coffee');
+    if (opts.servesDessert) services.push('Dessert');
+    if (opts.servesVegetarianFood) services.push('Vegetarian options');
+    if (opts.outdoorSeating) services.push('Outdoor seating');
+    if (opts.liveMusic) services.push('Live music');
+    if (opts.reservable) services.push('Reservations');
+    if (services.length > 0) service_options_list = services;
+  }
+
+  let amenities_list = null;
+  if (poi.google_amenities) {
+    const amenities = poi.google_amenities;
+    const items = [];
+    if (amenities.restroom) items.push({ icon: '🚻', name: 'Restroom' });
+    if (amenities.goodForChildren) items.push({ icon: '👶', name: 'Good for children' });
+    if (amenities.goodForGroups) items.push({ icon: '👥', name: 'Good for groups' });
+    if (amenities.goodForWatchingSports) items.push({ icon: '📺', name: 'Sports viewing' });
+    if (amenities.menuForChildren) items.push({ icon: '🍽️', name: 'Kids menu' });
+    if (amenities.paymentOptions?.acceptsCreditCards) items.push({ icon: '💳', name: 'Credit cards' });
+    if (amenities.paymentOptions?.acceptsCashOnly) items.push({ icon: '💵', name: 'Cash only' });
+    if (amenities.parkingOptions?.paidParkingLot) items.push({ icon: '🅿️', name: 'Paid parking' });
+    if (amenities.parkingOptions?.freeParkingLot) items.push({ icon: '🅿️', name: 'Free parking' });
+    if (amenities.parkingOptions?.streetParking) items.push({ icon: '🚗', name: 'Street parking' });
+    if (amenities.parkingOptions?.valetParking) items.push({ icon: '🔑', name: 'Valet parking' });
+    if (items.length > 0) amenities_list = items;
+  }
+
+  let accessibility_list = null;
+  const accessItems = [];
+  if (poi.osm_wheelchair === 'yes') accessItems.push('Wheelchair accessible');
+  if (poi.osm_wheelchair === 'limited') accessItems.push('Limited wheelchair access');
+  if (poi.google_accessibility) {
+    const acc = poi.google_accessibility;
+    if (acc.wheelchairAccessibleEntrance) accessItems.push('Wheelchair entrance');
+    if (acc.wheelchairAccessibleRestroom) accessItems.push('Wheelchair restroom');
+    if (acc.wheelchairAccessibleSeating) accessItems.push('Wheelchair seating');
+    if (acc.wheelchairAccessibleParking) accessItems.push('Wheelchair parking');
+  }
+  if (accessItems.length > 0) accessibility_list = [...new Set(accessItems)];
+
+  let reviews_list = null;
+  if (poi.google_reviews && Array.isArray(poi.google_reviews) && poi.google_reviews.length > 0) {
+    reviews_list = poi.google_reviews.slice(0, 3).map(review => ({
+      author: review.author || 'Anonymous',
+      ratingStars: '★'.repeat(review.rating || 0) + '☆'.repeat(5 - (review.rating || 0)),
+      text: review.text || '',
+      relativeTime: review.relativeTime || null,
+    })).filter(r => r.text);
+  }
+
+  const open_status = !is_accommodation
+    ? isOpenNow(poi.google_opening_hours, poi.google_utc_offset_minutes)
+    : null;
+  const opening_hours = !is_accommodation ? opening_hours_list : null;
+  const website_url = poi.google_website || poi.osm_website || null;
+
+  return render('poi-details', {
+    ...poi,
+    opening_hours,
+    photo_url,
+    photo_urls,
+    address_lines,
+    is_food,
+    is_accommodation,
+    cuisine_list,
+    starDisplay,
+    has_hotel_info,
+    has_contact,
+    price_display,
+    business_status_display,
+    business_status_class,
+    website_display,
+    website_url,
+    service_options_list,
+    amenities_list,
+    accessibility_list,
+    reviews_list,
+    open_status,
+    nearby_pois,
+    nearby_title,
+  });
+}
+
+/**
+ * Render the nearby POIs widget (standalone page).
+ */
+export function renderNearbyWidget(sourcePoi, nearbyPois, render) {
+  const resultTypes = getNearbyTypes(sourcePoi.poi_type || sourcePoi.osm_poi_type);
+  return render('nearby-pois', {
+    title: getNearbyTitle(resultTypes),
+    source_name: sourcePoi.google_name || sourcePoi.osm_name || sourcePoi.name || null,
+    source_osm_id: sourcePoi.osm_id,
+    results: nearbyPois,
+    count: nearbyPois.length,
+  });
+}

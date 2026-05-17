@@ -9,6 +9,8 @@ const DEFAULT_CONFIG = 'ops/ec2-pull-deploy.config.json';
 const DEFAULT_RETRIES = 12;
 const DEFAULT_RETRY_DELAY_MS = 5000;
 
+class SkipDeploy extends Error {}
+
 function log(message) {
   console.log(`[deploy] ${new Date().toISOString()} ${message}`);
 }
@@ -57,7 +59,7 @@ function git(repo, args, options = {}) {
 function assertClean(repo) {
   const status = git(repo, ['status', '--porcelain']);
   if (status) {
-    throw new Error(`${repo.name} has local changes on EC2; refusing to deploy\n${status}`);
+    throw new SkipDeploy(`${repo.name} has local changes on EC2; refusing to deploy\n${status}`);
   }
 }
 
@@ -113,7 +115,7 @@ function ciPassed(config, repo, sha) {
   }
 
   if (matchingRuns.some(run => run.status === 'completed' && run.conclusion && run.conclusion !== 'success')) {
-    throw new Error(`${repo.name} CI failed for ${sha}`);
+    throw new SkipDeploy(`${repo.name} CI failed for ${sha}`);
   }
 
   log(`${repo.name}: CI has not passed for ${sha} yet`);
@@ -248,8 +250,12 @@ function main() {
       try {
         deployRepo(config, state, repo);
       } catch (err) {
-        failed = true;
-        fail(`${repo.name}: ${err.message}`);
+        if (err instanceof SkipDeploy) {
+          log(`${repo.name}: skipped: ${err.message}`);
+        } else {
+          failed = true;
+          fail(`${repo.name}: ${err.message}`);
+        }
       } finally {
         writeJson(statePath, state);
       }
