@@ -3,18 +3,15 @@ name: Claude Code Review
 on:
   pull_request:
     branches: [main]
-  issue_comment:
-    types: [created]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   review:
     runs-on: ubuntu-latest
-    # Run on new PRs, or when someone comments /human-approved
-    if: |
-      github.event_name == 'pull_request' ||
-      (github.event_name == 'issue_comment' &&
-       github.event.issue.pull_request &&
-       contains(github.event.comment.body, '/human-approved'))
+    if: github.event.pull_request.draft == false
     permissions:
       contents: read
       pull-requests: write
@@ -22,34 +19,12 @@ jobs:
       id-token: write
 
     steps:
-      - name: Check for human override
-        id: override
-        if: github.event_name == 'issue_comment'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          COMMENT_AUTHOR: ${{ github.event.comment.author_association }}
-        run: |
-          # Only repo owners/members can override
-          if [[ "$COMMENT_AUTHOR" == "OWNER" || "$COMMENT_AUTHOR" == "MEMBER" ]]; then
-            echo "override=true" >> "$GITHUB_OUTPUT"
-            echo "Human override approved by ${{ github.event.comment.user.login }}"
-          else
-            echo "override=false" >> "$GITHUB_OUTPUT"
-            echo "Override denied - commenter is $COMMENT_AUTHOR, not OWNER or MEMBER"
-          fi
-
-      - name: Skip review (human approved)
-        if: steps.override.outputs.override == 'true'
-        run: echo "Review skipped - human approved via /human-approved comment"
-
       - name: Checkout code
-        if: steps.override.outputs.override != 'true'
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - uses: anthropics/claude-code-action@v1
-        if: steps.override.outputs.override != 'true'
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
           claude_args: --model claude-haiku-4-5-20251001

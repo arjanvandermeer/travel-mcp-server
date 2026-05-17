@@ -17,6 +17,9 @@ permissions:
   actions: read
   issues: write
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 jobs:
   gate:
     name: Gate maintenance review
@@ -35,7 +38,7 @@ jobs:
       should_run: ${{ steps.gate.outputs.should_run }}
       reason: ${{ steps.gate.outputs.reason }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 2
@@ -65,11 +68,11 @@ jobs:
       contents: read
       issues: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
         with:
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: '24'
           cache: 'npm'
@@ -101,6 +104,15 @@ jobs:
             --json number,title,state,labels,body,url,updatedAt,closedAt \
             > .maintenance/github-issues.json
 
+      - name: Validate OpenAI API key
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+        run: |
+          if [ -z "$OPENAI_API_KEY" ]; then
+            echo "::error title=Missing OPENAI_API_KEY::The Codebase Maintenance Review requires the OPENAI_API_KEY repository secret. Without it, openai/codex-action cannot start its Responses API proxy and fails later with a misleading missing server-info JSON error."
+            exit 1
+          fi
+
       - name: Run Codex maintenance review
         uses: openai/codex-action@v1
         env:
@@ -115,4 +127,5 @@ jobs:
           safety-strategy: drop-sudo
 
       - name: Remove transient check output
+        if: always()
         run: rm -rf .maintenance
