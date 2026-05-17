@@ -292,7 +292,7 @@ already store but don't yet expose through search parameters.
 
 #### Code Sprawl And Maintainability
 - [ ] **Medium** `src/database.js`: File is about 2,683 lines and remains the broadest ownership hotspot in the repo. Progress: response shaping helpers were extracted to `src/response-utils.js`, and stale pending enrichment restarts now have a cooldown with regression coverage. Recommended next action: split by domain when touching related code, starting with POI search/enrichment and import/logging helpers.
-- [ ] **Medium** `src/tools-config.js`: File is about 1,413 lines after extracting POI view/nearby helpers to `src/poi-view-utils.js`. Recommended next action: split large tool schema groups and handler wiring into focused modules while preserving the exported contract.
+- [ ] **Medium** `src/tools-config.js`: File is about 1,204 lines after extracting POI view/nearby helpers to `src/poi-view-utils.js` and MCP prompt definitions to `src/prompts-config.js`. Recommended next action: split large tool schema groups and handler wiring into focused modules while preserving the exported contract.
 - [x] **Medium** `web/js/app.js`, `web/css/style.css`: Split frontend map constants, marker utilities, format store logic, and dossier-specific CSS into focused modules while preserving the existing `web/*` UI changes. Verified syntax, lint, audit, and full tests.
 - [x] **Medium** `src/index-http.js`, `src/google-places.js`: Reduced both below 800 lines by extracting HTTP static helpers and Google Places matching helpers, with focused unit coverage. Verified syntax, lint, audit, and full tests.
 
