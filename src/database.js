@@ -173,9 +173,34 @@ function withTimeout(promise, timeoutMs, message) {
 
 const PENDING_ENRICHMENT_STALE_MS = 5 * 60 * 1000;
 const PENDING_ENRICHMENT_RESTART_COOLDOWN_MS = 5 * 60 * 1000;
+const GOOGLE_QUOTA_RETRY_BUFFER_MS = 5 * 60 * 1000;
+const GOOGLE_ERROR_RETRY_MS = 60 * 60 * 1000;
+const GOOGLE_NOT_FOUND_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
 
 function getGoogleQuotaExceededMessage(quota) {
   return `Google Places enrichment is paused because the daily API limit has been reached (${quota.current}/${quota.limit}). Try again after the quota resets.`;
+}
+
+function nextUtcDayWithBuffer(from = new Date()) {
+  return new Date(Date.UTC(
+    from.getUTCFullYear(),
+    from.getUTCMonth(),
+    from.getUTCDate() + 1,
+    0,
+    0,
+    0,
+    0
+  ) + GOOGLE_QUOTA_RETRY_BUFFER_MS);
+}
+
+function retryAtFromNow(delayMs, from = new Date()) {
+  return new Date(from.getTime() + delayMs);
+}
+
+function isFutureDate(value, now = new Date()) {
+  if (!value) return false;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.getTime() > now.getTime();
 }
 
 function isPositiveTagValue(value) {
@@ -209,6 +234,7 @@ export class TravelDatabase {
     // Restart cooldown: Map<osmId, timestamp> - prevents polling from repeatedly
     // re-triggering stale pending enrichments when a background attempt exits quickly.
     this._enrichmentRestartedAt = new Map();
+    this._googleMappingRetryColumnReady = false;
   }
 
   /**
@@ -281,11 +307,27 @@ export class TravelDatabase {
     await this.googlePlacesReady;
   }
 
+  async ensureGoogleMappingRetryColumn() {
+    if (this._googleMappingRetryColumnReady) return;
+    await this.pool.query(`
+      ALTER TABLE IF EXISTS osm_google_mappings
+      ADD COLUMN IF NOT EXISTS next_retry_at TIMESTAMP
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_next_retry
+      ON osm_google_mappings(next_retry_at)
+      WHERE next_retry_at IS NOT NULL
+    `);
+    this._googleMappingRetryColumnReady = true;
+  }
+
   async markGoogleQuotaExceeded(osmId, quota, detail = null) {
     const message = getGoogleQuotaExceededMessage(quota);
     await this.createMapping(osmId, null, {
-      mapping_status: 'error',
+      mapping_status: 'pending',
       mapping_notes: detail ? `${message} ${detail}` : message,
+      next_retry_at: nextUtcDayWithBuffer(),
+      preserve_mapped_at: true,
     });
     this._enrichmentRestartedAt.delete(osmId);
     return message;
@@ -2468,6 +2510,18 @@ export class TravelDatabase {
 
     // Get the osm_id for enrichment logic (needed below)
     osmId = poi.osm_id;
+    if (poi.mapping_status && poi.next_retry_at === undefined) {
+      try {
+        await this.ensureGoogleMappingRetryColumn();
+        const retryResult = await this.pool.query(
+          'SELECT next_retry_at FROM osm_google_mappings WHERE osm_id = $1',
+          [osmId]
+        );
+        poi.next_retry_at = retryResult.rows[0]?.next_retry_at || null;
+      } catch {
+        poi.next_retry_at = null;
+      }
+    }
 
     // Determine enrichment status and add helpful metadata
     let enrichment_status = 'complete';
@@ -2483,19 +2537,21 @@ export class TravelDatabase {
       const ageMs = Date.now() - startedAt.getTime();
       const lastRestartedAt = this._enrichmentRestartedAt.get(osmId) || 0;
       const restartedRecently = Date.now() - lastRestartedAt < PENDING_ENRICHMENT_RESTART_COOLDOWN_MS;
+      const retryDeferred = isFutureDate(poi.next_retry_at);
       const isStale = ageMs > PENDING_ENRICHMENT_STALE_MS &&
         !this._enrichmentLock.has(osmId) &&
-        !restartedRecently;
+        !restartedRecently &&
+        !retryDeferred;
       if (isStale) {
         const quota = await this.checkGoogleApiLimit();
         if (!quota.allowed) {
-          enrichment_status = 'failed';
+          enrichment_status = 'pending';
           enrichment_message = await this.markGoogleQuotaExceeded(osmId, quota);
         } else {
           // Server restart (or crash) left a stale pending row.
           // Reset mapped_at so it looks fresh, then re-trigger enrichment immediately.
           await this.pool.query(
-            `UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP WHERE osm_id = $1`, [osmId]
+            `UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP, next_retry_at = NULL WHERE osm_id = $1`, [osmId]
           ).catch(() => {});
 
           const newStartedAt = new Date();
@@ -2510,8 +2566,8 @@ export class TravelDatabase {
             'Enrichment timeout after 2 minutes'
           ).catch(err => {
             this.pool.query(
-              `UPDATE osm_google_mappings SET mapping_status = 'error', mapping_notes = $1 WHERE osm_id = $2`,
-              [err.message, osmId]
+              `UPDATE osm_google_mappings SET mapping_status = 'error', mapping_notes = $1, next_retry_at = $2 WHERE osm_id = $3`,
+              [err.message, retryAtFromNow(GOOGLE_ERROR_RETRY_MS), osmId]
             ).catch(() => {});
           }).finally(() => { this._enrichmentLock.delete(osmId); });
           this._enrichmentLock.set(osmId, enrichmentPromise);
@@ -2519,7 +2575,13 @@ export class TravelDatabase {
       } else {
         enrichment_status = 'pending';
         const checkBackAt = new Date(startedAt.getTime() + 60000);
-        enrichment_message = `Google Places enrichment in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()}.`;
+        if (poi.mapping_notes?.includes('daily API limit')) {
+          enrichment_message = poi.mapping_notes;
+        } else if (retryDeferred) {
+          enrichment_message = `Google Places enrichment is paused until ${new Date(poi.next_retry_at).toISOString()}.`;
+        } else {
+          enrichment_message = `Google Places enrichment in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()}.`;
+        }
       }
     } else if (poi.mapping_status === 'not_found') {
       this._enrichmentRestartedAt.delete(osmId);
@@ -2531,6 +2593,13 @@ export class TravelDatabase {
       enrichment_status = 'failed';
       const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
       if (poi.mapping_notes?.includes('daily API limit')) {
+        enrichment_status = 'pending';
+        await this.createMapping(osmId, null, {
+          mapping_status: 'pending',
+          mapping_notes: poi.mapping_notes,
+          next_retry_at: nextUtcDayWithBuffer(),
+          preserve_mapped_at: true,
+        }).catch(() => {});
         enrichment_message = `${poi.mapping_notes}${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
       } else {
         enrichment_message = `Google Places enrichment failed due to an error. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
@@ -2546,14 +2615,18 @@ export class TravelDatabase {
         } else {
           const quota = await this.checkGoogleApiLimit();
           if (!quota.allowed) {
-            enrichment_status = 'failed';
+            enrichment_status = 'pending';
             enrichment_message = await this.markGoogleQuotaExceeded(osmId, quota);
           } else {
             // Mark as pending IMMEDIATELY before starting enrichment
             await this.pool.query(`
-              INSERT INTO osm_google_mappings (osm_id, mapping_status, mapped_at)
-              VALUES ($1, 'pending', CURRENT_TIMESTAMP)
-              ON CONFLICT (osm_id) DO UPDATE SET mapping_status = 'pending', mapped_at = CURRENT_TIMESTAMP
+              INSERT INTO osm_google_mappings (osm_id, mapping_status, mapping_notes, next_retry_at, mapped_at)
+              VALUES ($1, 'pending', NULL, NULL, CURRENT_TIMESTAMP)
+              ON CONFLICT (osm_id) DO UPDATE SET
+                mapping_status = 'pending',
+                mapping_notes = NULL,
+                next_retry_at = NULL,
+                mapped_at = CURRENT_TIMESTAMP
             `, [osmId]);
 
             const startedAt = new Date();
@@ -2573,9 +2646,9 @@ export class TravelDatabase {
               // Mark as error if enrichment fails
               this.pool.query(`
                 UPDATE osm_google_mappings
-                SET mapping_status = 'error', mapping_notes = $1
-                WHERE osm_id = $2
-              `, [err.message, osmId]).catch(() => {});
+                SET mapping_status = 'error', mapping_notes = $1, next_retry_at = $2
+                WHERE osm_id = $3
+              `, [err.message, retryAtFromNow(GOOGLE_ERROR_RETRY_MS), osmId]).catch(() => {});
             }).finally(() => {
               this._enrichmentLock.delete(osmId);
             });
@@ -2842,11 +2915,13 @@ export class TravelDatabase {
       const osmPOI = osmResult.rows[0];
 
       // Check if already mapped
+      await this.ensureGoogleMappingRetryColumn();
       const existingMapping = await this.pool.query(`
         SELECT
           google_place_id,
           mapping_status,
-          mapped_at
+          mapped_at,
+          next_retry_at
         FROM osm_google_mappings
         WHERE osm_id = $1
       `, [osmId]);
@@ -2862,12 +2937,19 @@ export class TravelDatabase {
             return; // Still cached
           }
         }
-        // Throttle retries for terminal non-match statuses — no point hammering the API
-        if (mapping.mapping_status === 'not_found') {
-          const daysSinceCheck = (Date.now() - new Date(mapping.mapped_at).getTime()) / (1000 * 60 * 60 * 24);
-          if (daysSinceCheck < 7) {
-            return; // Don't retry yet
+        if (isFutureDate(mapping.next_retry_at)) {
+          return; // Retry window has not opened yet.
+        }
+        if (mapping.mapping_status === 'pending') {
+          const mappedAt = mapping.mapped_at ? new Date(mapping.mapped_at).getTime() : Date.now();
+          if (Date.now() - mappedAt < PENDING_ENRICHMENT_STALE_MS) {
+            return; // Another request just queued or started this enrichment.
           }
+        }
+        // Backfill retry throttling for older rows that predate next_retry_at.
+        if (mapping.mapping_status === 'not_found' && !mapping.next_retry_at) {
+          const daysSinceCheck = (Date.now() - new Date(mapping.mapped_at).getTime()) / (1000 * 60 * 60 * 24);
+          if (daysSinceCheck < 7) return;
         }
       }
 
@@ -2886,7 +2968,8 @@ export class TravelDatabase {
         // Mark as not_found
         await this.createMapping(osmId, null, {
           mapping_status: 'not_found',
-          mapping_notes: 'No matching Google Place found'
+          mapping_notes: 'No matching Google Place found',
+          next_retry_at: retryAtFromNow(GOOGLE_NOT_FOUND_RETRY_MS),
         });
         return;
       }
@@ -2909,7 +2992,8 @@ export class TravelDatabase {
       if (!placeDetails) {
         await this.createMapping(osmId, null, {
           mapping_status: 'error',
-          mapping_notes: `Failed to retrieve place details (place_id: ${matchResult.place_id})`
+          mapping_notes: `Failed to retrieve place details (place_id: ${matchResult.place_id})`,
+          next_retry_at: retryAtFromNow(GOOGLE_ERROR_RETRY_MS),
         });
         return;
       }
@@ -2918,7 +3002,8 @@ export class TravelDatabase {
         const googleName = placeDetails.displayName?.text || placeDetails.displayName || placeDetails.name || 'unknown';
         await this.createMapping(osmId, null, {
           mapping_status: 'not_found',
-          mapping_notes: `Rejected Google Place name mismatch: "${googleName}" (place_id: ${matchResult.place_id})`
+          mapping_notes: `Rejected Google Place name mismatch: "${googleName}" (place_id: ${matchResult.place_id})`,
+          next_retry_at: retryAtFromNow(GOOGLE_NOT_FOUND_RETRY_MS),
         });
         return;
       }
@@ -2939,7 +3024,8 @@ export class TravelDatabase {
       if (distanceMeters > 500) {
         await this.createMapping(osmId, null, {
           mapping_status: 'not_found',
-          mapping_notes: `Candidate too far away (${Math.round(distanceMeters)}m > 500m limit)`
+          mapping_notes: `Candidate too far away (${Math.round(distanceMeters)}m > 500m limit)`,
+          next_retry_at: retryAtFromNow(GOOGLE_NOT_FOUND_RETRY_MS),
         });
         return;
       }
@@ -2958,7 +3044,8 @@ export class TravelDatabase {
       telemetry.captureException(error, { context: 'enrich_osm_poi', osmId });
       await this.createMapping(osmId, null, {
         mapping_status: 'error',
-        mapping_notes: error.message
+        mapping_notes: error.message,
+        next_retry_at: retryAtFromNow(GOOGLE_ERROR_RETRY_MS),
       });
     }
   }
@@ -3128,30 +3215,39 @@ export class TravelDatabase {
    * Create or update mapping between OSM POI and Google Place
    */
   async createMapping(osmId, googlePlaceId, metadata = {}) {
+    await this.ensureGoogleMappingRetryColumn();
+
     const {
       match_confidence = null,
       match_method = null,
       match_distance_meters = null,
       mapping_status = 'active',
-      mapping_notes = null
+      mapping_notes = null,
+      next_retry_at = null,
+      preserve_mapped_at = false,
     } = metadata;
 
     if (!googlePlaceId) {
       // Insert mapping with NULL google_place_id for non-active statuses
       if (['not_found', 'error', 'pending'].includes(mapping_status)) {
+        const mappedAtUpdate = preserve_mapped_at
+          ? 'mapped_at = COALESCE(osm_google_mappings.mapped_at, CURRENT_TIMESTAMP)'
+          : 'mapped_at = CURRENT_TIMESTAMP';
         await this.pool.query(`
           INSERT INTO osm_google_mappings (
             osm_id,
             google_place_id,
             mapping_status,
             mapping_notes,
+            next_retry_at,
             mapped_at
-          ) VALUES ($1, NULL, $2, $3, CURRENT_TIMESTAMP)
+          ) VALUES ($1, NULL, $2, $3, $4, CURRENT_TIMESTAMP)
           ON CONFLICT (osm_id) DO UPDATE SET
             mapping_status = EXCLUDED.mapping_status,
             mapping_notes = EXCLUDED.mapping_notes,
-            mapped_at = CURRENT_TIMESTAMP
-        `, [osmId, mapping_status, mapping_notes]);
+            next_retry_at = EXCLUDED.next_retry_at,
+            ${mappedAtUpdate}
+        `, [osmId, mapping_status, mapping_notes, next_retry_at]);
       }
       return;
     }
@@ -3165,8 +3261,9 @@ export class TravelDatabase {
         match_distance_meters,
         mapping_status,
         mapping_notes,
+        next_retry_at,
         mapped_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, NULL, CURRENT_TIMESTAMP)
       ON CONFLICT (osm_id) DO UPDATE SET
         google_place_id = EXCLUDED.google_place_id,
         match_confidence = EXCLUDED.match_confidence,
@@ -3174,6 +3271,7 @@ export class TravelDatabase {
         match_distance_meters = EXCLUDED.match_distance_meters,
         mapping_status = EXCLUDED.mapping_status,
         mapping_notes = EXCLUDED.mapping_notes,
+        next_retry_at = NULL,
         mapped_at = CURRENT_TIMESTAMP
     `, [
       osmId,

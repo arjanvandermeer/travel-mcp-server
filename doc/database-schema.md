@@ -210,6 +210,7 @@ CREATE TABLE osm_google_mappings (
 
     -- Timestamps
     mapped_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    next_retry_at TIMESTAMP,
     last_verified_at TIMESTAMP,
 
     FOREIGN KEY (google_place_id) REFERENCES google_places(google_place_id) ON DELETE SET NULL

@@ -1024,14 +1024,38 @@ describe('TravelDatabase POI Search Functions', () => {
 
       const result = await db.getPOIDetails(12345);
 
-      assert.strictEqual(result._enrichment.status, 'failed');
+      assert.strictEqual(result._enrichment.status, 'pending');
       assert.ok(result._enrichment.message?.includes('daily API limit'));
       assert.strictEqual(mockPool.callCount('UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP'), 0);
       const quotaCall = mockPool.getCalls().find(call =>
         call.sql.includes('INSERT INTO osm_google_mappings') &&
-        call.params?.includes('error')
+        call.params?.includes('pending')
       );
-      assert.ok(quotaCall, 'Should mark the mapping as error instead of pending');
+      assert.ok(quotaCall, 'Should keep the mapping pending instead of marking a POI-specific failure');
+      assert.ok(quotaCall.params.some(param => param instanceof Date), 'Should schedule a retry after quota reset');
+    });
+
+    it('should not restart pending enrichment before next_retry_at', async () => {
+      const pausedPendingPOI = {
+        ...samplePOIDetail,
+        google_place_id: null,
+        mapping_status: 'pending',
+        mapping_notes: 'Google Places enrichment is paused because the daily API limit has been reached (500/500).',
+        mapped_at: new Date(Date.now() - 10 * 60 * 1000),
+        next_retry_at: new Date(Date.now() + 60 * 60 * 1000),
+      };
+      mockPool.setResponse('enriched_pois', dbResult([pausedPendingPOI]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      db.checkGoogleApiLimit = async () => {
+        throw new Error('quota should not be checked while retry is deferred');
+      };
+
+      const result = await db.getPOIDetails(12345);
+
+      assert.strictEqual(result._enrichment.status, 'pending');
+      assert.ok(result._enrichment.message?.includes('daily API limit'));
+      assert.strictEqual(mockPool.callCount('UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP'), 0);
     });
 
     it('should not start new enrichment when daily quota is exhausted', async () => {
@@ -1050,14 +1074,15 @@ describe('TravelDatabase POI Search Functions', () => {
 
       const result = await db.getPOIDetails(12345);
 
-      assert.strictEqual(result._enrichment.status, 'failed');
+      assert.strictEqual(result._enrichment.status, 'pending');
       assert.ok(result._enrichment.message?.includes('daily API limit'));
       assert.strictEqual(mockPool.callCount("VALUES ($1, 'pending', CURRENT_TIMESTAMP)"), 0);
       const quotaCall = mockPool.getCalls().find(call =>
         call.sql.includes('INSERT INTO osm_google_mappings') &&
-        call.params?.includes('error')
+        call.params?.includes('pending')
       );
-      assert.ok(quotaCall, 'Should mark the mapping as error instead of pending');
+      assert.ok(quotaCall, 'Should keep the mapping pending instead of marking a POI-specific failure');
+      assert.ok(quotaCall.params.some(param => param instanceof Date), 'Should schedule a retry after quota reset');
     });
 
     it('should report failed enrichment for not_found status', async () => {
