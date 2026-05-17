@@ -74,6 +74,7 @@ Claude Desktop / ChatGPT / Web Browser
 
 | Document | Description |
 |----------|-------------|
+| [doc/architecture.md](doc/architecture.md) | Authoritative layers and canonical request flows |
 | [doc/getting-started.md](doc/getting-started.md) | Full setup guide (database, imports, Claude Desktop) |
 | [doc/authentication.md](doc/authentication.md) | OAuth 2.1 implementation details |
 | [doc/database-schema.md](doc/database-schema.md) | PostgreSQL schema reference |

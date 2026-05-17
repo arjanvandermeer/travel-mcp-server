@@ -219,9 +219,10 @@ You should see tables like:
 - `geonames_countries`
 - `geonames_cities`
 - `osm_pois`
-- `imports`
+- `import_log`
+- `import_sources`
 - `google_places`
-- `osm_google_mappins`
+- `osm_google_mappings`
 - `regions`
 
 **Verify PostGIS extension:**

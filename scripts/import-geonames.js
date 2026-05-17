@@ -3,7 +3,7 @@
 /**
  * Import GeoNames data directly into PostgreSQL
  *
- * Downloads and import_log:
+ * Downloads and imports:
  * - Countries (countryInfo.txt)
  * - Cities with population > 1000 (cities1000.txt)
  *
@@ -70,7 +70,7 @@ async function unzip(zipPath, outputPath) {
 }
 
 /**
- * Clean up stale import_log that have been 'running' for more than 24 hours
+ * Clean up stale import_log entries that have been 'running' for more than 24 hours
  * @param {pg.Pool} pool - PostgreSQL pool
  */
 async function cleanupStaleImports(pool) {
@@ -476,7 +476,7 @@ async function main() {
     console.log('GeoNames Import to PostgreSQL');
     console.log('==============================');
 
-    // Clean up stale import_log (running > 24 hours)
+    // Clean up stale import_log entries (running > 24 hours)
     await cleanupStaleImports(pool);
 
     await importCountries(pool);

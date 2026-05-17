@@ -22,7 +22,8 @@ postgresql://<user>:<password>@<host>:5432/<database>
 | `google_api_usage` | Daily API call tracking for rate limiting | Read-write |
 | `app_config` | Application configuration settings | Read-heavy |
 | `regions` | Named geographic regions (future use) | Read-heavy |
-| `imports` | Import tracking and history | Read-heavy |
+| `import_log` | Import tracking and history | Read-heavy |
+| `import_sources` | Geofabrik source registry and refresh metadata | Read-heavy |
 | `users` | User accounts | Read-write |
 | `user_tokens` | API tokens for authentication | Read-heavy |
 | `user_config` | Per-user configuration | Read-write |
@@ -234,12 +235,12 @@ CREATE TABLE regions (
 );
 ```
 
-### imports
+### import_log
 
 Tracks import operations for data provenance.
 
 ```sql
-CREATE TABLE imports (
+CREATE TABLE import_log (
     id SERIAL PRIMARY KEY,
     import_type VARCHAR(50) NOT NULL,           -- 'geonames_countries', 'osm_pois', etc.
     source_file VARCHAR(500),
@@ -252,6 +253,25 @@ CREATE TABLE imports (
     records_imported INTEGER,
     error_message TEXT,
     metadata JSONB
+);
+```
+
+### import_sources
+
+Tracks keyword-to-source mappings for scheduled OSM refreshes.
+
+```sql
+CREATE TABLE import_sources (
+    id SERIAL PRIMARY KEY,
+    keyword VARCHAR(100) UNIQUE NOT NULL,
+    source_url VARCHAR(500) NOT NULL,
+    display_name VARCHAR(200),
+    min_pois INTEGER DEFAULT 100,
+    refresh_interval_days INTEGER DEFAULT 30,
+    enabled BOOLEAN DEFAULT TRUE,
+    last_imported_at TIMESTAMP,
+    last_import_id INTEGER REFERENCES import_log(id),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
 
