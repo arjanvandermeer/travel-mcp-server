@@ -737,7 +737,7 @@ export class TravelDatabase {
         const tagKey = TravelDatabase.AMENITY_TAG_MAP[amenity] || amenity;
         queryParams.push(tagKey);
         const idx = queryParams.length;
-        sql += ` AND p.tags->>$${idx} IS NOT NULL AND p.tags->>$${idx} != 'no'`;
+        sql += ` AND p.tags ? $${idx} AND p.tags->>$${idx} != 'no'`;
       }
     }
 
@@ -747,7 +747,7 @@ export class TravelDatabase {
         const tagKey = TravelDatabase.DIETARY_TAG_MAP[diet] || diet;
         queryParams.push(tagKey);
         const idx = queryParams.length;
-        sql += ` AND p.tags->>$${idx} IS NOT NULL AND p.tags->>$${idx} != 'no'`;
+        sql += ` AND p.tags ? $${idx} AND p.tags->>$${idx} != 'no'`;
       }
     }
 

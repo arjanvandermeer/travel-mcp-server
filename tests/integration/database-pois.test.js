@@ -160,6 +160,28 @@ describe('TravelDatabase POI Search Functions', () => {
         assert.ok(searchCall.params.includes('diet:gluten_free'), 'Should bind gluten-free tag key');
         assert.ok(!searchCall.sql.includes('diet:vegan'), 'Tag keys should not be interpolated into SQL');
       });
+
+      it('should map amenity filters to index-friendly OSM tag checks', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        await db.searchPOIs({
+          name: 'Grand Hotel',
+          poiTypes: ['hotel'],
+          amenities: ['wifi', 'pool', 'breakfast', 'air_conditioning', 'parking'],
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes('p.tags ? $'));
+        assert.ok(searchCall, 'Should include JSONB key-existence checks');
+        assert.ok(searchCall.sql.includes('p.tags->>$'), 'Should reject explicit no values');
+        assert.ok(searchCall.params.includes('internet_access'), 'Should bind wifi tag key');
+        assert.ok(searchCall.params.includes('swimming_pool'), 'Should bind pool tag key');
+        assert.ok(searchCall.params.includes('breakfast'), 'Should bind breakfast tag key');
+        assert.ok(searchCall.params.includes('air_conditioning'), 'Should bind air conditioning tag key');
+        assert.ok(searchCall.params.includes('parking'), 'Should bind parking tag key');
+        assert.ok(!searchCall.sql.includes('internet_access'), 'Tag keys should not be interpolated into SQL');
+      });
     });
 
     describe('Case 2: Location only search', () => {

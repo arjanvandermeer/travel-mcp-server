@@ -508,6 +508,24 @@ GROUP BY mapping_status;
 
 ### Hotels with amenities (using JSONB)
 
+`search_hotels` and `search_hotels_ui` accept an `amenities` array. Multiple amenities use AND logic and are backed by the `idx_osm_pois_tags_gin` JSONB index on `osm_pois.tags`.
+
+Supported amenity keys map to OSM tags as follows:
+
+| Amenity key | OSM tag key |
+|-------------|-------------|
+| `wifi` | `internet_access` |
+| `pool` | `swimming_pool` |
+| `parking` | `parking` |
+| `breakfast` | `breakfast` |
+| `air_conditioning` | `air_conditioning` |
+| `pet_friendly` | `pets` |
+| `restaurant` | `restaurant` |
+| `spa` | `spa` |
+| `gym` | `fitness_centre` |
+| `bar` | `bar` |
+| `elevator` | `elevator` |
+
 ```sql
 -- Hotels with WiFi
 SELECT name, tags->>'internet_access' as wifi

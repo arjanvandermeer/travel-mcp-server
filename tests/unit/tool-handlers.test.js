@@ -140,6 +140,19 @@ describe('executeToolHandler: search_hotels', () => {
     assert.deepStrictEqual(capturedArgs.poiTypes, ['hostel', 'bed_and_breakfast']);
   });
 
+  it('should pass amenity filters to hotel search', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_hotels', {
+      city_name: 'Bangkok',
+      country_code: 'TH',
+      amenities: ['wifi', 'pool', 'breakfast'],
+    }, db);
+    assert.deepStrictEqual(capturedArgs.amenities, ['wifi', 'pool', 'breakfast']);
+  });
+
   it('should reject invalid accommodation types', async () => {
     const db = createMockDb();
     const result = await executeToolHandler('search_hotels', {
@@ -161,6 +174,21 @@ describe('executeToolHandler: search_hotels', () => {
       assert.ok(enumValues.includes('guest_house'));
       assert.ok(enumValues.includes('camp_site'));
       assert.ok(enumValues.includes('chalet'));
+    }
+  });
+
+  it('should expose amenity schema on hotel tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_hotels', 'search_hotels_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      const schema = tool.inputSchema.properties.amenities;
+      assert.ok(schema, `${toolName} should expose amenities`);
+      assert.strictEqual(schema.type, 'array');
+      assert.ok(schema.items.enum.includes('wifi'));
+      assert.ok(schema.items.enum.includes('pool'));
+      assert.ok(schema.items.enum.includes('breakfast'));
+      assert.ok(schema.items.enum.includes('air_conditioning'));
+      assert.ok(schema.items.enum.includes('parking'));
     }
   });
 });

@@ -335,6 +335,7 @@ CREATE INDEX IF NOT EXISTS idx_osm_pois_nearest_city_id ON osm_pois(nearest_city
 -- Trigram index for fuzzy name search
 CREATE INDEX IF NOT EXISTS idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_osm_pois_name_en_trgm ON osm_pois USING GIN(name_en gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_osm_pois_tags_gin ON osm_pois USING GIN(tags);
 
 -- Enable trigram extension for fuzzy name search
 
