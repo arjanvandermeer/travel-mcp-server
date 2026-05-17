@@ -188,6 +188,32 @@ const baseToolsConfig = [
     },
   },
   {
+    name: 'get_neighborhood_score',
+    description: 'Score neighborhood livability around a hotel OSM ID or coordinates. Counts nearby restaurants, cafes, bars, supermarkets, pharmacies, and transit stops, then returns a 0-100 score with category breakdown.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_id: {
+          type: 'number',
+          description: 'Hotel or accommodation OSM ID to score around. If provided, latitude/longitude are ignored.',
+        },
+        latitude: {
+          type: 'number',
+          description: 'Latitude coordinate. Required with longitude when osm_id is not provided.',
+        },
+        longitude: {
+          type: 'number',
+          description: 'Longitude coordinate. Required with latitude when osm_id is not provided.',
+        },
+        radius_km: {
+          type: 'number',
+          description: 'Neighborhood radius in kilometers (default: 1.5, max: 5).',
+          default: 1.5,
+        },
+      },
+    },
+  },
+  {
     name: 'search_restaurants',
     description: 'Search for food & drink (restaurants, cafes, bars, fast food, coffee shops, etc.). Returns JSON results with coordinates, ratings, cuisine, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location - combine name filter with location. Supports cuisine filtering (e.g., "thai", "italian"), dietary restrictions (e.g., "vegan", "halal"), and open_now to find currently open places. WORKFLOW TIP: To find a chain restaurant near a landmark, first use search_pois to get the landmark coordinates, then use search_restaurants with those lat/long coordinates and query.',
     inputSchema: {
@@ -1032,6 +1058,43 @@ export async function executeToolHandler(name, args, db, options = {}) {
       return {
         content: [{ type: 'text', text: JSON.stringify(comparison, null, 2) }],
         structuredContent: comparison,
+      };
+    }
+
+    case 'get_neighborhood_score': {
+      if (!args.osm_id && (args.latitude === undefined || args.longitude === undefined)) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: 'get_neighborhood_score requires either osm_id or latitude and longitude' }, null, 2) }],
+        };
+      }
+      if (args.latitude !== undefined || args.longitude !== undefined) {
+        const coords = validateCoordinates(args.latitude, args.longitude);
+        if (!coords.valid) {
+          return {
+            isError: true,
+            content: [{ type: 'text', text: JSON.stringify({ error: coords.error }, null, 2) }],
+          };
+        }
+        args.latitude = coords.lat;
+        args.longitude = coords.lon;
+      }
+
+      const score = await db.getNeighborhoodScore({
+        osmId: args.osm_id,
+        latitude: args.latitude,
+        longitude: args.longitude,
+        radiusKm: Math.min(Number(args.radius_km) || 1.5, 5),
+      });
+      if (!score) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Source POI not found', osm_id: args.osm_id }, null, 2) }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(score, null, 2) }],
+        structuredContent: score,
       };
     }
 

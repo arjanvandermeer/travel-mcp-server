@@ -21,6 +21,7 @@ function createMockDb(overrides = {}) {
     searchPOIsNearCoordinates: async () => [],
     getDiningBudget: async () => null,
     findFoodDistricts: async () => null,
+    getNeighborhoodScore: async () => null,
     getPOIDetails: async () => null,
     getStats: async () => ({ total_pois: 100, total_cities: 50 }),
     batchEnrichPOIs: async () => {},
@@ -364,6 +365,77 @@ describe('executeToolHandler: compare_hotels', () => {
     assert.deepStrictEqual(tool.inputSchema.required, ['osm_ids']);
     assert.strictEqual(tool.inputSchema.properties.osm_ids.minItems, 2);
     assert.strictEqual(tool.inputSchema.properties.osm_ids.maxItems, 5);
+  });
+});
+
+// =============================================================================
+// get_neighborhood_score
+// =============================================================================
+
+describe('executeToolHandler: get_neighborhood_score', () => {
+  it('should return structured neighborhood score content', async () => {
+    let capturedArgs;
+    const score = {
+      score: 82,
+      label: 'very_good',
+      radius_km: 1.5,
+      categories: {
+        restaurants: { count: 9, score: 100 },
+        transit: { count: 3, score: 75 },
+      },
+    };
+    const db = createMockDb({
+      getNeighborhoodScore: async (args) => {
+        capturedArgs = args;
+        return score;
+      },
+    });
+
+    const result = await executeToolHandler('get_neighborhood_score', { osm_id: 101, radius_km: 2 }, db);
+    const parsed = parseResponse(result);
+
+    assert.deepStrictEqual(parsed, score);
+    assert.deepStrictEqual(result.structuredContent, score);
+    assert.strictEqual(capturedArgs.osmId, 101);
+    assert.strictEqual(capturedArgs.radiusKm, 2);
+  });
+
+  it('should accept latitude and longitude', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      getNeighborhoodScore: async (args) => {
+        capturedArgs = args;
+        return { score: 50, categories: {} };
+      },
+    });
+
+    await executeToolHandler('get_neighborhood_score', { latitude: '13.75', longitude: '100.5' }, db);
+    assert.strictEqual(capturedArgs.latitude, 13.75);
+    assert.strictEqual(capturedArgs.longitude, 100.5);
+  });
+
+  it('should reject missing source arguments', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('get_neighborhood_score', {}, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /requires either osm_id or latitude and longitude/);
+  });
+
+  it('should return an error when source POI is not found', async () => {
+    const db = createMockDb({ getNeighborhoodScore: async () => null });
+    const result = await executeToolHandler('get_neighborhood_score', { osm_id: 999 }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /Source POI not found/);
+  });
+
+  it('should expose get_neighborhood_score schema', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    const tool = tools.find(t => t.name === 'get_neighborhood_score');
+    assert.ok(tool);
+    assert.ok(tool.inputSchema.properties.osm_id);
+    assert.ok(tool.inputSchema.properties.latitude);
+    assert.ok(tool.inputSchema.properties.longitude);
+    assert.strictEqual(tool.inputSchema.properties.radius_km.default, 1.5);
   });
 });
 

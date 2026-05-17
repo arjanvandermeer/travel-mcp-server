@@ -45,6 +45,16 @@ describe('POI_MAPPINGS', () => {
     assert.strictEqual(POI_MAPPINGS['amenity=bar'], 'bar');
     assert.strictEqual(POI_MAPPINGS['amenity=pub'], 'pub');
   });
+
+  it('should have neighborhood livability support types', () => {
+    assert.strictEqual(POI_MAPPINGS['shop=supermarket'], 'supermarket');
+    assert.strictEqual(POI_MAPPINGS['amenity=pharmacy'], 'pharmacy');
+    assert.strictEqual(POI_MAPPINGS['highway=bus_stop'], 'bus_stop');
+    assert.strictEqual(POI_MAPPINGS['railway=station'], 'train_station');
+    assert.strictEqual(POI_MAPPINGS['railway=subway_entrance'], 'subway_station');
+    assert.strictEqual(POI_MAPPINGS['railway=tram_stop'], 'tram_stop');
+    assert.strictEqual(POI_MAPPINGS['public_transport=station'], 'transit_station');
+  });
 });
 
 describe('getValidPOITypes', () => {

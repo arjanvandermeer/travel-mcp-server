@@ -43,6 +43,15 @@ export const POI_MAPPINGS = {
   'amenity=pub': 'pub',
   'amenity=fast_food': 'fast_food',
   'amenity=food_court': 'food_court',
+  'amenity=pharmacy': 'pharmacy',
+
+  // Transit
+  'highway=bus_stop': 'bus_stop',
+  'railway=station': 'train_station',
+  'railway=halt': 'train_station',
+  'railway=subway_entrance': 'subway_station',
+  'railway=tram_stop': 'tram_stop',
+  'public_transport=station': 'transit_station',
 
   // Historic
   'historic=monument': 'monument',

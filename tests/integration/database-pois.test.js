@@ -426,6 +426,74 @@ describe('TravelDatabase POI Search Functions', () => {
     });
   });
 
+  describe('getNeighborhoodScore', () => {
+    it('should count neighborhood categories with a spatial query and return a score breakdown', async () => {
+      mockPool.setResponse('WHERE osm_id = $1', dbResult([{
+        osm_id: 12345,
+        poi_type: 'hotel',
+        name: 'Grand Hotel Bangkok',
+        latitude: 13.75,
+        longitude: 100.5,
+      }]));
+      mockPool.setResponse('SELECT category, COUNT(*)::int as count', dbResult([
+        { category: 'restaurants', count: 10 },
+        { category: 'cafes', count: 2 },
+        { category: 'bars', count: 3 },
+        { category: 'groceries', count: 1 },
+        { category: 'pharmacies', count: 1 },
+        { category: 'transit', count: 4 },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getNeighborhoodScore({ osmId: 12345 });
+
+      assert.strictEqual(result.source.osm_id, 12345);
+      assert.strictEqual(result.score, 78);
+      assert.strictEqual(result.label, 'very_good');
+      assert.strictEqual(result.total_nearby_pois, 21);
+      assert.strictEqual(result.categories.restaurants.count, 10);
+      assert.strictEqual(result.categories.restaurants.score, 100);
+      assert.strictEqual(result.categories.cafes.score, 50);
+      assert.strictEqual(result.categories.transit.weight, 20);
+
+      const calls = mockPool.getCalls();
+      const countCall = calls.find(c => c.sql.includes('SELECT category, COUNT(*)::int as count'));
+      assert.ok(countCall, 'Should query category counts');
+      assert.ok(countCall.sql.includes('ST_DWithin'), 'Should use a spatial radius query');
+      assert.ok(countCall.sql.includes("THEN 'restaurants'"), 'Should categorize restaurants');
+      assert.ok(countCall.sql.includes("THEN 'transit'"), 'Should categorize transit');
+      assert.strictEqual(countCall.params[0], 13.75);
+      assert.strictEqual(countCall.params[1], 100.5);
+      assert.strictEqual(countCall.params[2], 1500);
+      assert.ok(countCall.params.some(param => Array.isArray(param) && param.includes('pharmacy')));
+      assert.ok(countCall.params.some(param => Array.isArray(param) && param.includes('bus_stop')));
+    });
+
+    it('should score arbitrary coordinates and clamp the radius', async () => {
+      mockPool.setResponse('SELECT category, COUNT(*)::int as count', dbResult([
+        { category: 'restaurants', count: 1 },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getNeighborhoodScore({ latitude: 13.75, longitude: 100.5, radiusKm: 99 });
+
+      assert.deepStrictEqual(result.source, { latitude: 13.75, longitude: 100.5 });
+      assert.strictEqual(result.radius_km, 5);
+      assert.strictEqual(result.categories.restaurants.count, 1);
+      assert.strictEqual(result.categories.pharmacies.count, 0);
+      assert.strictEqual(result.label, 'sparse');
+    });
+
+    it('should return null when neighborhood source POI is missing', async () => {
+      mockPool.setResponse('WHERE osm_id = $1', emptyResult());
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getNeighborhoodScore({ osmId: 99999 });
+
+      assert.strictEqual(result, null);
+    });
+  });
+
   describe('searchPOIsNearCoordinates', () => {
     it('should search POIs near coordinates', async () => {
       mockPool.setResponse('osm_pois', dbResult(samplePOIs));

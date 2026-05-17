@@ -583,6 +583,21 @@ Hotel search results and hotel POI details include `stay_quality_score`, `stay_q
 
 Missing rating, review, or star fields are omitted from the denominator instead of treated as zero, so sparse records can still receive a low-confidence score. Amenity and nearby-dining components are treated as zero when no matching data is present because those signals come from local POI data rather than optional Google enrichment.
 
+### Neighborhood livability scores
+
+`get_neighborhood_score` scores the area around an accommodation `osm_id` or an explicit latitude/longitude pair. It uses a default 1.5 km radius, capped at 5 km, and returns a 0-100 score plus per-category counts and component scores.
+
+| Category | POI types | Target for full category score | Weight |
+|----------|-----------|--------------------------------|--------|
+| Restaurants | `restaurant`, `fast_food`, `food_court` | 8 | 25 |
+| Cafes | `cafe` | 4 | 15 |
+| Bars and pubs | `bar`, `pub`, `nightclub` | 3 | 10 |
+| Supermarkets | `supermarket` | 2 | 15 |
+| Pharmacies | `pharmacy` | 2 | 15 |
+| Transit stops | `bus_stop`, `train_station`, `subway_station`, `tram_stop`, `transit_station` | 4 | 20 |
+
+The category scores are capped at 100 before applying weights. Transit and pharmacy categories depend on the corresponding OSM mappings being imported, so older datasets may understate those signals until refreshed.
+
 ### Restaurant price levels and dining budgets
 
 Restaurant price filters use Google Places `price_level` values after the initial indexed OSM search has been enriched:

@@ -118,6 +118,16 @@ const HOTEL_QUALITY_AMENITY_KEYS = {
   elevator: ['elevator'],
   wheelchair_access: ['wheelchair'],
 };
+const NEIGHBORHOOD_SCORE_RADIUS_DEFAULT_KM = 1.5;
+const NEIGHBORHOOD_SCORE_RADIUS_MAX_KM = 5;
+const NEIGHBORHOOD_SCORE_CATEGORIES = [
+  { key: 'restaurants', label: 'Restaurants', poiTypes: ['restaurant', 'fast_food', 'food_court'], target: 8, weight: 25 },
+  { key: 'cafes', label: 'Cafes', poiTypes: ['cafe'], target: 4, weight: 15 },
+  { key: 'bars', label: 'Bars and pubs', poiTypes: ['bar', 'pub', 'nightclub'], target: 3, weight: 10 },
+  { key: 'groceries', label: 'Supermarkets', poiTypes: ['supermarket'], target: 2, weight: 15 },
+  { key: 'pharmacies', label: 'Pharmacies', poiTypes: ['pharmacy'], target: 2, weight: 15 },
+  { key: 'transit', label: 'Transit stops', poiTypes: ['bus_stop', 'train_station', 'subway_station', 'tram_stop', 'transit_station'], target: 4, weight: 20 },
+];
 
 function normalizeImportKeyword(value) {
   return String(value || '')
@@ -802,6 +812,119 @@ export class TravelDatabase {
         stay_quality: stayQuality,
       };
     });
+  }
+
+  static neighborhoodScoreLabel(score) {
+    if (score >= 85) return 'excellent';
+    if (score >= 70) return 'very_good';
+    if (score >= 50) return 'good';
+    if (score >= 30) return 'limited';
+    return 'sparse';
+  }
+
+  static buildNeighborhoodScore(categoryCounts) {
+    const categories = {};
+    let score = 0;
+    let totalNearbyPois = 0;
+
+    for (const category of NEIGHBORHOOD_SCORE_CATEGORIES) {
+      const count = Number(categoryCounts.get(category.key) || 0);
+      const categoryScore = Math.round(Math.min(count / category.target, 1) * 100);
+      categories[category.key] = {
+        label: category.label,
+        count,
+        target: category.target,
+        score: categoryScore,
+        weight: category.weight,
+        poi_types: category.poiTypes,
+      };
+      score += categoryScore * (category.weight / 100);
+      totalNearbyPois += count;
+    }
+
+    const roundedScore = Math.round(score);
+    return {
+      score: roundedScore,
+      label: TravelDatabase.neighborhoodScoreLabel(roundedScore),
+      total_nearby_pois: totalNearbyPois,
+      categories,
+    };
+  }
+
+  async getNeighborhoodScore({ osmId = null, latitude = null, longitude = null, radiusKm = NEIGHBORHOOD_SCORE_RADIUS_DEFAULT_KM } = {}) {
+    let source = null;
+    let lat = latitude;
+    let lon = longitude;
+
+    if (osmId) {
+      const sourceResult = await this.pool.query(`
+        SELECT osm_id, poi_type, name, latitude, longitude
+        FROM osm_pois
+        WHERE osm_id = $1
+      `, [osmId]);
+      source = sourceResult.rows[0] || null;
+      if (!source) return null;
+      lat = source.latitude;
+      lon = source.longitude;
+    }
+
+    if (lat === null || lat === undefined || lon === null || lon === undefined) {
+      throw new Error('getNeighborhoodScore requires either osmId or latitude and longitude');
+    }
+
+    const numericLat = Number(lat);
+    const numericLon = Number(lon);
+    if (!Number.isFinite(numericLat) || !Number.isFinite(numericLon)) {
+      throw new Error('Invalid latitude or longitude');
+    }
+
+    const searchRadiusKm = Math.min(Math.max(Number(radiusKm) || NEIGHBORHOOD_SCORE_RADIUS_DEFAULT_KM, 0.1), NEIGHBORHOOD_SCORE_RADIUS_MAX_KM);
+    const searchRadiusMeters = searchRadiusKm * 1000;
+    const allTypes = [...new Set(NEIGHBORHOOD_SCORE_CATEGORIES.flatMap(category => category.poiTypes))];
+    const categoryCases = NEIGHBORHOOD_SCORE_CATEGORIES.map((category, index) =>
+      `WHEN p.poi_type = ANY($${index + 4}) THEN '${category.key}'`
+    ).join('\n          ');
+    const params = [numericLat, numericLon, searchRadiusMeters, ...NEIGHBORHOOD_SCORE_CATEGORIES.map(category => category.poiTypes), allTypes];
+    const allTypesParam = params.length;
+
+    const countResult = await this.pool.query(`
+      SELECT category, COUNT(*)::int as count
+      FROM (
+        SELECT
+          CASE
+          ${categoryCases}
+          END as category
+        FROM osm_pois p
+        WHERE p.name IS NOT NULL
+          AND p.poi_type = ANY($${allTypesParam})
+          ${osmId ? `AND p.osm_id != $${params.push(osmId)}` : ''}
+          AND ST_DWithin(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($2, $1), 4326)::geography,
+            $3::float8
+          )
+      ) nearby
+      WHERE category IS NOT NULL
+      GROUP BY category
+    `, params);
+
+    const categoryCounts = new Map(countResult.rows.map(row => [row.category, Number(row.count) || 0]));
+    const score = TravelDatabase.buildNeighborhoodScore(categoryCounts);
+
+    return {
+      source: source ? {
+        osm_id: source.osm_id,
+        name: source.name,
+        poi_type: source.poi_type,
+      } : {
+        latitude: numericLat,
+        longitude: numericLon,
+      },
+      latitude: numericLat,
+      longitude: numericLon,
+      radius_km: searchRadiusKm,
+      ...score,
+    };
   }
 
   // =========================================================================
