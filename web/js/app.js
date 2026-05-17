@@ -661,6 +661,7 @@ Alpine.store('atlas', {
   city: null,
   _lastKey: '',
   _fetchDebounced: null,
+  _autoLocateAttempted: false,
   title() {
     return this.city?.name ? `${this.city.name} map` : 'Map';
   },
@@ -686,7 +687,26 @@ Alpine.store('atlas', {
     this.map.addLayer(this.cluster);
     this._fetchDebounced = debounce(() => this.fetchMapPlaces(), 350);
     this.map.on('moveend zoomend', () => this._fetchDebounced());
-    this.seedFromDiscovery();
+    this.openAtUserLocation();
+  },
+  openAtUserLocation() {
+    if (this._autoLocateAttempted) {
+      this.seedFromDiscovery();
+      return;
+    }
+    this._autoLocateAttempted = true;
+    if (!navigator.geolocation) {
+      this.seedFromDiscovery();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        this.city = null;
+        this.map?.flyTo([pos.coords.latitude, pos.coords.longitude], 14, { duration: 0.8 });
+      },
+      () => this.seedFromDiscovery(),
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 5 * 60 * 1000 }
+    );
   },
   seedFromDiscovery(layer = null) {
     const discovery = Alpine.store('discovery');
@@ -789,8 +809,9 @@ Alpine.store('atlas', {
   },
   locate() {
     navigator.geolocation?.getCurrentPosition(pos => {
+      this.city = null;
       this.map?.flyTo([pos.coords.latitude, pos.coords.longitude], 14);
-    });
+    }, () => {});
   },
 });
 

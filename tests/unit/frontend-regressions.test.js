@@ -34,6 +34,8 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /<div class="eyebrow">DISCOVER<\/div>/, 'Atlas should use the DISCOVER label');
     assert.doesNotMatch(indexHtml, /atlas-status-grid/, 'Atlas should not surface result and layer status chrome');
     assert.doesNotMatch(indexHtml, /\$store\.atlas\.resetView\(\)/, 'Atlas should not expose a reset control');
+    assert.match(appJs, /openAtUserLocation\(\)/, 'Atlas should open at the browser user location when available');
+    assert.match(appJs, /maximumAge: 5 \* 60 \* 1000/, 'Atlas user-location lookup should allow a recent cached position');
     assert.match(appJs, /activeFeedItems\(\)/, 'Discovery store should provide category-specific feed items');
     assert.match(appJs, /toggleFeed\(key\)/, 'Discovery store should support combined category toggles');
     assert.match(appJs, /defaultHomeFeedKeys\(\)[\s\S]*return \['dining'\]/, 'Homepage should default to Eat only for new visitors');
