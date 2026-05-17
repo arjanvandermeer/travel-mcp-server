@@ -1,13 +1,9 @@
 import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
 import { apiDelete, apiGet, apiPatch, apiPost } from './api.js';
+import { LAYERS } from './constants.js';
+import { createFormatStore } from './format-store.js';
+import { markerIcon } from './map-utils.js';
 
-const LAYERS = [
-  { key: 'accommodation', label: 'Stay', color: '#2563eb', types: ['hotel', 'guest_house', 'hostel', 'resort', 'motel', 'apartment', 'bed_and_breakfast'] },
-  { key: 'dining', label: 'Eat', color: '#dc2626', types: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
-  { key: 'attractions', label: 'See', color: '#15803d', types: ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'] },
-];
-
-const TYPE_COLORS = new Map(LAYERS.flatMap(layer => layer.types.map(type => [type, layer.color])));
 const DISCOVERY_MIN_POIS = 25;
 const LOCATION_SEARCH_RADII_KM = [50, 150, 500, 1000];
 const ENRICHMENT_POLL_INTERVAL_MS = 5000;
@@ -19,17 +15,6 @@ function debounce(fn, ms) {
     clearTimeout(timer);
     timer = setTimeout(() => fn(...args), ms);
   };
-}
-
-function markerIcon(poi, selected = false) {
-  const color = TYPE_COLORS.get(poi.poi_type) || '#334155';
-  const label = selected ? '●' : '';
-  return L.divIcon({
-    className: 'atlas-marker-wrap',
-    html: `<div class="atlas-marker ${selected ? 'selected' : ''}" style="--marker:${color}">${label}</div>`,
-    iconSize: [selected ? 26 : 18, selected ? 26 : 18],
-    iconAnchor: [selected ? 13 : 9, selected ? 13 : 9],
-  });
 }
 
 Alpine.store('auth', {
@@ -140,32 +125,7 @@ Alpine.store('ui', {
   },
 });
 
-Alpine.store('format', {
-  placeMeta(poi = {}) {
-    const bits = [];
-    if (poi.google_rating) bits.push(`${Number(poi.google_rating).toFixed(1)} rating`);
-    if (poi.google_review_count) bits.push(`${poi.google_review_count} reviews`);
-    if (poi.poi_type) bits.push(String(poi.poi_type).replaceAll('_', ' '));
-    if (poi.city) bits.push(poi.country_code ? `${poi.city}, ${poi.country_code}` : poi.city);
-    return bits.join(' · ') || 'Travel place';
-  },
-  distance(poi = {}) {
-    if (poi.distance_km == null) return this.placeMeta(poi);
-    return `${Number(poi.distance_km).toFixed(1)} km · ${this.placeMeta(poi)}`;
-  },
-  thumbStyle(poi = {}) {
-    const url = poi.photo_url || poi.primary_photo_url;
-    if (url) return `background-image:url("${url}")`;
-    const color = TYPE_COLORS.get(poi.poi_type) || '#475569';
-    return `background:linear-gradient(135deg, ${color}, #f59e0b)`;
-  },
-  heroStyle(poi = {}) {
-    const photos = poi.google_photos || poi.photos || [];
-    const url = poi.photo_url || poi.primary_photo_url || photos?.[0]?.url || photos?.[0]?.url_thumbnail;
-    if (url) return `background-image:linear-gradient(90deg, rgba(15,23,42,.82), rgba(15,23,42,.18)), url("${url}")`;
-    return 'background-image:linear-gradient(135deg, #0f172a, #14532d 54%, #f59e0b)';
-  },
-});
+Alpine.store('format', createFormatStore());
 
 Alpine.store('discovery', {
   loading: false,
@@ -701,13 +661,13 @@ Alpine.store('poi', {
     const name = this.current.name || this.current.osm_name || 'This place';
     const city = this.current.city ? ` in ${this.current.city}` : '';
     const rating = this.current.google_rating ? ` It carries a ${this.current.google_rating} Google rating.` : '';
-    return `${name}${city} is listed as ${String(this.current.poi_type || 'a point of interest').replaceAll('_', ' ')}.${rating}`;
+    const type = String(this.current.google_primary_type_display || this.current.poi_type || 'a point of interest').replaceAll('_', ' ');
+    const address = Alpine.store('format').bestAddress(this.current);
+    const location = address ? ` The listed address is ${address}.` : '';
+    return `${name}${city} is listed as ${type}.${rating}${location}`;
   },
   mapsUrl() {
-    const p = this.current || {};
-    const lat = p.osm_latitude || p.latitude;
-    const lng = p.osm_longitude || p.longitude;
-    return lat && lng ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}` : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name || p.osm_name || '')}`;
+    return Alpine.store('format').bestMapsUrl(this.current || {});
   },
 });
 

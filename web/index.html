@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Travel</title>
   <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/dossier.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css">
   <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css">
@@ -224,18 +225,36 @@
         <template x-if="!$store.poi.loading && $store.poi.current">
           <article class="dossier-shell">
             <div class="dossier-hero" :style="$store.format.heroStyle($store.poi.current)">
-              <div>
-                <div class="eyebrow" x-text="$store.poi.current.poi_type"></div>
+              <div class="dossier-hero-copy">
+                <div class="eyebrow" x-text="($store.poi.current.google_primary_type_display || $store.poi.current.poi_type || 'Property')"></div>
                 <h1 x-text="$store.poi.current.name || $store.poi.current.osm_name"></h1>
-                <p x-text="$store.format.placeMeta($store.poi.current)"></p>
+                <p x-text="$store.format.bestAddress($store.poi.current) || $store.format.placeMeta($store.poi.current)"></p>
+                <div class="hero-pills">
+                  <span x-show="$store.poi.current.google_rating"><strong x-text="Number($store.poi.current.google_rating).toFixed(1)"></strong> rating</span>
+                  <span x-show="$store.poi.current.google_review_count" x-text="$store.poi.current.google_review_count + ' reviews'"></span>
+                  <span x-show="$store.poi.current.osm_stars" x-text="$store.poi.current.osm_stars + ' stars'"></span>
+                  <span x-show="$store.format.priceLabel($store.poi.current)" x-text="$store.format.priceLabel($store.poi.current)"></span>
+                </div>
               </div>
-              <button class="primary-button compact" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
+              <div class="hero-actions">
+                <button class="primary-button compact" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
+                <a class="secondary-button compact" :href="$store.poi.mapsUrl()" target="_blank">Maps</a>
+              </div>
+            </div>
+            <div class="photo-strip" x-show="$store.format.detailPhotos($store.poi.current).length">
+              <template x-for="photo in $store.format.detailPhotos($store.poi.current)" :key="photo">
+                <div class="photo-tile" :style="'background-image:url(&quot;' + photo + '&quot;)'"></div>
+              </template>
             </div>
             <div class="dossier-grid">
               <section class="dossier-main">
-                <div class="stat-row">
-                  <div><strong x-text="$store.poi.current.google_rating || 'OSM'"></strong><span>rating</span></div>
-                  <div><strong x-text="$store.poi.current.google_review_count || '—'"></strong><span>reviews</span></div>
+                <div class="property-facts">
+                  <template x-for="fact in $store.format.propertyFacts($store.poi.current)" :key="fact.label">
+                    <div>
+                      <span x-text="fact.label"></span>
+                      <strong x-text="fact.value"></strong>
+                    </div>
+                  </template>
                 </div>
                 <div class="tabs">
                   <button :class="{ active: $store.poi.tab === 'overview' }" @click="$store.poi.tab = 'overview'">Overview</button>
@@ -248,14 +267,28 @@
                     <span class="tiny-spinner" aria-hidden="true"></span>
                     <span>Refreshing place details</span>
                   </div>
+                  <div class="detail-list">
+                    <div>
+                      <span>Address</span>
+                      <strong x-text="$store.format.bestAddress($store.poi.current) || 'Not listed'"></strong>
+                    </div>
+                    <div>
+                      <span>Hours</span>
+                      <strong x-text="$store.format.openStatus($store.poi.current)"></strong>
+                    </div>
+                    <div>
+                      <span>Phone</span>
+                      <strong x-text="$store.format.bestPhone($store.poi.current) || 'Not listed'"></strong>
+                    </div>
+                  </div>
                   <div class="action-grid">
-                    <a :href="$store.poi.current.website" x-show="$store.poi.current.website" target="_blank">Website</a>
+                    <a :href="$store.format.bestWebsite($store.poi.current)" x-show="$store.format.bestWebsite($store.poi.current)" target="_blank">Website</a>
                     <a :href="$store.poi.mapsUrl()" target="_blank">Maps</a>
-                    <a :href="'tel:' + $store.poi.current.phone" x-show="$store.poi.current.phone">Call</a>
+                    <a :href="'tel:' + $store.format.bestPhone($store.poi.current)" x-show="$store.format.bestPhone($store.poi.current)">Call</a>
                     <button @click="$store.radar.fromPoi($store.poi.current); $store.route.goAtlas()">Near this</button>
                   </div>
                 </div>
-                <div x-show="$store.poi.tab === 'nearby'">
+                <div x-show="$store.poi.tab === 'nearby'" class="nearby-grid">
                   <template x-for="poi in $store.radar.results" :key="poi.osm_id">
                     <button class="nearby-row" @click="$store.poi.open(poi.osm_id)">
                       <span x-text="poi.name || poi.osm_name"></span>
@@ -266,9 +299,14 @@
                 <pre x-show="$store.poi.tab === 'data'" class="data-pane" x-text="JSON.stringify($store.poi.current, null, 2)"></pre>
               </section>
               <aside class="composer-panel">
+                <div class="panel-kicker">Planning</div>
                 <h2>Trip Composer</h2>
+                <p>Save private notes and keep this property ready for comparison.</p>
                 <textarea placeholder="Notes for this place" x-model="$store.poi.note" @change="$store.favorites.saveNote($store.poi.current, $store.poi.note)"></textarea>
-                <button class="secondary-button" @click="$store.compare.toggle($store.poi.current)">Toggle compare</button>
+                <div class="composer-actions">
+                  <button class="secondary-button" @click="$store.compare.toggle($store.poi.current)">Toggle compare</button>
+                  <button class="primary-button" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
+                </div>
               </aside>
             </div>
           </article>
