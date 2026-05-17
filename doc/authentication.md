@@ -233,6 +233,32 @@ Phase 2 implements OAuth 2.1 with PKCE using a Cloudflare Worker as the authoriz
 └─────────────────────┘                       │
 ```
 
+### Runtime State And Scaling Assumptions
+
+**Decision as of 2026-05-17:** the HTTP MCP server is designed and deployed as a single Node.js process. Do not run multiple active HTTP instances behind a load balancer unless sticky routing or an external session design is added first.
+
+The following auth/session state is intentionally process-local:
+
+| Store | File | Purpose | Failure behavior |
+|-------|------|---------|------------------|
+| `pendingAuth` | `src/api/auth.js` | Short-lived PKCE verifier/state for `/auth/login` -> `/auth/callback` web login | Restart or routing to another process invalidates the login state; the user must retry login |
+| `sessions` | `src/index-http.js` | Streamable HTTP MCP session ID -> transport/server/user reference | Restart or routing to another process drops the MCP session; the client must create or reinitialize a session |
+| `introspectionCache` | `src/index-http.js` | Token -> user cache for OAuth/database token validation | Cache miss is safe and revalidates against the database or OAuth introspection endpoint |
+
+Operational requirements:
+
+1. Run one HTTP MCP process per public `server_base_url`.
+2. If a reverse proxy is present, route all requests for a given deployment to that process.
+3. If multiple processes are introduced, use sticky sessions for `/mcp` keyed by `mcp-session-id`, and route `/auth/callback` to the same process that handled `/auth/login`.
+4. Treat the OAuth introspection cache as an optimization only; the database and OAuth worker remain the sources of truth.
+
+Before horizontal scaling, redesign these boundaries explicitly:
+
+1. Move PKCE pending auth state to a shared store with TTL and one-time consume semantics.
+2. Either keep MCP Streamable HTTP sessions sticky, or replace the in-process `sessions` map with a transport/session strategy that supports cross-process routing.
+3. Keep introspection caches per-process or move them to a shared cache only if revocation latency, TTL, and invalidation behavior are documented.
+4. Add integration coverage that exercises login callback routing, MCP session reuse, auth upgrade on an existing session, and token cache expiry across the chosen state boundary.
+
 ### Prerequisites
 
 1. **Cloudflare Account** with Workers enabled (free tier works)
