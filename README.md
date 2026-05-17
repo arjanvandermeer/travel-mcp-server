@@ -4,7 +4,7 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 
 **Live at**: https://travel.arjanvandermeer.com
 
-**All code is written by me (and Claude) in my own time and has no affiliation with my employer or colleagues.**
+**Built by Arjan van der Meer in his own time, with AI coding assistance from Claude and Codex. This project has no affiliation with his employer or colleagues.**
 
 ## Features
 
@@ -16,6 +16,16 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 - **Rich detail views** — structured JSON or rendered HTML pages via MCP resource templates
 - **Dual transport** — stdio (Claude Desktop) and HTTP/SSE (ChatGPT, web clients)
 - **[Local SLM agent](slm/README.md)** — offline travel assistant powered by Ollama (Qwen 3.5), with tool calling against the REST API or MCP — great for demos, model evaluation, and prompt tuning
+
+## Engineering Highlights
+
+This codebase is actively maintained as a practical AI-assisted engineering project. Recent work focused on:
+
+- **Reliable enrichment scheduling** — Google Places enrichment now uses a generic `next_enrichment_at` schedule for quota pauses, errors, not-found retries, and 90-day refreshes of active data.
+- **Search-triggered background enrichment** — displayed POIs can queue enrichment automatically, processed serially in oldest-due order to avoid quota spikes and duplicate work.
+- **Mobile-first web UI iteration** — the homepage has been reshaped around city discovery, combinable Stay/Eat/See filters, persisted feed preferences, and compact navigation.
+- **Operational guardrails** — CI-oriented checks, npm audit capture, Actions log monitoring, and a recurring code-audit workflow are documented and wired into the repository.
+- **Repository hygiene** — unused files, obsolete planning docs, naming inconsistencies, and code-sprawl risks are tracked through GitHub issues and cleanup commits.
 
 ## Quick Start
 
