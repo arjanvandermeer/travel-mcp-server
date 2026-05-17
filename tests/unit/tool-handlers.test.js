@@ -183,6 +183,19 @@ describe('executeToolHandler: search_hotels', () => {
     assert.strictEqual(capturedArgs.chain, 'Hilton');
   });
 
+  it('should pass hotel intent filters to hotel search', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_hotels', {
+      city_name: 'Bali',
+      country_code: 'ID',
+      intent: 'romantic',
+    }, db);
+    assert.strictEqual(capturedArgs.intent, 'romantic');
+  });
+
   it('should reject invalid accommodation types', async () => {
     const db = createMockDb();
     const result = await executeToolHandler('search_hotels', {
@@ -238,6 +251,21 @@ describe('executeToolHandler: search_hotels', () => {
       const tool = tools.find(t => t.name === toolName);
       assert.strictEqual(tool.inputSchema.properties.brand.type, 'string');
       assert.strictEqual(tool.inputSchema.properties.chain.type, 'string');
+    }
+  });
+
+  it('should expose intent schema on hotel tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_hotels', 'search_hotels_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      const schema = tool.inputSchema.properties.intent;
+      assert.strictEqual(schema.type, 'string');
+      assert.ok(schema.enum.includes('remote_work'));
+      assert.ok(schema.enum.includes('family'));
+      assert.ok(schema.enum.includes('romantic'));
+      assert.ok(schema.enum.includes('budget'));
+      assert.ok(schema.enum.includes('accessible'));
+      assert.ok(schema.enum.includes('pet_friendly'));
     }
   });
 });

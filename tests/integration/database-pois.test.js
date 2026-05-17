@@ -220,6 +220,24 @@ describe('TravelDatabase POI Search Functions', () => {
         assert.ok(searchCall.sql.includes("p.tags->>'operator'"), 'Should match OSM operator tags');
         assert.ok(searchCall.sql.includes("p.tags->>'brand:wikidata'"), 'Should match OSM brand Wikidata tags');
       });
+
+      it('should add explainable hotel intent filters to name searches', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        const results = await db.searchPOIs({
+          name: 'Grand Hotel',
+          poiTypes: ['hotel'],
+          intent: 'romantic',
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes('p.stars >= 4'));
+        assert.ok(searchCall, 'Should include romantic hotel intent clauses');
+        assert.ok(searchCall.sql.includes("p.tags ? 'spa'"), 'Should include explainable tag-based clauses');
+        assert.strictEqual(results[0].hotel_intent, 'romantic');
+        assert.match(results[0].hotel_intent_explanation, /spa, pool, garden, balcony/);
+      });
     });
 
     describe('Case 2: Location only search', () => {
@@ -510,6 +528,25 @@ describe('TravelDatabase POI Search Functions', () => {
       );
       assert.ok(searchCall, 'Should include chain filter in coordinate query');
       assert.ok(searchCall.params.includes('Hilton'), 'Should bind chain name');
+    });
+
+    it('should add hotel intent filters to coordinate searches', async () => {
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const results = await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, ['hotel'], 20, null, null, { intent: 'accessible' }
+      );
+
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('osm_pois') &&
+        c.sql.includes('ST_DWithin') &&
+        c.sql.includes("p.wheelchair IN ('yes', 'limited')")
+      );
+      assert.ok(searchCall, 'Should include accessible intent filter in coordinate query');
+      assert.strictEqual(results[0].hotel_intent, 'accessible');
+      assert.match(results[0].hotel_intent_explanation, /wheelchair accessibility/);
     });
 
     it('should post-filter coordinate searches by Google price level', async () => {

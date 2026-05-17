@@ -725,6 +725,50 @@ export class TravelDatabase {
     lactose_free: 'diet:lactose_free',
   };
 
+  static HOTEL_INTENT_MAP = {
+    remote_work: {
+      explanation: 'Prioritizes hotels with WiFi or internet access tags.',
+      clauses: ["(p.tags ? 'internet_access' AND p.tags->>'internet_access' != 'no')"],
+    },
+    family: {
+      explanation: 'Prioritizes hotels with family-friendly room, child, or play-area tags.',
+      clauses: [
+        "(p.tags ? 'family_rooms' AND p.tags->>'family_rooms' != 'no')",
+        "(p.tags ? 'kids_area' AND p.tags->>'kids_area' != 'no')",
+        "(p.tags ? 'playground' AND p.tags->>'playground' != 'no')",
+        "(p.tags ? 'baby_feeding' AND p.tags->>'baby_feeding' != 'no')",
+      ],
+    },
+    romantic: {
+      explanation: 'Prioritizes hotels with spa, pool, garden, balcony, or higher-star signals.',
+      clauses: [
+        "(p.tags ? 'spa' AND p.tags->>'spa' != 'no')",
+        "(p.tags ? 'swimming_pool' AND p.tags->>'swimming_pool' != 'no')",
+        "(p.tags ? 'garden' AND p.tags->>'garden' != 'no')",
+        "(p.tags ? 'balcony' AND p.tags->>'balcony' != 'no')",
+        'p.stars >= 4',
+      ],
+    },
+    budget: {
+      explanation: 'Prioritizes lower-cost accommodation types or hotels with lower star ratings.',
+      clauses: [
+        "p.poi_type = ANY(ARRAY['hostel','guest_house','motel','bed_and_breakfast','camp_site'])",
+        'p.stars <= 2',
+      ],
+    },
+    accessible: {
+      explanation: 'Prioritizes hotels with wheelchair accessibility tags.',
+      clauses: [
+        "p.wheelchair IN ('yes', 'limited')",
+        "(p.tags ? 'wheelchair' AND p.tags->>'wheelchair' IN ('yes', 'limited'))",
+      ],
+    },
+    pet_friendly: {
+      explanation: 'Prioritizes hotels with pet-friendly OSM tags.',
+      clauses: ["(p.tags ? 'pets' AND p.tags->>'pets' != 'no')"],
+    },
+  };
+
   static normalizeExtraFilterList(value) {
     if (!value) return [];
     const values = Array.isArray(value) ? value : [value];
@@ -804,6 +848,24 @@ export class TravelDatabase {
     return sql;
   }
 
+  static buildHotelIntentFilter(intent) {
+    if (!intent) return '';
+    const intentConfig = TravelDatabase.HOTEL_INTENT_MAP[intent];
+    if (!intentConfig) return '';
+    return ` AND (${intentConfig.clauses.join(' OR ')})`;
+  }
+
+  static annotateHotelIntent(pois, intent) {
+    const intentConfig = TravelDatabase.HOTEL_INTENT_MAP[intent];
+    if (!intentConfig) return pois;
+
+    return pois.map(poi => ({
+      ...poi,
+      hotel_intent: intent,
+      hotel_intent_explanation: intentConfig.explanation,
+    }));
+  }
+
   /**
    * Append cuisine, amenity, and dietary WHERE clauses to a query.
    * Mutates queryParams array. Returns SQL fragment string to append.
@@ -869,6 +931,7 @@ export class TravelDatabase {
    * @param {string[]|null} params.dietary - Dietary restriction filter (e.g., ["vegan", "halal"])
    * @param {string|null} params.brand - Hotel brand filter
    * @param {string|null} params.chain - Hotel chain filter including known sub-brands
+   * @param {string|null} params.intent - Hotel intent filter
    * @param {number|string|null} params.priceLevel - Google Places price level filter
    * @param {boolean} params.openNow - Filter to only currently open POIs
    * @param {Date|string|null} params.openAt - Filter to only POIs open at this time
@@ -892,6 +955,7 @@ export class TravelDatabase {
       dietary = null,     // Dietary restriction filter (e.g., ["vegan", "halal"])
       brand = null,       // Hotel brand filter
       chain = null,       // Hotel chain filter
+      intent = null,      // Hotel intent filter
       priceLevel = null,  // Google Places price level filter
       openNow = false,    // Filter to only currently open POIs
       openAt = null,      // Filter to POIs open at a specific time
@@ -913,6 +977,7 @@ export class TravelDatabase {
       dietaryList.length > 0 && `dietary=${dietaryList.join(',')}`,
       brand && `brand=${brand}`,
       chain && `chain=${chain}`,
+      intent && `intent=${intent}`,
       normalizedPriceLevel && `priceLevel=${normalizedPriceLevel}`,
       openNow && 'openNow',
       openAt && `openAt=${openAt}`,
@@ -975,6 +1040,7 @@ export class TravelDatabase {
       // Extra filters: cuisine, amenities, dietary
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
       query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
+      query += TravelDatabase.buildHotelIntentFilter(intent);
 
       query += ` ORDER BY name_similarity DESC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
@@ -1013,13 +1079,14 @@ export class TravelDatabase {
 
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
       query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
+      query += TravelDatabase.buildHotelIntentFilter(intent);
 
       query += ` ORDER BY p.name ASC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
     }
     // Case 2: Location only (city or coordinates)
     else if (!hasName && (hasCity || hasCoords)) {
-      const extraFilters = { cuisine, amenities, dietary, brand, chain, priceLevel: normalizedPriceLevel };
+      const extraFilters = { cuisine, amenities, dietary, brand, chain, intent, priceLevel: normalizedPriceLevel };
       if (hasCity) {
         const city = await this.getCityByName(cityName, countryCode, state);
         if (!city) {
@@ -1120,6 +1187,7 @@ export class TravelDatabase {
       // Extra filters: cuisine, amenities, dietary
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
       query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
+      query += TravelDatabase.buildHotelIntentFilter(intent);
 
       query += ` ORDER BY name_similarity DESC, distance_km ASC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
@@ -1150,6 +1218,7 @@ export class TravelDatabase {
       filtered = this.filterOpenAt(filtered, openAtDate || new Date());
     }
     filtered = filtered.slice(0, limit);
+    filtered = TravelDatabase.annotateHotelIntent(filtered, intent);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
@@ -1374,6 +1443,7 @@ export class TravelDatabase {
         extraFilters.cuisine, extraFilters.amenities, extraFilters.dietary, params
       );
       query += TravelDatabase.buildHotelBrandFilters(extraFilters.brand, extraFilters.chain, params);
+      query += TravelDatabase.buildHotelIntentFilter(extraFilters.intent);
     }
 
     const openAtDate = coerceOpenAt(openAt);
@@ -1397,6 +1467,7 @@ export class TravelDatabase {
       filtered = this.filterOpenAt(filtered, openAtDate || new Date());
     }
     filtered = filtered.slice(0, limit);
+    filtered = TravelDatabase.annotateHotelIntent(filtered, extraFilters?.intent);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);

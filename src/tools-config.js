@@ -15,6 +15,8 @@ export { getPromptMessages, promptsConfig } from './prompts-config.js';
 export { getResourcesConfig, handleReadResource } from './resources-config.js';
 export { accommodationTypes, attractionTypes, fetchNearbyForPOI, foodTypes, getNearbyTitle, getNearbyTypes, isOpenNow, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
 
+const hotelIntents = ['remote_work', 'family', 'romantic', 'budget', 'accessible', 'pet_friendly'];
+
 // Base tool definitions
 const baseToolsConfig = [
   {
@@ -104,6 +106,11 @@ const baseToolsConfig = [
           type: 'string',
           description: 'Filter by hotel chain and known sub-brands. Example: "Hilton" also matches Conrad, Waldorf Astoria, DoubleTree, and other Hilton brands.',
         },
+        intent: {
+          type: 'string',
+          enum: hotelIntents,
+          description: 'Intent-based hotel search. Maps to explainable OSM filters: remote_work, family, romantic, budget, accessible, pet_friendly.',
+        },
         accommodation_type: {
           oneOf: [
             { type: 'string', enum: accommodationTypes },
@@ -143,6 +150,7 @@ const baseToolsConfig = [
         amenities: { type: 'array', items: { type: 'string', enum: ['wifi', 'pool', 'parking', 'breakfast', 'air_conditioning', 'pet_friendly', 'restaurant', 'spa', 'gym', 'bar', 'elevator'] }, description: 'Amenity filter. AND logic.' },
         brand: { type: 'string', description: 'Hotel brand filter.' },
         chain: { type: 'string', description: 'Hotel chain filter including known sub-brands.' },
+        intent: { type: 'string', enum: hotelIntents, description: 'Intent-based hotel search: remote_work, family, romantic, budget, accessible, pet_friendly.' },
         accommodation_type: {
           oneOf: [
             { type: 'string', enum: accommodationTypes },
@@ -765,6 +773,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         amenities: args.amenities,
         brand: args.brand,
         chain: args.chain,
+        intent: args.intent,
         openNow: args.open_now || false,
         openAt: args.open_at,
         limit: validateLimit(args.limit, 50, 100),

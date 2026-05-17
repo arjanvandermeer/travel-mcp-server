@@ -555,6 +555,19 @@ WHERE LOWER(chain_name) = LOWER('Hilton')
 ORDER BY brand_name;
 ```
 
+### Hotel intents
+
+`search_hotels` and `search_hotels_ui` accept an `intent` value that expands into explainable OSM filters. Matching results include `hotel_intent` and `hotel_intent_explanation` so callers can show why the result set was shaped that way.
+
+| Intent | Filter signals |
+|--------|----------------|
+| `remote_work` | `internet_access` present and not `no` |
+| `family` | `family_rooms`, `kids_area`, `playground`, or `baby_feeding` present and not `no` |
+| `romantic` | `spa`, `swimming_pool`, `garden`, `balcony`, or 4+ OSM stars |
+| `budget` | Hostel, guest house, motel, bed and breakfast, camp site, or 2 or fewer OSM stars |
+| `accessible` | `wheelchair=yes`, `wheelchair=limited`, or matching wheelchair tag |
+| `pet_friendly` | `pets` present and not `no` |
+
 ### Restaurant price levels and dining budgets
 
 Restaurant price filters use Google Places `price_level` values after the initial indexed OSM search has been enriched:
