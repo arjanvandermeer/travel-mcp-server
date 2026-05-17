@@ -90,6 +90,9 @@ function withTimeout(promise, timeoutMs, message) {
   return Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
 }
 
+const PENDING_ENRICHMENT_STALE_MS = 5 * 60 * 1000;
+const PENDING_ENRICHMENT_RESTART_COOLDOWN_MS = 5 * 60 * 1000;
+
 export class TravelDatabase {
   // Config cache TTL in milliseconds (5 minutes)
   static CONFIG_CACHE_TTL = CONFIG_CACHE_TTL_MS;
@@ -113,6 +116,10 @@ export class TravelDatabase {
 
     // Enrichment dedup lock: Map<osmId, Promise> - prevents duplicate API calls for same POI
     this._enrichmentLock = new Map();
+
+    // Restart cooldown: Map<osmId, timestamp> - prevents polling from repeatedly
+    // re-triggering stale pending enrichments when a background attempt exits quickly.
+    this._enrichmentRestartedAt = new Map();
   }
 
   /**
@@ -1246,11 +1253,16 @@ export class TravelDatabase {
     // Check mapping status to determine if enrichment is needed
     if (poi.mapping_status === 'active' && poi.google_place_id) {
       // Already enriched - complete
+      this._enrichmentRestartedAt.delete(osmId);
       enrichment_status = 'complete';
     } else if (poi.mapping_status === 'pending') {
       const startedAt = poi.mapped_at ? new Date(poi.mapped_at) : new Date();
       const ageMs = Date.now() - startedAt.getTime();
-      const isStale = ageMs > 5 * 60 * 1000 && !this._enrichmentLock.has(osmId);
+      const lastRestartedAt = this._enrichmentRestartedAt.get(osmId) || 0;
+      const restartedRecently = Date.now() - lastRestartedAt < PENDING_ENRICHMENT_RESTART_COOLDOWN_MS;
+      const isStale = ageMs > PENDING_ENRICHMENT_STALE_MS &&
+        !this._enrichmentLock.has(osmId) &&
+        !restartedRecently;
       if (isStale) {
         // Server restart (or crash) left a stale pending row.
         // Reset mapped_at so it looks fresh, then re-trigger enrichment immediately.
@@ -1259,6 +1271,7 @@ export class TravelDatabase {
         ).catch(() => {});
 
         const newStartedAt = new Date();
+        this._enrichmentRestartedAt.set(osmId, newStartedAt.getTime());
         const checkBackAt  = new Date(newStartedAt.getTime() + 60000);
         enrichment_status  = 'pending';
         enrichment_message = `Enrichment restarted at ${newStartedAt.toISOString()}. Check back after ${checkBackAt.toISOString()}.`;
@@ -1280,10 +1293,12 @@ export class TravelDatabase {
         enrichment_message = `Google Places enrichment in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()}.`;
       }
     } else if (poi.mapping_status === 'not_found') {
+      this._enrichmentRestartedAt.delete(osmId);
       enrichment_status = 'failed';
       const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
       enrichment_message = `Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
     } else if (poi.mapping_status === 'error') {
+      this._enrichmentRestartedAt.delete(osmId);
       enrichment_status = 'failed';
       const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
       enrichment_message = `Google Places enrichment failed due to an error. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;

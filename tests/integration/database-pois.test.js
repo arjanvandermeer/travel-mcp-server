@@ -417,6 +417,29 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(result._enrichment.message?.includes('in progress'));
     });
 
+    it('should not repeatedly restart stale pending enrichment while polling', async () => {
+      const stalePendingPOI = {
+        ...samplePOIDetail,
+        google_place_id: null,
+        mapping_status: 'pending',
+        mapped_at: new Date(Date.now() - 10 * 60 * 1000),
+      };
+      mockPool.setResponse('enriched_pois', dbResult([stalePendingPOI]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      db.enrichOSMPOI = async () => {};
+
+      const first = await db.getPOIDetails(12345);
+      await new Promise(resolve => setImmediate(resolve));
+      const second = await db.getPOIDetails(12345);
+
+      assert.strictEqual(first._enrichment.status, 'pending');
+      assert.ok(first._enrichment.message?.includes('restarted'));
+      assert.strictEqual(second._enrichment.status, 'pending');
+      assert.ok(second._enrichment.message?.includes('in progress'));
+      assert.strictEqual(mockPool.callCount('UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP'), 1);
+    });
+
     it('should report failed enrichment for not_found status', async () => {
       const notFoundPOI = { ...samplePOIDetail, mapping_status: 'not_found', google_place_id: null };
       mockPool.setResponse('enriched_pois', dbResult([notFoundPOI]));
