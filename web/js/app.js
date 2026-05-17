@@ -156,7 +156,7 @@ Alpine.store('discovery', {
       this.locationState = 'blocked';
       this.locationError = 'Browser location requires a secure context. Use http://localhost:3001 instead of an IP address, or serve the app over HTTPS.';
       console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
-      await this.loadRandomCity({ historyMode: 'replace' });
+      await this.loadRandomCity({ historyMode: 'replace', force: true });
       return;
     }
 
@@ -164,7 +164,7 @@ Alpine.store('discovery', {
       this.locationState = 'unsupported';
       this.locationError = 'This browser does not expose the Geolocation API.';
       console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
-      await this.loadRandomCity({ historyMode: 'replace' });
+      await this.loadRandomCity({ historyMode: 'replace', force: true });
       return;
     }
 
@@ -184,7 +184,7 @@ Alpine.store('discovery', {
       this.locationState = 'unavailable';
       this.locationError = this.describeLocationError(err);
       console.warn('[City Pulse] Geolocation failed:', this.locationError, err);
-      await this.loadRandomCity({ historyMode: 'replace' });
+      await this.loadRandomCity({ historyMode: 'replace', force: true });
       return;
     }
     this.loading = false;
@@ -212,7 +212,7 @@ Alpine.store('discovery', {
 
     if (!nearest) {
       console.info('[City Pulse] No loaded city with enough POIs near coordinates; loading random city.');
-      await this.loadRandomCity({ historyMode: 'replace' });
+      await this.loadRandomCity({ historyMode: 'replace', force: true });
       return;
     }
 
@@ -253,9 +253,9 @@ Alpine.store('discovery', {
     }
     this.loading = false;
   },
-  async loadRandomCity({ historyMode = 'push' } = {}) {
+  async loadRandomCity({ historyMode = 'push', force = false } = {}) {
     const loadKey = 'random';
-    if (this.loading && this._loadKey === loadKey) return;
+    if (!force && this.loading && this._loadKey === loadKey) return;
     this._loadKey = loadKey;
     this.loading = true;
     this.error = '';
