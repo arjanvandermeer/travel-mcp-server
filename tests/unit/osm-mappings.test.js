@@ -32,6 +32,11 @@ describe('POI_MAPPINGS', () => {
     assert.strictEqual(POI_MAPPINGS['tourism=hostel'], 'hostel');
     assert.strictEqual(POI_MAPPINGS['tourism=guest_house'], 'guest_house');
     assert.strictEqual(POI_MAPPINGS['tourism=motel'], 'motel');
+    assert.strictEqual(POI_MAPPINGS['tourism=resort'], 'resort');
+    assert.strictEqual(POI_MAPPINGS['tourism=apartment'], 'apartment');
+    assert.strictEqual(POI_MAPPINGS['tourism=camp_site'], 'camp_site');
+    assert.strictEqual(POI_MAPPINGS['tourism=chalet'], 'chalet');
+    assert.strictEqual(POI_MAPPINGS['tourism=bed_and_breakfast'], 'bed_and_breakfast');
   });
 
   it('should have all expected food types', () => {

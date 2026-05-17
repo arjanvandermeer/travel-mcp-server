@@ -21,6 +21,11 @@ export const POI_MAPPINGS = {
   'tourism=hostel': 'hostel',
   'tourism=guest_house': 'guest_house',
   'tourism=motel': 'motel',
+  'tourism=resort': 'resort',
+  'tourism=apartment': 'apartment',
+  'tourism=camp_site': 'camp_site',
+  'tourism=chalet': 'chalet',
+  'tourism=bed_and_breakfast': 'bed_and_breakfast',
 
   // Tourism
   'tourism=attraction': 'attraction',

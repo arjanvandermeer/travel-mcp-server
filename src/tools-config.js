@@ -96,6 +96,13 @@ const baseToolsConfig = [
           items: { type: 'string', enum: ['wifi', 'pool', 'parking', 'breakfast', 'air_conditioning', 'pet_friendly', 'restaurant', 'spa', 'gym', 'bar', 'elevator'] },
           description: 'Filter by required amenities. Multiple values use AND logic (must have all). Based on OSM tags. Examples: ["wifi", "pool"], ["breakfast", "parking"].',
         },
+        accommodation_type: {
+          oneOf: [
+            { type: 'string', enum: accommodationTypes },
+            { type: 'array', items: { type: 'string', enum: accommodationTypes } },
+          ],
+          description: 'Filter by accommodation type(s). Examples: "guest_house", ["hostel", "bed_and_breakfast"].',
+        },
         open_now: {
           type: 'boolean',
           description: 'If true, only return hotels that are currently open/accepting guests (based on Google Places hours). POIs without hours data are excluded.',
@@ -122,6 +129,13 @@ const baseToolsConfig = [
         longitude: { type: 'number', description: 'Longitude coordinate (must be used WITH latitude)' },
         radius_km: { type: 'number', description: 'Search radius in km (default: 15, max: 50)', default: 15 },
         amenities: { type: 'array', items: { type: 'string', enum: ['wifi', 'pool', 'parking', 'breakfast', 'air_conditioning', 'pet_friendly', 'restaurant', 'spa', 'gym', 'bar', 'elevator'] }, description: 'Amenity filter. AND logic.' },
+        accommodation_type: {
+          oneOf: [
+            { type: 'string', enum: accommodationTypes },
+            { type: 'array', items: { type: 'string', enum: accommodationTypes } },
+          ],
+          description: 'Accommodation type filter. OR logic.',
+        },
         open_now: { type: 'boolean', description: 'Only return currently open hotels.' },
         limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
       },
@@ -593,6 +607,28 @@ function triggerBackgroundEnrichment(pois, db) {
   }
 }
 
+function normalizeStringList(value) {
+  if (!value) return [];
+  const values = Array.isArray(value) ? value : [value];
+  return values.map(v => String(v).trim()).filter(Boolean);
+}
+
+function resolveAccommodationTypes(value) {
+  const requested = normalizeStringList(value);
+  if (requested.length === 0) {
+    return { types: accommodationTypes };
+  }
+
+  const invalid = requested.filter(type => !accommodationTypes.includes(type));
+  if (invalid.length > 0) {
+    return {
+      error: `Invalid accommodation_type: ${invalid.join(', ')}. Valid values: ${accommodationTypes.join(', ')}`,
+    };
+  }
+
+  return { types: requested };
+}
+
 /**
  * Execute a tool handler
  * @param {string} name - Tool name
@@ -648,6 +684,13 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
     case 'search_hotels':
     case 'search_hotels_ui': {
+      const accommodationTypeFilter = resolveAccommodationTypes(args.accommodation_type);
+      if (accommodationTypeFilter.error) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: accommodationTypeFilter.error }, null, 2) }],
+        };
+      }
       if (args.latitude !== undefined && args.longitude !== undefined) {
         const coords = validateCoordinates(args.latitude, args.longitude);
         if (!coords.valid) {
@@ -664,7 +707,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         latitude: args.latitude,
         longitude: args.longitude,
         radius: args.radius_km,
-        poiTypes: accommodationTypes,
+        poiTypes: accommodationTypeFilter.types,
         amenities: args.amenities,
         openNow: args.open_now || false,
         limit: validateLimit(args.limit, 50, 100),

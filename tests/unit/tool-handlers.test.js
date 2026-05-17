@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
   executeToolHandler,
+  getToolsConfig,
   handleReadResource,
 } from '../../src/tools-config.js';
 import { render } from '../../src/templates/index.js';
@@ -111,6 +112,56 @@ describe('executeToolHandler: search_hotels', () => {
     });
     await executeToolHandler('search_hotels', { city_name: 'NYC', country_code: 'US', limit: 200 }, db);
     assert.strictEqual(capturedArgs.limit, 100);
+  });
+
+  it('should filter by a single accommodation type', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_hotels', {
+      city_name: 'Chiang Mai',
+      country_code: 'TH',
+      accommodation_type: 'guest_house',
+    }, db);
+    assert.deepStrictEqual(capturedArgs.poiTypes, ['guest_house']);
+  });
+
+  it('should filter by multiple accommodation types', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_hotels_ui', {
+      city_name: 'Chiang Mai',
+      country_code: 'TH',
+      accommodation_type: ['hostel', 'bed_and_breakfast'],
+    }, db);
+    assert.deepStrictEqual(capturedArgs.poiTypes, ['hostel', 'bed_and_breakfast']);
+  });
+
+  it('should reject invalid accommodation types', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('search_hotels', {
+      city_name: 'Chiang Mai',
+      country_code: 'TH',
+      accommodation_type: 'spaceship',
+    }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /Invalid accommodation_type/);
+  });
+
+  it('should expose accommodation_type schema on hotel tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_hotels', 'search_hotels_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      const schema = tool.inputSchema.properties.accommodation_type;
+      assert.ok(schema, `${toolName} should expose accommodation_type`);
+      const enumValues = schema.oneOf[1].items.enum;
+      assert.ok(enumValues.includes('guest_house'));
+      assert.ok(enumValues.includes('camp_site'));
+      assert.ok(enumValues.includes('chalet'));
+    }
   });
 });
 

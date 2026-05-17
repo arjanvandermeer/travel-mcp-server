@@ -1,5 +1,15 @@
 // Shared POI groups used by tools, web APIs, and template rendering.
-export const accommodationTypes = ['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'bed_and_breakfast'];
+export const accommodationTypes = [
+  'hotel',
+  'hostel',
+  'guest_house',
+  'motel',
+  'resort',
+  'apartment',
+  'camp_site',
+  'chalet',
+  'bed_and_breakfast',
+];
 export const foodTypes = ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'];
 export const attractionTypes = ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'];
 

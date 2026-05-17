@@ -9,6 +9,13 @@ export function isTypeCompatible(poiType, googleTypes) {
   const compatibilityRules = {
     hotel: ['lodging', 'hotel', 'guest_house', 'hostel'],
     hostel: ['lodging', 'hotel', 'guest_house', 'hostel'],
+    guest_house: ['lodging', 'hotel', 'guest_house', 'hostel'],
+    motel: ['lodging', 'motel', 'hotel'],
+    resort: ['lodging', 'resort', 'hotel'],
+    apartment: ['lodging', 'hotel'],
+    camp_site: ['campground', 'rv_park', 'lodging'],
+    chalet: ['lodging'],
+    bed_and_breakfast: ['bed_and_breakfast', 'lodging'],
     restaurant: ['restaurant', 'food', 'meal_delivery', 'meal_takeaway'],
   };
 
