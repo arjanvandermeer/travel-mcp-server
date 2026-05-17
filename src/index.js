@@ -163,6 +163,14 @@ async function main() {
     process.exit(1);
   }
 
+  log('INFO', 'Initializing Google Places client...');
+  try {
+    await db.initializeGooglePlaces();
+    log('INFO', 'Google Places client initialized');
+  } catch (err) {
+    log('WARN', 'Failed to initialize Google Places client', err.message);
+  }
+
   // Initialize telemetry (after database is ready to load config)
   log('INFO', 'Initializing telemetry...');
   try {

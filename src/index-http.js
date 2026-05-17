@@ -350,6 +350,14 @@ async function main() {
     process.exit(1);
   }
 
+  // Initialize Google Places explicitly after the database connection is known-good.
+  try {
+    await db.initializeGooglePlaces();
+    console.error('Google Places client initialized');
+  } catch (err) {
+    console.warn('Failed to initialize Google Places client:', err.message);
+  }
+
   // Initialize telemetry
   try {
     const telemetryConfig = await db.getTelemetryConfig();

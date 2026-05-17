@@ -196,8 +196,8 @@ export class TravelDatabase {
       connectionString: CONNECTION_STRING,
       statement_timeout: DB_STATEMENT_TIMEOUT_MS, // Kill queries before Cloudflare's 60s timeout
     });
-    this.googlePlaces = null; // Initialize later with config
-    this.googlePlacesReady = this.initGooglePlaces(); // Store promise
+    this.googlePlaces = null; // Initialized explicitly during startup/bootstrap.
+    this.googlePlacesReady = null;
 
     // Config cache: Map<key, { value, expiresAt }>
     this._configCache = new Map();
@@ -273,9 +273,11 @@ export class TravelDatabase {
   }
 
   async ensureGooglePlacesReady() {
-    if (!this.googlePlaces) {
-      await this.googlePlacesReady;
+    if (!this.googlePlacesReady || !this.googlePlaces) {
+      await this.initializeGooglePlaces();
+      return;
     }
+    await this.googlePlacesReady;
   }
 
   async markGoogleQuotaExceeded(osmId, quota, detail = null) {
@@ -428,6 +430,21 @@ export class TravelDatabase {
     }
 
     return config;
+  }
+
+  async initializeGooglePlaces({ force = false } = {}) {
+    if (this.googlePlacesReady && !force) {
+      await this.googlePlacesReady;
+      return this.googlePlaces;
+    }
+
+    if (this.googlePlaces && !force) {
+      return this.googlePlaces;
+    }
+
+    this.googlePlacesReady = this.initGooglePlaces();
+    await this.googlePlacesReady;
+    return this.googlePlaces;
   }
 
   async initGooglePlaces() {

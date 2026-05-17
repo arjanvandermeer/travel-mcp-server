@@ -29,12 +29,48 @@ describe('TravelDatabase with Mock Pool', () => {
       assert.ok(db.pool === mockPool);
     });
 
+    it('should not initialize Google Places during construction', () => {
+      db = new TravelDatabase({ pool: mockPool });
+
+      assert.strictEqual(db.googlePlaces, null);
+      assert.strictEqual(db.googlePlacesReady, null);
+      assert.strictEqual(mockPool.getCalls().length, 0);
+    });
+
     it('should create default pool if none provided', () => {
       // This will try to create a real pool, which is fine for this test
       db = new TravelDatabase();
       assert.ok(db.pool !== undefined);
       // Clean up
       db.close().catch(() => {});
+    });
+  });
+
+  describe('initializeGooglePlaces', () => {
+    it('should initialize Google Places explicitly', async () => {
+      db = new TravelDatabase({ pool: mockPool });
+
+      const client = await db.initializeGooglePlaces();
+
+      assert.ok(client);
+      assert.strictEqual(db.googlePlaces, client);
+      const configKeys = mockPool.getCalls().map(call => call.params?.[0]);
+      assert.ok(configKeys.includes('google_places_api_key'));
+      assert.ok(configKeys.includes('google_places_enabled'));
+    });
+
+    it('should reuse an in-flight initialization promise', async () => {
+      db = new TravelDatabase({ pool: mockPool });
+
+      const [first, second] = await Promise.all([
+        db.initializeGooglePlaces(),
+        db.initializeGooglePlaces(),
+      ]);
+
+      assert.strictEqual(first, second);
+      const configKeys = mockPool.getCalls().map(call => call.params?.[0]);
+      assert.strictEqual(configKeys.filter(key => key === 'google_places_api_key').length, 1);
+      assert.strictEqual(configKeys.filter(key => key === 'google_places_enabled').length, 1);
     });
   });
 
