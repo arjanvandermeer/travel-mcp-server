@@ -707,6 +707,60 @@ export class TravelDatabase {
       .filter(Boolean);
   }
 
+  static buildHotelChainMatchSql(inputParam, mode) {
+    const hotelChainMatch = `
+      EXISTS (
+        SELECT 1
+        FROM hotel_chains hc
+        WHERE (
+          ${mode === 'chain'
+    ? `(LOWER(hc.chain_name) = LOWER(${inputParam}) OR LOWER(hc.parent_chain) = LOWER(${inputParam}) OR LOWER(hc.brand_name) = LOWER(${inputParam}))`
+    : `(LOWER(hc.brand_name) = LOWER(${inputParam}) OR hc.wikidata_id = ${inputParam} OR EXISTS (
+              SELECT 1 FROM unnest(hc.aliases) alias WHERE LOWER(alias) = LOWER(${inputParam})
+            ))`}
+        )
+        AND (
+          LOWER(p.tags->>'brand') = LOWER(hc.brand_name)
+          OR LOWER(p.tags->>'operator') = LOWER(hc.brand_name)
+          OR (hc.wikidata_id IS NOT NULL AND p.tags->>'brand:wikidata' = hc.wikidata_id)
+          OR EXISTS (
+            SELECT 1
+            FROM unnest(hc.aliases) alias
+            WHERE LOWER(p.tags->>'brand') = LOWER(alias)
+              OR LOWER(p.tags->>'operator') = LOWER(alias)
+          )
+        )
+      )
+    `;
+
+    return `
+      (
+        p.tags->>'brand:wikidata' = ${inputParam}
+        OR LOWER(p.tags->>'brand') = LOWER(${inputParam})
+        OR LOWER(p.tags->>'operator') = LOWER(${inputParam})
+        OR ${hotelChainMatch}
+      )
+    `;
+  }
+
+  static buildHotelBrandFilters(brand, chain, queryParams) {
+    let sql = '';
+    const brandValue = typeof brand === 'string' ? brand.trim() : '';
+    const chainValue = typeof chain === 'string' ? chain.trim() : '';
+
+    if (brandValue) {
+      queryParams.push(brandValue);
+      sql += ` AND ${TravelDatabase.buildHotelChainMatchSql(`$${queryParams.length}`, 'brand')}`;
+    }
+
+    if (chainValue) {
+      queryParams.push(chainValue);
+      sql += ` AND ${TravelDatabase.buildHotelChainMatchSql(`$${queryParams.length}`, 'chain')}`;
+    }
+
+    return sql;
+  }
+
   /**
    * Append cuisine, amenity, and dietary WHERE clauses to a query.
    * Mutates queryParams array. Returns SQL fragment string to append.
@@ -770,6 +824,8 @@ export class TravelDatabase {
    * @param {string[]|null} params.cuisine - Cuisine filter (e.g., ["thai", "japanese"])
    * @param {string[]|null} params.amenities - Amenity filter (e.g., ["wifi", "pool"])
    * @param {string[]|null} params.dietary - Dietary restriction filter (e.g., ["vegan", "halal"])
+   * @param {string|null} params.brand - Hotel brand filter
+   * @param {string|null} params.chain - Hotel chain filter including known sub-brands
    * @param {boolean} params.openNow - Filter to only currently open POIs
    * @param {Date|string|null} params.openAt - Filter to only POIs open at this time
    * @param {number} params.limit - Max results (default SEARCH_LIMIT_DEFAULT, capped at SEARCH_LIMIT_MAX)
@@ -790,6 +846,8 @@ export class TravelDatabase {
       cuisine = null,     // Cuisine filter (e.g., ["thai", "japanese"])
       amenities = null,   // Amenity filter (e.g., ["wifi", "pool"])
       dietary = null,     // Dietary restriction filter (e.g., ["vegan", "halal"])
+      brand = null,       // Hotel brand filter
+      chain = null,       // Hotel chain filter
       openNow = false,    // Filter to only currently open POIs
       openAt = null,      // Filter to POIs open at a specific time
       limit: rawLimit = SEARCH_LIMIT_DEFAULT,
@@ -807,6 +865,8 @@ export class TravelDatabase {
       cuisineList.length > 0 && `cuisine=${cuisineList.join(',')}`,
       amenityList.length > 0 && `amenities=${amenityList.join(',')}`,
       dietaryList.length > 0 && `dietary=${dietaryList.join(',')}`,
+      brand && `brand=${brand}`,
+      chain && `chain=${chain}`,
       openNow && 'openNow',
       openAt && `openAt=${openAt}`,
     ].filter(Boolean).join(', ');
@@ -821,6 +881,7 @@ export class TravelDatabase {
     // Determine search strategy based on provided parameters
     const hasName = !!name;
     const hasCity = !!cityName;
+    const hasBrandSearch = !!brand || !!chain;
     const hasCoords = latitude !== null && latitude !== undefined &&
       longitude !== null && longitude !== undefined;
 
@@ -866,13 +927,52 @@ export class TravelDatabase {
 
       // Extra filters: cuisine, amenities, dietary
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
+      query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
 
       query += ` ORDER BY name_similarity DESC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
     }
+    // Case 1b: Brand/chain search without city or coordinates.
+    else if (!hasName && !hasCity && !hasCoords && hasBrandSearch) {
+      query = `
+        SELECT
+          p.osm_id,
+          p.poi_type,
+          p.name,
+          p.latitude,
+          p.longitude,
+          c.name as city,
+          c.country_code,
+          p.stars as osm_stars,
+          p.cuisine as osm_cuisine,
+          p.opening_hours as osm_opening_hours,
+          p.tags->>'brand' as osm_brand,
+          p.tags->>'operator' as osm_operator
+        FROM osm_pois p
+        LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+        WHERE p.name IS NOT NULL
+      `;
+      queryParams = [];
+
+      if (countryCode) {
+        query += ` AND c.country_code = $${queryParams.length + 1}`;
+        queryParams.push(countryCode.toUpperCase());
+      }
+
+      if (typeFilter) {
+        query += ` AND p.poi_type = ANY($${queryParams.length + 1})`;
+        queryParams.push(typeFilter);
+      }
+
+      query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
+      query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
+
+      query += ` ORDER BY p.name ASC LIMIT $${queryParams.length + 1}`;
+      queryParams.push(limit);
+    }
     // Case 2: Location only (city or coordinates)
     else if (!hasName && (hasCity || hasCoords)) {
-      const extraFilters = { cuisine, amenities, dietary };
+      const extraFilters = { cuisine, amenities, dietary, brand, chain };
       if (hasCity) {
         const city = await this.getCityByName(cityName, countryCode, state);
         if (!city) {
@@ -972,6 +1072,7 @@ export class TravelDatabase {
 
       // Extra filters: cuisine, amenities, dietary
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
+      query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
 
       query += ` ORDER BY name_similarity DESC, distance_km ASC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
@@ -1123,6 +1224,7 @@ export class TravelDatabase {
       query += TravelDatabase.buildExtraFilters(
         extraFilters.cuisine, extraFilters.amenities, extraFilters.dietary, params
       );
+      query += TravelDatabase.buildHotelBrandFilters(extraFilters.brand, extraFilters.chain, params);
     }
 
     const openAtDate = coerceOpenAt(openAt);

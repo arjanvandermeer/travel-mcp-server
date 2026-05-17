@@ -168,6 +168,20 @@ describe('executeToolHandler: search_hotels', () => {
     assert.strictEqual(capturedArgs.openAt, '2026-05-18T20:00:00Z');
   });
 
+  it('should pass hotel brand and chain filters to hotel search', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_hotels', {
+      country_code: 'TH',
+      brand: 'DoubleTree',
+      chain: 'Hilton',
+    }, db);
+    assert.strictEqual(capturedArgs.brand, 'DoubleTree');
+    assert.strictEqual(capturedArgs.chain, 'Hilton');
+  });
+
   it('should reject invalid accommodation types', async () => {
     const db = createMockDb();
     const result = await executeToolHandler('search_hotels', {
@@ -214,6 +228,15 @@ describe('executeToolHandler: search_hotels', () => {
       const schema = tool.inputSchema.properties.open_at;
       assert.ok(schema, `${toolName} should expose open_at`);
       assert.strictEqual(schema.type, 'string');
+    }
+  });
+
+  it('should expose brand and chain schema on hotel tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_hotels', 'search_hotels_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      assert.strictEqual(tool.inputSchema.properties.brand.type, 'string');
+      assert.strictEqual(tool.inputSchema.properties.chain.type, 'string');
     }
   });
 });

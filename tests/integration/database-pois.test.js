@@ -182,6 +182,44 @@ describe('TravelDatabase POI Search Functions', () => {
         assert.ok(searchCall.params.includes('parking'), 'Should bind parking tag key');
         assert.ok(!searchCall.sql.includes('internet_access'), 'Tag keys should not be interpolated into SQL');
       });
+
+      it('should search hotel chains without requiring a city or coordinates', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        await db.searchPOIs({
+          countryCode: 'TH',
+          poiTypes: ['hotel'],
+          chain: 'Hilton',
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('hotel_chains') && c.sql.includes('c.country_code'));
+        assert.ok(searchCall, 'Should query with hotel chain reference data');
+        assert.ok(searchCall.sql.includes('LOWER(hc.chain_name)'), 'Should match chain names');
+        assert.ok(searchCall.sql.includes('unnest(hc.aliases)'), 'Should match sub-brand aliases');
+        assert.ok(searchCall.params.includes('TH'), 'Should bind country code');
+        assert.ok(searchCall.params.includes('Hilton'), 'Should bind chain name');
+        assert.ok(searchCall.params.some(p => Array.isArray(p) && p.includes('hotel')), 'Should bind hotel POI types');
+      });
+
+      it('should add hotel brand filters to name searches', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        await db.searchPOIs({
+          name: 'Bangkok',
+          poiTypes: ['hotel'],
+          brand: 'DoubleTree',
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('hotel_chains') && c.params.includes('DoubleTree'));
+        assert.ok(searchCall, 'Should include hotel chain reference filter');
+        assert.ok(searchCall.sql.includes("p.tags->>'brand'"), 'Should match OSM brand tags');
+        assert.ok(searchCall.sql.includes("p.tags->>'operator'"), 'Should match OSM operator tags');
+        assert.ok(searchCall.sql.includes("p.tags->>'brand:wikidata'"), 'Should match OSM brand Wikidata tags');
+      });
     });
 
     describe('Case 2: Location only search', () => {
@@ -454,6 +492,24 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(searchCall, 'Should include dietary filter in coordinate query');
       assert.ok(searchCall.params.includes('diet:vegan'), 'Should bind vegan tag key');
       assert.ok(searchCall.params.includes('diet:kosher'), 'Should bind kosher tag key');
+    });
+
+    it('should add hotel chain filters to coordinate searches', async () => {
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[0]]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, ['hotel'], 20, null, null, { chain: 'Hilton' }
+      );
+
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('osm_pois') &&
+        c.sql.includes('ST_DWithin') &&
+        c.sql.includes('hotel_chains')
+      );
+      assert.ok(searchCall, 'Should include chain filter in coordinate query');
+      assert.ok(searchCall.params.includes('Hilton'), 'Should bind chain name');
     });
 
     it('should over-fetch coordinate searches when filtering by open_at', async () => {

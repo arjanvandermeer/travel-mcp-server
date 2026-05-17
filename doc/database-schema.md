@@ -540,6 +540,21 @@ WHERE poi_type = 'hotel'
   AND tags->>'parking' IS NOT NULL;
 ```
 
+### Hotel chains and brands
+
+The `hotel_chains` reference table stores chain names, sub-brands, optional Wikidata IDs, and aliases used by `search_hotels` / `search_hotels_ui`.
+
+`brand` filters match OSM `brand`, `operator`, and `brand:wikidata` tags directly, plus known aliases in `hotel_chains`.
+
+`chain` filters expand to known sub-brands. For example, `chain="Hilton"` can match Hilton, Conrad, Waldorf Astoria, DoubleTree, Hampton by Hilton, Hilton Garden Inn, Embassy Suites, and Homewood Suites where those names appear in OSM brand/operator tags.
+
+```sql
+SELECT chain_name, brand_name, aliases
+FROM hotel_chains
+WHERE LOWER(chain_name) = LOWER('Hilton')
+ORDER BY brand_name;
+```
+
 ## PostGIS Reference
 
 All coordinates use **WGS84 (SRID 4326)**.

@@ -96,6 +96,14 @@ const baseToolsConfig = [
           items: { type: 'string', enum: ['wifi', 'pool', 'parking', 'breakfast', 'air_conditioning', 'pet_friendly', 'restaurant', 'spa', 'gym', 'bar', 'elevator'] },
           description: 'Filter by required amenities. Multiple values use AND logic (must have all). Based on OSM tags. Examples: ["wifi", "pool"], ["breakfast", "parking"].',
         },
+        brand: {
+          type: 'string',
+          description: 'Filter by hotel brand, matched against OSM brand/operator tags and known aliases. Example: "DoubleTree".',
+        },
+        chain: {
+          type: 'string',
+          description: 'Filter by hotel chain and known sub-brands. Example: "Hilton" also matches Conrad, Waldorf Astoria, DoubleTree, and other Hilton brands.',
+        },
         accommodation_type: {
           oneOf: [
             { type: 'string', enum: accommodationTypes },
@@ -133,6 +141,8 @@ const baseToolsConfig = [
         longitude: { type: 'number', description: 'Longitude coordinate (must be used WITH latitude)' },
         radius_km: { type: 'number', description: 'Search radius in km (default: 15, max: 50)', default: 15 },
         amenities: { type: 'array', items: { type: 'string', enum: ['wifi', 'pool', 'parking', 'breakfast', 'air_conditioning', 'pet_friendly', 'restaurant', 'spa', 'gym', 'bar', 'elevator'] }, description: 'Amenity filter. AND logic.' },
+        brand: { type: 'string', description: 'Hotel brand filter.' },
+        chain: { type: 'string', description: 'Hotel chain filter including known sub-brands.' },
         accommodation_type: {
           oneOf: [
             { type: 'string', enum: accommodationTypes },
@@ -719,6 +729,8 @@ export async function executeToolHandler(name, args, db, options = {}) {
         radius: args.radius_km,
         poiTypes: accommodationTypeFilter.types,
         amenities: args.amenities,
+        brand: args.brand,
+        chain: args.chain,
         openNow: args.open_now || false,
         openAt: args.open_at,
         limit: validateLimit(args.limit, 50, 100),

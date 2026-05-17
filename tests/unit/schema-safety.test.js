@@ -24,4 +24,11 @@ describe('schema safety', () => {
     assert.strictEqual(packageJson.scripts['db:init'], 'node scripts/db-init.js');
     assert.strictEqual(packageJson.scripts['db:reset'], 'node scripts/db-init.js --reset');
   });
+
+  it('defines hotel chain reference data idempotently', () => {
+    assert.match(schemaSql, /CREATE\s+TABLE\s+IF\s+NOT\s+EXISTS\s+hotel_chains/i);
+    assert.match(schemaSql, /ON\s+CONFLICT\s+\(chain_name,\s*brand_name\)\s+DO\s+UPDATE/i);
+    assert.match(schemaSql, /'Hilton',\s*'Conrad'/i);
+    assert.match(schemaSql, /'Hilton',\s*'DoubleTree'/i);
+  });
 });
