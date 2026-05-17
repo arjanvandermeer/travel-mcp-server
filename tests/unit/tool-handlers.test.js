@@ -136,6 +136,32 @@ describe('executeToolHandler: search_restaurants', () => {
     assert.deepStrictEqual(capturedArgs.poiTypes, ['cafe']);
   });
 
+  it('should pass cuisine filters for restaurants', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_restaurants', {
+      city_name: 'Bangkok',
+      country_code: 'TH',
+      cuisine: ['sushi', 'japanese'],
+    }, db);
+    assert.deepStrictEqual(capturedArgs.cuisine, ['sushi', 'japanese']);
+  });
+
+  it('should accept a single cuisine string for restaurants', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_restaurants', {
+      city_name: 'Bangkok',
+      country_code: 'TH',
+      cuisine: 'thai',
+    }, db);
+    assert.strictEqual(capturedArgs.cuisine, 'thai');
+  });
+
   it('search_restaurants_ui should return structuredContent', async () => {
     const pois = [{ osm_id: 2 }];
     const db = createMockDb({ searchPOIs: async () => pois });

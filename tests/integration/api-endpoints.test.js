@@ -199,6 +199,25 @@ describe('GET /api/v1/search/pois', () => {
     assert.strictEqual(data.results.length, 1);
   });
 
+  it('should pass cuisine filters to POI search', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedParams;
+    const db = createApiMockDb({
+      searchPOIs: async (params) => {
+        capturedParams = params;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/pois?city_name=Bangkok&country_code=TH&cuisine=sushi,japanese');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(capturedParams.cuisine, ['sushi', 'japanese']);
+  });
+
   it('should return 400 without search criteria', async () => {
     const router = new ApiRouter();
     registerSearchRoutes(router);

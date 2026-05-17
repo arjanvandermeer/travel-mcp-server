@@ -698,6 +698,14 @@ export class TravelDatabase {
     lactose_free: 'diet:lactose_free',
   };
 
+  static normalizeExtraFilterList(value) {
+    if (!value) return [];
+    const values = Array.isArray(value) ? value : [value];
+    return values
+      .map(v => String(v).trim())
+      .filter(Boolean);
+  }
+
   /**
    * Append cuisine, amenity, and dietary WHERE clauses to a query.
    * Mutates queryParams array. Returns SQL fragment string to append.
@@ -709,10 +717,13 @@ export class TravelDatabase {
    */
   static buildExtraFilters(cuisine, amenities, dietary, queryParams) {
     let sql = '';
+    const cuisineList = TravelDatabase.normalizeExtraFilterList(cuisine);
+    const amenityList = TravelDatabase.normalizeExtraFilterList(amenities);
+    const dietaryList = TravelDatabase.normalizeExtraFilterList(dietary);
 
     // Cuisine filter: match any of the provided cuisines (OR)
-    if (cuisine && cuisine.length > 0) {
-      const cuisineClauses = cuisine.map(c => {
+    if (cuisineList.length > 0) {
+      const cuisineClauses = cuisineList.map(c => {
         const escaped = c.replace(/[%_\\]/g, '\\$&');
         queryParams.push(`%${escaped}%`);
         return `p.cuisine ILIKE $${queryParams.length}`;
@@ -721,8 +732,8 @@ export class TravelDatabase {
     }
 
     // Amenity filter: require all amenities (AND)
-    if (amenities && amenities.length > 0) {
-      for (const amenity of amenities) {
+    if (amenityList.length > 0) {
+      for (const amenity of amenityList) {
         const tagKey = TravelDatabase.AMENITY_TAG_MAP[amenity] || amenity;
         queryParams.push(tagKey);
         const idx = queryParams.length;
@@ -731,8 +742,8 @@ export class TravelDatabase {
     }
 
     // Dietary filter: require all dietary options (AND)
-    if (dietary && dietary.length > 0) {
-      for (const diet of dietary) {
+    if (dietaryList.length > 0) {
+      for (const diet of dietaryList) {
         const tagKey = TravelDatabase.DIETARY_TAG_MAP[diet] || diet;
         queryParams.push(tagKey);
         const idx = queryParams.length;
@@ -786,10 +797,13 @@ export class TravelDatabase {
 
     // Debug logging
     const typeDesc = poiTypes ? poiTypes.join(',') : poiType || 'all';
+    const cuisineList = TravelDatabase.normalizeExtraFilterList(cuisine);
+    const amenityList = TravelDatabase.normalizeExtraFilterList(amenities);
+    const dietaryList = TravelDatabase.normalizeExtraFilterList(dietary);
     const extraDesc = [
-      cuisine && `cuisine=${cuisine.join(',')}`,
-      amenities && `amenities=${amenities.join(',')}`,
-      dietary && `dietary=${dietary.join(',')}`,
+      cuisineList.length > 0 && `cuisine=${cuisineList.join(',')}`,
+      amenityList.length > 0 && `amenities=${amenityList.join(',')}`,
+      dietaryList.length > 0 && `dietary=${dietaryList.join(',')}`,
       openNow && 'openNow',
     ].filter(Boolean).join(', ');
     console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radius}km, types=${typeDesc}, limit=${limit}${extraDesc ? `, ${extraDesc}` : ''}`);

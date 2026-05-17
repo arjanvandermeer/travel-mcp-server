@@ -173,9 +173,11 @@ const baseToolsConfig = [
           enum: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'],
         },
         cuisine: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Filter by cuisine type(s). Examples: ["thai"], ["italian", "pizza"], ["sushi", "japanese"], ["indian"], ["mexican"]. Matches against OSM cuisine data. Multiple values use OR logic (matches any).',
+          oneOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+          description: 'Filter by cuisine type(s). Examples: "thai", ["italian", "pizza"], ["sushi", "japanese"]. Matches against OSM cuisine data. Multiple values use OR logic (matches any).',
         },
         dietary: {
           type: 'array',
@@ -208,7 +210,13 @@ const baseToolsConfig = [
         longitude: { type: 'number', description: 'Longitude coordinate (must be used WITH latitude)' },
         radius_km: { type: 'number', description: 'Search radius in km (default: 15, max: 50)', default: 15 },
         type: { type: 'string', description: 'Type filter', enum: ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'] },
-        cuisine: { type: 'array', items: { type: 'string' }, description: 'Cuisine filter (e.g., ["thai", "italian"]). OR logic.' },
+        cuisine: {
+          oneOf: [
+            { type: 'string' },
+            { type: 'array', items: { type: 'string' } },
+          ],
+          description: 'Cuisine filter (e.g., "thai" or ["thai", "italian"]). OR logic.',
+        },
         dietary: { type: 'array', items: { type: 'string', enum: ['vegetarian', 'vegan', 'gluten_free', 'halal', 'kosher', 'organic', 'lactose_free'] }, description: 'Dietary restriction filter. AND logic.' },
         open_now: { type: 'boolean', description: 'Only return currently open restaurants.' },
         limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },

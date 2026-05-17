@@ -105,6 +105,40 @@ describe('TravelDatabase POI Search Functions', () => {
 
         assert.ok(Array.isArray(results));
       });
+
+      it('should add cuisine filters to name searches', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        await db.searchPOIs({
+          name: 'Kitchen',
+          poiTypes: ['restaurant'],
+          cuisine: ['sushi', 'japanese'],
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes('p.cuisine ILIKE'));
+        assert.ok(searchCall, 'Should include cuisine ILIKE clauses');
+        assert.ok(searchCall.sql.includes(' OR '), 'Multiple cuisines should use OR logic');
+        assert.ok(searchCall.params.includes('%sushi%'), 'Should bind first cuisine');
+        assert.ok(searchCall.params.includes('%japanese%'), 'Should bind second cuisine');
+      });
+
+      it('should accept a single cuisine string', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        await db.searchPOIs({
+          name: 'Kitchen',
+          poiTypes: ['restaurant'],
+          cuisine: 'thai',
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes('p.cuisine ILIKE'));
+        assert.ok(searchCall, 'Should include cuisine ILIKE clause');
+        assert.ok(searchCall.params.includes('%thai%'), 'Should bind single cuisine string');
+      });
     });
 
     describe('Case 2: Location only search', () => {
@@ -339,6 +373,25 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.deepStrictEqual(searchCall.params[3], ['restaurant', 'cafe'], 'Fourth param should be type filter');
       assert.deepStrictEqual(searchCall.params[4], [12345], 'Fifth param should be excludeOsmIds');
       assert.strictEqual(searchCall.params[5], 5, 'Sixth param should be limit');
+    });
+
+    it('should add cuisine filters to coordinate searches', async () => {
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, ['restaurant'], 20, null, null, { cuisine: ['thai', 'japanese'] }
+      );
+
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('osm_pois') &&
+        c.sql.includes('ST_DWithin') &&
+        c.sql.includes('p.cuisine ILIKE')
+      );
+      assert.ok(searchCall, 'Should include cuisine filter in coordinate query');
+      assert.ok(searchCall.params.includes('%thai%'), 'Should bind thai cuisine');
+      assert.ok(searchCall.params.includes('%japanese%'), 'Should bind japanese cuisine');
     });
   });
 

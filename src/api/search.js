@@ -22,6 +22,13 @@ function hasAnyQueryCoordinate(query) {
   return query.latitude !== undefined || query.longitude !== undefined;
 }
 
+function parseListParam(value) {
+  if (!value) return null;
+  const values = Array.isArray(value) ? value : String(value).split(',');
+  const normalized = values.map(v => String(v).trim()).filter(Boolean);
+  return normalized.length > 0 ? normalized : null;
+}
+
 export function registerSearchRoutes(router) {
   router.get('/api/v1/search/cities/random', async (req, res, { db, query }) => {
     const minPoiCount = parsePositiveInt(query.min_pois, 25, 1000);
@@ -77,6 +84,7 @@ export function registerSearchRoutes(router) {
     const state = query.state || null;
     const poiType = query.poi_type || null;
     const poiTypes = query.poi_types ? query.poi_types.split(',').map(t => t.trim()).filter(Boolean) : null;
+    const cuisine = parseListParam(query.cuisine);
     const name = query.q || null;
     const limit = validateLimit(query.limit, 50, 100);
     const offset = Math.max(0, parseInt(query.offset ?? '0', 10) || 0);
@@ -105,6 +113,7 @@ export function registerSearchRoutes(router) {
       longitude,
       poiType,
       poiTypes,
+      cuisine,
       name,
       limit,
       offset,
