@@ -328,29 +328,86 @@ Alpine.store('discovery', {
     this.heroImageCredit = '';
     if (!this.city?.name) return;
 
-    const search = `${this.city.name} ${this.country?.name || this.city.country_code || ''}`.trim();
+    const titleCandidates = [...new Set([
+      this.city.name,
+      this.city.ascii_name,
+    ].filter(Boolean))];
+
+    for (const title of titleCandidates) {
+      const image = await this.fetchWikipediaHeroImage({ title });
+      if (image) {
+        this.heroImageUrl = image.url;
+        this.heroImageCredit = `Wikipedia: ${image.title}`;
+        return;
+      }
+    }
+
+    const country = this.country?.name || this.city.country_code || '';
+    const searchCandidates = [
+      `"${this.city.name}" ${country}`,
+      `${this.city.name} city ${country}`,
+      `${this.city.name} ${country}`,
+    ].map(candidate => candidate.trim()).filter(Boolean);
+
+    for (const search of searchCandidates) {
+      const image = await this.fetchWikipediaHeroImage({ search });
+      if (image) {
+        this.heroImageUrl = image.url;
+        this.heroImageCredit = `Wikipedia: ${image.title}`;
+        return;
+      }
+    }
+  },
+  async fetchWikipediaHeroImage({ title = '', search = '' } = {}) {
     const url = new URL('https://en.wikipedia.org/w/api.php');
     url.searchParams.set('action', 'query');
     url.searchParams.set('origin', '*');
     url.searchParams.set('format', 'json');
-    url.searchParams.set('generator', 'search');
-    url.searchParams.set('gsrnamespace', '0');
-    url.searchParams.set('gsrlimit', '1');
-    url.searchParams.set('gsrsearch', search);
     url.searchParams.set('prop', 'pageimages');
     url.searchParams.set('piprop', 'thumbnail|original|name');
     url.searchParams.set('pithumbsize', '1800');
+    if (title) {
+      url.searchParams.set('titles', title);
+    } else if (search) {
+      url.searchParams.set('generator', 'search');
+      url.searchParams.set('gsrnamespace', '0');
+      url.searchParams.set('gsrlimit', '3');
+      url.searchParams.set('gsrsearch', search);
+    } else {
+      return null;
+    }
 
     try {
       const response = await fetch(url);
-      if (!response.ok) return;
+      if (!response.ok) return null;
       const data = await response.json();
-      const page = Object.values(data.query?.pages || {})[0];
-      this.heroImageUrl = page?.original?.source || page?.thumbnail?.source || '';
-      this.heroImageCredit = page?.title ? `Wikipedia: ${page.title}` : '';
+      const pages = Object.values(data.query?.pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+      for (const page of pages) {
+        const image = this.wikipediaHeroImageFromPage(page);
+        if (image) return image;
+      }
     } catch {
-      this.heroImageUrl = '';
+      return null;
     }
+    return null;
+  },
+  wikipediaHeroImageFromPage(page) {
+    const source = page?.original?.source || page?.thumbnail?.source || '';
+    if (!source || !page?.title) return null;
+    if (this.isUnsuitableWikipediaHeroImage(page, source)) return null;
+    return { url: source, title: page.title };
+  },
+  isUnsuitableWikipediaHeroImage(page, source) {
+    const imageName = String(page?.pageimage || source).toLowerCase();
+    const title = String(page?.title || '').toLowerCase();
+    const countryName = String(this.country?.name || '').toLowerCase();
+    const countryCode = String(this.country?.code || this.city?.country_code || '').toLowerCase();
+    if (title && (title === countryName || title === countryCode)) return true;
+    return imageName.includes('flag_') ||
+      imageName.includes('flag-of') ||
+      imageName.includes('coat_of_arms') ||
+      imageName.includes('seal_of') ||
+      imageName.endsWith('.svg');
   },
   heroStyle() {
     if (!this.heroImageUrl) return '';
