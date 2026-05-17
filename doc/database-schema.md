@@ -580,10 +580,10 @@ npm run db:reset
 
 ```bash
 # Import GeoNames
-node src/import-geonames.js
+node scripts/import-geonames.js
 
 # Import OSM data
-node src/import-osm.js thailand-latest.osm.pbf
+node scripts/import-osm.js thailand-latest.osm.pbf
 ```
 
 ### Backup/Restore
