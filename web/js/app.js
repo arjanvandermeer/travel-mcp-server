@@ -6,6 +6,7 @@ import { markerIcon } from './map-utils.js';
 
 const DISCOVERY_MIN_POIS = 25;
 const LOCATION_SEARCH_RADII_KM = [50, 150, 500, 1000];
+const HOME_FEED_PAGE_SIZE = 12;
 const ENRICHMENT_POLL_INTERVAL_MS = 5000;
 const ENRICHMENT_POLL_MAX_MS = 5 * 60 * 1000;
 
@@ -137,6 +138,24 @@ Alpine.store('discovery', {
   city: null,
   hotels: [],
   overview: null,
+  feedCategories: LAYERS,
+  activeFeed: 'accommodation',
+  feedItems: {
+    accommodation: [],
+    dining: [],
+    attractions: [],
+  },
+  feedOffsets: {
+    accommodation: 0,
+    dining: 0,
+    attractions: 0,
+  },
+  feedHasMore: {
+    accommodation: true,
+    dining: true,
+    attractions: true,
+  },
+  feedLoading: false,
   heroImageUrl: '',
   heroImageCredit: '',
   locationError: '',
@@ -285,9 +304,27 @@ Alpine.store('discovery', {
     try {
       this.overview = await apiGet(`/api/v1/cities/${encodeURIComponent(countryCode)}/${encodeURIComponent(this.city.name)}/overview`);
       this.hotels = this.overview?.top?.stays || this.hotels || [];
+      this.resetFeedFromOverview();
     } catch {
       this.overview = null;
+      this.resetFeedFromOverview();
     }
+  },
+  resetFeedFromOverview() {
+    const top = this.overview?.top || {};
+    this.feedItems = {
+      accommodation: [...(top.stays || [])],
+      dining: [...(top.food || [])],
+      attractions: [...(top.attractions || [])],
+    };
+    this.feedOffsets = Object.fromEntries(this.feedCategories.map(category => [
+      category.key,
+      this.feedItems[category.key]?.length || 0,
+    ]));
+    this.feedHasMore = Object.fromEntries(this.feedCategories.map(category => [
+      category.key,
+      (this.feedItems[category.key]?.length || 0) >= 8,
+    ]));
   },
   async loadHeroImage() {
     this.heroImageUrl = '';
@@ -344,6 +381,16 @@ Alpine.store('discovery', {
   countryLabel() {
     return this.country?.name || 'Global';
   },
+  feedTitle() {
+    if (!this.city?.name) return 'Places near the city';
+    const category = this.feedCategories.find(item => item.key === this.activeFeed);
+    return `${category?.label || 'Places'} near ${this.city.name}`;
+  },
+  feedSubtitle() {
+    if (this.loading) return 'Loading the closest places from the travel database.';
+    if (!this.city?.name) return 'Pick a city to surface stay, eat, and see cards.';
+    return `Switch between Stay, Eat, and See. The list keeps loading more nearby cards as you scroll.`;
+  },
   statusItems() {
     const counts = this.overview?.counts || {};
     const placeCount = Number(counts.total_pois || counts.stays + counts.food + counts.attractions || 0);
@@ -367,6 +414,63 @@ Alpine.store('discovery', {
       ...(this.overview?.top?.food || []),
       ...(this.overview?.top?.attractions || []),
     ].slice(0, 6);
+  },
+  feedCount(key) {
+    const count = this.feedItems[key]?.length || 0;
+    return count ? `${count}` : '0';
+  },
+  activeFeedItems() {
+    return this.feedItems[this.activeFeed] || [];
+  },
+  selectFeed(key) {
+    this.activeFeed = key;
+    if (!this.activeFeedItems().length) this.loadMoreFeed();
+  },
+  canLoadMore() {
+    return Alpine.store('route').page === 'home'
+      && !!this.city?.name
+      && !this.loading
+      && !this.feedLoading
+      && this.feedHasMore[this.activeFeed] !== false;
+  },
+  async loadMoreFeed() {
+    if (!this.canLoadMore()) return;
+    const category = this.feedCategories.find(item => item.key === this.activeFeed);
+    if (!category) return;
+
+    this.feedLoading = true;
+    try {
+      const data = await apiGet('/api/v1/search/pois', {
+        city_name: this.city.name,
+        country_code: this.city.country_code || this.country?.code,
+        poi_types: category.types.join(','),
+        limit: HOME_FEED_PAGE_SIZE,
+        offset: this.feedOffsets[category.key] || 0,
+      });
+      const nextItems = data.results || [];
+      const existingIds = new Set((this.feedItems[category.key] || []).map(poi => poi.osm_id));
+      const uniqueItems = nextItems.filter(poi => !existingIds.has(poi.osm_id));
+      this.feedItems = {
+        ...this.feedItems,
+        [category.key]: [...(this.feedItems[category.key] || []), ...uniqueItems],
+      };
+      this.feedOffsets = {
+        ...this.feedOffsets,
+        [category.key]: (this.feedOffsets[category.key] || 0) + nextItems.length,
+      };
+      this.feedHasMore = {
+        ...this.feedHasMore,
+        [category.key]: nextItems.length >= HOME_FEED_PAGE_SIZE,
+      };
+    } catch {
+      this.feedHasMore = { ...this.feedHasMore, [category.key]: false };
+    }
+    this.feedLoading = false;
+  },
+  maybeLoadMore() {
+    if (Alpine.store('route').page !== 'home') return;
+    const distanceFromBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+    if (distanceFromBottom < 700) this.loadMoreFeed();
   },
   openAtlas(layer = null) {
     Alpine.store('atlas').seedFromDiscovery(layer);
@@ -773,3 +877,7 @@ queueMicrotask(() => {
   Alpine.store('auth').check();
   Alpine.store('discovery').load();
 });
+
+window.addEventListener('scroll', debounce(() => {
+  Alpine.store('discovery').maybeLoadMore();
+}, 160), { passive: true });

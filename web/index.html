@@ -76,54 +76,77 @@
             <button class="secondary-button" @click="$store.discovery.openAtlas()">Open map</button>
           </div>
         </div>
+      </section>
 
-        <div class="pulse-modules">
-          <template x-if="$store.discovery.loading">
-            <div class="skeleton-stack">
-              <div class="skeleton line"></div>
-              <div class="skeleton block"></div>
-              <div class="skeleton block"></div>
-            </div>
-          </template>
-          <template x-if="!$store.discovery.loading">
+      <section class="home-feed" x-show="$store.route.page === 'home'" x-cloak>
+        <div class="home-feed-inner">
+          <div class="feed-head">
             <div>
-              <div class="module-head">
-                <span>City Signals</span>
-                <span x-text="$store.discovery.countryLabel()"></span>
-              </div>
-              <div class="signal-grid">
-                <button class="signal" @click="$store.discovery.openAtlas('accommodation')">
-                  <strong x-text="$store.discovery.hotels.length"></strong>
-                  <span>stays surfaced</span>
-                </button>
-                <button class="signal" @click="$store.discovery.openAtlas('dining')">
-                  <strong x-text="$store.discovery.overview?.counts?.food || '•'"></strong>
-                  <span>food leads</span>
-                </button>
-                <button class="signal" @click="$store.discovery.openAtlas('attractions')">
-                  <strong x-text="$store.discovery.overview?.counts?.attractions || '•'"></strong>
-                  <span>anchors nearby</span>
-                </button>
-              </div>
-              <div class="place-strip">
-                <template x-for="poi in $store.discovery.featuredPlaces()" :key="poi.osm_id">
-                  <button class="mini-place" @click="$store.poi.open(poi.osm_id)">
-                    <span x-text="poi.name || poi.osm_name"></span>
-                    <small x-text="$store.format.placeMeta(poi)"></small>
-                  </button>
-                </template>
-              </div>
-              <div class="data-status-grid">
-                <template x-for="item in $store.discovery.statusItems()" :key="item.label">
-                  <div>
-                    <span x-text="item.label"></span>
-                    <strong x-text="item.value"></strong>
-                  </div>
-                </template>
-              </div>
+              <div class="eyebrow">Closest Places</div>
+              <h2 x-text="$store.discovery.feedTitle()"></h2>
+              <p x-text="$store.discovery.feedSubtitle()"></p>
+            </div>
+            <div class="data-status-grid compact-status">
+              <template x-for="item in $store.discovery.statusItems()" :key="item.label">
+                <div>
+                  <span x-text="item.label"></span>
+                  <strong x-text="item.value"></strong>
+                </div>
+              </template>
+            </div>
+          </div>
+
+          <div class="home-category-strip" role="tablist" aria-label="Place category">
+            <template x-for="category in $store.discovery.feedCategories" :key="category.key">
+              <button
+                role="tab"
+                :aria-selected="$store.discovery.activeFeed === category.key"
+                :class="{ active: $store.discovery.activeFeed === category.key }"
+                @click="$store.discovery.selectFeed(category.key)">
+                <span class="layer-dot" :style="'--dot:' + category.color"></span>
+                <span x-text="category.label"></span>
+                <small x-text="$store.discovery.feedCount(category.key)"></small>
+              </button>
+            </template>
+          </div>
+
+          <template x-if="$store.discovery.loading && !$store.discovery.activeFeedItems().length">
+            <div class="home-card-list">
+              <div class="skeleton card"></div>
+              <div class="skeleton card"></div>
+              <div class="skeleton card"></div>
             </div>
           </template>
-          <div class="state-callout" x-show="$store.discovery.error" x-text="$store.discovery.error"></div>
+
+          <template x-if="!$store.discovery.loading && !$store.discovery.activeFeedItems().length">
+            <div class="empty-panel wide">
+              <h3>No places surfaced yet</h3>
+              <p>Try another city, open the atlas, or expand the database import for this area.</p>
+            </div>
+          </template>
+
+          <div class="home-card-list">
+            <template x-for="poi in $store.discovery.activeFeedItems()" :key="poi.osm_id">
+              <article class="place-card home-place-card" @click="$store.poi.open(poi.osm_id)">
+                <div class="thumb" :style="$store.format.thumbStyle(poi)"></div>
+                <div class="place-body">
+                  <h3 x-text="poi.name || poi.osm_name"></h3>
+                  <p x-text="$store.format.distance(poi)"></p>
+                  <div class="place-actions" @click.stop>
+                    <button title="Save" @click="$store.favorites.toggle(poi)" :class="{ active: poi.is_favorite }">♡</button>
+                    <button title="Compare" @click="$store.compare.toggle(poi)" :class="{ active: $store.compare.has(poi) }">⇄</button>
+                    <button title="Nearby radar" @click="$store.radar.fromPoi(poi); $store.route.goAtlas()">⌖</button>
+                    <button title="Inspect" @click="$store.poi.open(poi.osm_id)">↗</button>
+                  </div>
+                </div>
+              </article>
+            </template>
+          </div>
+
+          <div class="feed-loading" x-show="$store.discovery.feedLoading">
+            <div class="skeleton card"></div>
+          </div>
+          <button class="secondary-button load-more-button" x-show="$store.discovery.canLoadMore()" @click="$store.discovery.loadMoreFeed()">Load more</button>
         </div>
       </section>
 
