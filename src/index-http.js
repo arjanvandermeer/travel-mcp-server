@@ -388,6 +388,8 @@ async function main() {
     '.css': 'text/css',
     '.js': 'application/javascript',
     '.json': 'application/json',
+    '.yaml': 'application/yaml',
+    '.yml': 'application/yaml',
     '.svg': 'image/svg+xml',
     '.png': 'image/png',
     '.jpg': 'image/jpeg',
@@ -395,6 +397,7 @@ async function main() {
   };
 
   const WEB_DIR = path.join(__dirname, '..', 'web');
+  const OPENAPI_SPEC_PATH = path.join(__dirname, '..', 'doc', 'openapi.yaml');
 
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -415,6 +418,16 @@ async function main() {
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
       res.end();
+      return;
+    }
+
+    if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/openapi.yaml') {
+      res.writeHead(200, getStaticHeaders(MIME_TYPES['.yaml']));
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      fs.createReadStream(OPENAPI_SPEC_PATH).pipe(res);
       return;
     }
 

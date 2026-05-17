@@ -81,6 +81,7 @@ Claude Desktop / ChatGPT / Web Browser
 | [doc/osm-import-system.md](doc/osm-import-system.md) | OpenStreetMap import workflow |
 | [doc/google-places.md](doc/google-places.md) | Google Places API integration |
 | [doc/http-transport.md](doc/http-transport.md) | HTTP/SSE server setup |
+| [doc/openapi.yaml](doc/openapi.yaml) | OpenAPI 3.1 REST API specification, also served at `/openapi.yaml` |
 | [doc/future-travel-integrations.md](doc/future-travel-integrations.md) | Wikidata and route-planning integration decisions |
 | [slm/README.md](slm/README.md) | Local SLM agent with Ollama (usage, test suite, integration guide) |
 | [GitHub Issues](https://github.com/arjanvandermeer/travel-mcp-server/issues) | Planned improvements and known issues |

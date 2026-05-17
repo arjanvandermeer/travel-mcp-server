@@ -37,6 +37,16 @@ Response:
 }
 ```
 
+### OpenAPI Specification
+
+The REST API used by the web frontend is documented in [openapi.yaml](openapi.yaml) and served by the HTTP process:
+
+```bash
+curl http://localhost:3000/openapi.yaml
+```
+
+The spec covers the public `/api/v1/*` routes, `/auth/*` web auth routes, optional bearer/session authentication, and favorites endpoints that require authentication.
+
 ## Endpoints
 
 ### `GET /health`
