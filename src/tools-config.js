@@ -171,6 +171,23 @@ const baseToolsConfig = [
     },
   },
   {
+    name: 'compare_hotels',
+    description: 'Compare 2-5 hotels side by side by OSM ID. Returns ratings, price level, amenities, city-center distance when available, nearby restaurant count, walkability proxy, differences, and standout features.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_ids: {
+          type: 'array',
+          items: { type: 'number' },
+          minItems: 2,
+          maxItems: 5,
+          description: 'Two to five hotel OSM IDs to compare.',
+        },
+      },
+      required: ['osm_ids'],
+    },
+  },
+  {
     name: 'search_restaurants',
     description: 'Search for food & drink (restaurants, cafes, bars, fast food, coffee shops, etc.). Returns JSON results with coordinates, ratings, cuisine, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location - combine name filter with location. Supports cuisine filtering (e.g., "thai", "italian"), dietary restrictions (e.g., "vegan", "halal"), and open_now to find currently open places. WORKFLOW TIP: To find a chain restaurant near a landmark, first use search_pois to get the landmark coordinates, then use search_restaurants with those lat/long coordinates and query.',
     inputSchema: {
@@ -656,6 +673,180 @@ export function buildSearchResponse(pois) {
   };
 }
 
+function extractDisplayName(poi) {
+  const displayName = poi.google_display_name;
+  if (displayName?.text) return displayName.text;
+  if (typeof displayName === 'string') {
+    try {
+      return JSON.parse(displayName).text || displayName;
+    } catch (_error) {
+      return displayName;
+    }
+  }
+  return poi.google_name || poi.osm_name || poi.name || `OSM ${poi.osm_id}`;
+}
+
+function tagIsPositive(value) {
+  return value !== undefined && value !== null && value !== false && String(value).toLowerCase() !== 'no';
+}
+
+function extractHotelAmenities(poi) {
+  const tags = poi.osm_tags || {};
+  const amenityMap = {
+    wifi: ['internet_access'],
+    pool: ['swimming_pool'],
+    parking: ['parking'],
+    breakfast: ['breakfast'],
+    air_conditioning: ['air_conditioning'],
+    pet_friendly: ['pets'],
+    restaurant: ['restaurant'],
+    spa: ['spa'],
+    gym: ['fitness_centre'],
+    bar: ['bar'],
+    elevator: ['elevator'],
+    wheelchair_access: ['wheelchair'],
+  };
+
+  const amenities = new Set();
+  for (const [label, keys] of Object.entries(amenityMap)) {
+    if (keys.some(key => tagIsPositive(tags[key]))) {
+      amenities.add(label);
+    }
+  }
+
+  for (const [key, value] of Object.entries(poi.google_amenities || {})) {
+    if (tagIsPositive(value)) amenities.add(key);
+  }
+  if (tagIsPositive(poi.osm_wheelchair) || tagIsPositive(poi.google_accessibility?.wheelchairAccessibleEntrance)) {
+    amenities.add('wheelchair_access');
+  }
+
+  return [...amenities].sort();
+}
+
+function walkabilityFromNearbyCount(count) {
+  if (count >= 10) return 'excellent';
+  if (count >= 5) return 'good';
+  if (count >= 2) return 'fair';
+  return 'limited';
+}
+
+function uniqueComparableValues(hotels, field) {
+  return new Set(hotels.map(hotel => JSON.stringify(hotel[field] ?? null)));
+}
+
+function buildHotelComparisonSummary(hotels) {
+  const differences = [];
+  for (const field of ['star_rating', 'google_rating', 'price_level', 'amenities', 'distance_to_city_center_km', 'nearby_restaurant_count', 'walkability_proxy']) {
+    if (uniqueComparableValues(hotels, field).size > 1) {
+      differences.push({
+        field,
+        values: Object.fromEntries(hotels.map(hotel => [hotel.osm_id, hotel[field] ?? null])),
+      });
+    }
+  }
+
+  const ratings = hotels.map(h => Number(h.google_rating)).filter(Number.isFinite);
+  const stars = hotels.map(h => Number(h.star_rating)).filter(Number.isFinite);
+  const highestRating = ratings.length > 0 ? Math.max(...ratings) : null;
+  const highestStars = stars.length > 0 ? Math.max(...stars) : null;
+  const highestNearby = Math.max(...hotels.map(h => h.nearby_restaurant_count));
+  const walkabilityRank = { limited: 1, fair: 2, good: 3, excellent: 4 };
+  const bestWalkabilityRank = Math.max(...hotels.map(h => walkabilityRank[h.walkability_proxy] || 0));
+  const uniqueAmenities = new Map();
+  for (const hotel of hotels) {
+    for (const amenity of hotel.amenities) {
+      const owners = hotels.filter(other => other.amenities.includes(amenity));
+      if (owners.length === 1) uniqueAmenities.set(hotel.osm_id, [...(uniqueAmenities.get(hotel.osm_id) || []), amenity]);
+    }
+  }
+
+  const standoutSummary = [];
+  const withStandouts = hotels.map(hotel => {
+    const standoutFeatures = [];
+    if (highestRating !== null && Number(hotel.google_rating) === highestRating) standoutFeatures.push('highest_google_rating');
+    if (highestStars !== null && Number(hotel.star_rating) === highestStars) standoutFeatures.push('highest_star_rating');
+    if (hotel.nearby_restaurant_count === highestNearby) standoutFeatures.push('most_nearby_restaurants');
+    if ((walkabilityRank[hotel.walkability_proxy] || 0) === bestWalkabilityRank) {
+      standoutFeatures.push('best_walkability_proxy');
+    }
+    const hotelUniqueAmenities = uniqueAmenities.get(hotel.osm_id) || [];
+    if (hotelUniqueAmenities.length > 0) {
+      standoutFeatures.push(`unique_amenities:${hotelUniqueAmenities.join(',')}`);
+    }
+    for (const feature of standoutFeatures) {
+      standoutSummary.push({ osm_id: hotel.osm_id, name: hotel.name, feature });
+    }
+    return { ...hotel, standout_features: standoutFeatures };
+  });
+
+  return { hotels: withStandouts, differences, standout_summary: standoutSummary };
+}
+
+async function buildHotelComparison(osmIds, db, userId = null) {
+  const uniqueIds = [...new Set((osmIds || []).map(id => Number(id)).filter(Number.isFinite))];
+  if (uniqueIds.length < 2 || uniqueIds.length > 5) {
+    return { error: 'compare_hotels requires 2-5 unique numeric osm_ids' };
+  }
+
+  const details = await Promise.all(uniqueIds.map(id => db.getPOIDetails(id, null, userId)));
+  const missing = uniqueIds.filter((_id, index) => !details[index]);
+  if (missing.length > 0) {
+    return { error: `Hotel not found for osm_id(s): ${missing.join(', ')}` };
+  }
+
+  const nonHotels = details.filter(poi => !accommodationTypes.includes(poi.poi_type));
+  if (nonHotels.length > 0) {
+    return { error: `compare_hotels only accepts accommodation POIs. Non-hotel osm_id(s): ${nonHotels.map(p => p.osm_id).join(', ')}` };
+  }
+
+  const cityCache = new Map();
+  const rows = [];
+  for (const poi of details) {
+    const lat = poi.osm_latitude ?? poi.latitude;
+    const lon = poi.osm_longitude ?? poi.longitude;
+    let nearbyRestaurants = [];
+    if (lat !== undefined && lon !== undefined && db.searchPOIsNearCoordinates) {
+      nearbyRestaurants = await db.searchPOIsNearCoordinates(lat, lon, 1.5, foodTypes, 20, userId, [poi.osm_id]);
+    }
+
+    let distanceToCityCenterKm = null;
+    const cityKey = `${poi.city || ''}:${poi.country_code || ''}`;
+    if (poi.city && db.getCityByName && db.calculateDistance) {
+      if (!cityCache.has(cityKey)) {
+        cityCache.set(cityKey, await db.getCityByName(poi.city, poi.country_code));
+      }
+      const city = cityCache.get(cityKey);
+      if (city?.latitude !== undefined && city?.longitude !== undefined && lat !== undefined && lon !== undefined) {
+        distanceToCityCenterKm = Number(db.calculateDistance(lat, lon, city.latitude, city.longitude).toFixed(2));
+      }
+    }
+
+    rows.push({
+      osm_id: poi.osm_id,
+      name: extractDisplayName(poi),
+      city: poi.city || null,
+      country_code: poi.country_code || null,
+      star_rating: poi.osm_stars ? Number(poi.osm_stars) : null,
+      google_rating: poi.google_rating ?? null,
+      google_review_count: poi.google_review_count ?? null,
+      price_level: poi.google_price_level || null,
+      amenities: extractHotelAmenities(poi),
+      distance_to_city_center_km: distanceToCityCenterKm,
+      nearby_restaurant_count: nearbyRestaurants.length,
+      walkability_proxy: walkabilityFromNearbyCount(nearbyRestaurants.length),
+    });
+  }
+
+  const summary = buildHotelComparisonSummary(rows);
+  return {
+    hotel_count: summary.hotels.length,
+    hotels: summary.hotels,
+    differences: summary.differences,
+    standout_summary: summary.standout_summary,
+  };
+}
+
 /**
  * Trigger background enrichment for search results (fire-and-forget)
  * Extracts osm_ids and calls batchEnrichPOIs
@@ -792,6 +983,20 @@ export async function executeToolHandler(name, args, db, options = {}) {
         return buildSearchResponse(pois);
       }
       return { content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }] };
+    }
+
+    case 'compare_hotels': {
+      const comparison = await buildHotelComparison(args.osm_ids, db, options.user?.id);
+      if (comparison.error) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: comparison.error }, null, 2) }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(comparison, null, 2) }],
+        structuredContent: comparison,
+      };
     }
 
     case 'search_restaurants':

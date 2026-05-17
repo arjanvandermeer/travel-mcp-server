@@ -271,6 +271,102 @@ describe('executeToolHandler: search_hotels', () => {
 });
 
 // =============================================================================
+// compare_hotels
+// =============================================================================
+
+describe('executeToolHandler: compare_hotels', () => {
+  const hotels = new Map([
+    [101, {
+      osm_id: 101,
+      poi_type: 'hotel',
+      osm_name: 'Central Hotel',
+      city: 'Bangkok',
+      country_code: 'TH',
+      osm_latitude: 13.75,
+      osm_longitude: 100.5,
+      osm_stars: '5',
+      google_rating: 4.7,
+      google_review_count: 1200,
+      google_price_level: 'PRICE_LEVEL_EXPENSIVE',
+      osm_tags: { internet_access: 'wlan', swimming_pool: 'yes', spa: 'yes' },
+    }],
+    [202, {
+      osm_id: 202,
+      poi_type: 'hotel',
+      google_display_name: { text: 'Garden Stay' },
+      city: 'Bangkok',
+      country_code: 'TH',
+      osm_latitude: 13.76,
+      osm_longitude: 100.51,
+      osm_stars: '3',
+      google_rating: 4.2,
+      google_review_count: 400,
+      google_price_level: 'PRICE_LEVEL_MODERATE',
+      osm_tags: { internet_access: 'wlan', parking: 'yes' },
+    }],
+  ]);
+
+  it('should return side-by-side comparison data', async () => {
+    const db = createMockDb({
+      getPOIDetails: async (osmId) => hotels.get(osmId) || null,
+      searchPOIsNearCoordinates: async (_lat, _lon, _radius, _types, _limit, _userId, exclude) => (
+        exclude?.[0] === 101
+          ? [{ osm_id: 1 }, { osm_id: 2 }, { osm_id: 3 }, { osm_id: 4 }, { osm_id: 5 }]
+          : [{ osm_id: 6 }]
+      ),
+      getCityByName: async () => ({ latitude: 13.755, longitude: 100.505 }),
+      calculateDistance: () => 0.75,
+    });
+
+    const result = await executeToolHandler('compare_hotels', { osm_ids: [101, 202] }, db);
+    const parsed = parseResponse(result);
+
+    assert.ok(result.structuredContent, 'Should return structured content');
+    assert.strictEqual(parsed.hotel_count, 2);
+    assert.strictEqual(parsed.hotels[0].name, 'Central Hotel');
+    assert.strictEqual(parsed.hotels[1].name, 'Garden Stay');
+    assert.deepStrictEqual(parsed.hotels[0].amenities, ['pool', 'spa', 'wifi']);
+    assert.strictEqual(parsed.hotels[0].nearby_restaurant_count, 5);
+    assert.strictEqual(parsed.hotels[0].walkability_proxy, 'good');
+    assert.strictEqual(parsed.hotels[0].distance_to_city_center_km, 0.75);
+    assert.ok(parsed.differences.some(diff => diff.field === 'price_level'));
+    assert.ok(parsed.standout_summary.some(item => item.feature === 'highest_google_rating'));
+  });
+
+  it('should reject fewer than two unique hotel IDs', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('compare_hotels', { osm_ids: [101, 101] }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /2-5 unique numeric osm_ids/);
+  });
+
+  it('should return an error for missing hotels', async () => {
+    const db = createMockDb({ getPOIDetails: async () => null });
+    const result = await executeToolHandler('compare_hotels', { osm_ids: [101, 202] }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /Hotel not found/);
+  });
+
+  it('should return an error for non-accommodation POIs', async () => {
+    const db = createMockDb({
+      getPOIDetails: async (osmId) => osmId === 101 ? hotels.get(101) : { osm_id: 303, poi_type: 'restaurant' },
+    });
+    const result = await executeToolHandler('compare_hotels', { osm_ids: [101, 303] }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /only accepts accommodation/);
+  });
+
+  it('should expose compare_hotels schema', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    const tool = tools.find(t => t.name === 'compare_hotels');
+    assert.ok(tool);
+    assert.deepStrictEqual(tool.inputSchema.required, ['osm_ids']);
+    assert.strictEqual(tool.inputSchema.properties.osm_ids.minItems, 2);
+    assert.strictEqual(tool.inputSchema.properties.osm_ids.maxItems, 5);
+  });
+});
+
+// =============================================================================
 // search_restaurants
 // =============================================================================
 
