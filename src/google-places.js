@@ -227,16 +227,10 @@ export class GooglePlacesClient {
     }
 
     if (latitude && longitude) {
-      // Use locationRestriction (hard filter) not locationBias (soft hint) so results
-      // from a different neighbourhood or city can't slip through name-matching.
+      // Text Search only accepts rectangle for locationRestriction (not circle).
+      // Convert radius to a bounding box so we get a hard geographic filter.
       body.locationRestriction = {
-        circle: {
-          center: {
-            latitude: latitude,
-            longitude: longitude,
-          },
-          radius: GOOGLE_PLACES_TEXT_SEARCH_RADIUS,
-        },
+        rectangle: this._radiusToBBox(latitude, longitude, GOOGLE_PLACES_TEXT_SEARCH_RADIUS),
       };
     }
 
@@ -405,10 +399,15 @@ export class GooglePlacesClient {
       }
     }
 
-    // Fallback to text search (use English name if available for better Google results).
-    // Location filtering is handled by locationRestriction in the request body — do NOT
-    // include raw coordinates in the text query because Google treats them literally.
-    const searchName = name_en || name;
+    // Fallback to text search.
+    // Enrich the query with OSM address tags when available — "Travelodge 121 Peckham Street"
+    // is far more precise than just "Travelodge". Location filtering is handled by
+    // locationRestriction in the request body, not by embedding coords in the query.
+    const baseName = name_en || name;
+    const addrNum    = poi.tags?.['addr:housenumber'];
+    const addrStreet = poi.tags?.['addr:street'];
+    const addrParts  = [baseName, addrNum, addrStreet].filter(Boolean);
+    const searchName = addrParts.length > 1 ? addrParts.join(' ') : baseName;
     const textResults = await this.searchText(searchName, latitude, longitude, googleType);
 
     if (textResults.length > 0) {
@@ -458,6 +457,17 @@ export class GooglePlacesClient {
   /**
    * Calculate Levenshtein distance between two strings
    */
+  // Convert a centre point + radius (metres) to a lat/lon bounding box.
+  // Used because Text Search locationRestriction only accepts rectangle, not circle.
+  _radiusToBBox(lat, lon, radiusMeters) {
+    const deltaLat = radiusMeters / 111320;
+    const deltaLon = radiusMeters / (111320 * Math.cos(lat * Math.PI / 180));
+    return {
+      low:  { latitude: lat - deltaLat, longitude: lon - deltaLon },
+      high: { latitude: lat + deltaLat, longitude: lon + deltaLon },
+    };
+  }
+
   levenshteinDistance(str1, str2) {
     const m = str1.length;
     const n = str2.length;
@@ -515,6 +525,15 @@ export class GooglePlacesClient {
       ? 1 - (this.levenshteinDistance(n1, n2) / maxLen)
       : 0;
 
+    // Prefix match: one name starts with the other (e.g. OSM "Travelodge" vs
+    // Google "Travelodge London Peckham"). Strong signal — score at least 0.7.
+    let prefixScore = 0;
+    if (n2.startsWith(n1) || n1.startsWith(n2)) {
+      const shorter = Math.min(n1.length, n2.length);
+      const longer  = Math.max(n1.length, n2.length);
+      prefixScore = 0.7 + 0.3 * (shorter / longer);
+    }
+
     // Contains match (one name is substring of other)
     let containsScore = 0;
     if (n1.includes(n2) || n2.includes(n1)) {
@@ -522,7 +541,7 @@ export class GooglePlacesClient {
     }
 
     // Return the highest score from different methods
-    return Math.max(wordOverlapScore, levenshteinScore, containsScore);
+    return Math.max(wordOverlapScore, levenshteinScore, containsScore, prefixScore);
   }
 
   /**

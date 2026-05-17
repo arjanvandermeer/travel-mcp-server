@@ -1630,7 +1630,8 @@ export class TravelDatabase {
           name,
           name_en,
           latitude,
-          longitude
+          longitude,
+          tags
         FROM osm_pois
         WHERE osm_id = $1
       `, [osmId]);

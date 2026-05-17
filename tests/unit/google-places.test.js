@@ -368,14 +368,15 @@ describe('GooglePlacesClient', () => {
       assert.deepStrictEqual(result, places);
     });
 
-    it('should add locationRestriction when coordinates provided', async () => {
+    it('should add locationRestriction rectangle when coordinates provided', async () => {
       const client = new GooglePlacesClient('key', true);
       let capturedBody;
       client.makeRequest = async (_url, body) => { capturedBody = body; return { places: [] }; };
 
       await client.searchText('Hotel', 40.7, -73.9);
-      assert.ok(capturedBody.locationRestriction);
-      assert.strictEqual(capturedBody.locationRestriction.circle.center.latitude, 40.7);
+      assert.ok(capturedBody.locationRestriction?.rectangle, 'should use rectangle (Text Search does not support circle)');
+      assert.ok(capturedBody.locationRestriction.rectangle.low.latitude < 40.7);
+      assert.ok(capturedBody.locationRestriction.rectangle.high.latitude > 40.7);
       assert.strictEqual(capturedBody.locationBias, undefined);
     });
 
