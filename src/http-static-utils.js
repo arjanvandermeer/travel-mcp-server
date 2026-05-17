@@ -39,6 +39,7 @@ export function renderWebIndex(filePath, { versionInfo, measurementId } = {}) {
     : 'https://github.com/arjanvandermeer/travel-mcp-server';
   html = html
     .replace('href="/css/style.css"', `href="/css/style.css?v=${assetVersion}"`)
+    .replace('href="/css/dossier.css"', `href="/css/dossier.css?v=${assetVersion}"`)
     .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`)
     .replaceAll('__APP_COMMIT__', commitLabel)
     .replaceAll('__APP_COMMIT_URL__', commitUrl);
@@ -51,6 +52,6 @@ export function renderWebIndex(filePath, { versionInfo, measurementId } = {}) {
 export function getStaticHeaders(contentType) {
   return {
     'Content-Type': contentType,
-    'Cache-Control': 'no-cache',
+    'Cache-Control': 'no-store, max-age=0',
   };
 }

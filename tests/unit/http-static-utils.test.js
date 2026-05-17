@@ -11,10 +11,10 @@ describe('http static utils', () => {
     assert.strictEqual(obfuscateEmail('invalid'), 'invalid');
   });
 
-  it('builds no-cache static headers', () => {
+  it('builds no-store static headers', () => {
     assert.deepStrictEqual(getStaticHeaders('text/css'), {
       'Content-Type': 'text/css',
-      'Cache-Control': 'no-cache',
+      'Cache-Control': 'no-store, max-age=0',
     });
   });
 
@@ -26,7 +26,7 @@ describe('http static utils', () => {
   it('adds asset versions and optional analytics to the web index', () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'travel-index-'));
     const filePath = path.join(tmpDir, 'index.html');
-    fs.writeFileSync(filePath, '<head><link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" href="/favicon.png" type="image/png"><link rel="stylesheet" href="/css/style.css"></head><body><span>__APP_COMMIT__</span><script src="/js/app.js"></script></body>');
+    fs.writeFileSync(filePath, '<head><link rel="icon" href="/favicon.ico" sizes="any"><link rel="icon" href="/favicon.png" type="image/png"><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/dossier.css"></head><body><span>__APP_COMMIT__</span><script src="/js/app.js"></script></body>');
 
     const html = renderWebIndex(filePath, {
       versionInfo: { gitCommitShort: 'abc123', buildTime: '2026-05-17T00:00:00Z' },
@@ -34,6 +34,7 @@ describe('http static utils', () => {
     });
 
     assert.ok(html.includes('/css/style.css?v=abc123-2026-05-17T00%3A00%3A00Z'));
+    assert.ok(html.includes('/css/dossier.css?v=abc123-2026-05-17T00%3A00%3A00Z'));
     assert.ok(html.includes('/js/app.js?v=abc123-2026-05-17T00%3A00%3A00Z'));
     assert.ok(html.includes('href="/favicon.ico"'));
     assert.ok(html.includes('href="/favicon.png"'));

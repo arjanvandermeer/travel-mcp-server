@@ -1,8 +1,8 @@
 import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
-import { apiDelete, apiGet, apiPatch, apiPost } from './api.js';
-import { LAYERS } from './constants.js';
-import { createFormatStore } from './format-store.js';
-import { markerIcon } from './map-utils.js';
+import { apiDelete, apiGet, apiPatch, apiPost } from './api.js?v=pdp-cache-20260517';
+import { LAYERS } from './constants.js?v=pdp-cache-20260517';
+import { createFormatStore } from './format-store.js?v=pdp-cache-20260517';
+import { markerIcon } from './map-utils.js?v=pdp-cache-20260517';
 
 const DISCOVERY_MIN_POIS = 25;
 const LOCATION_SEARCH_RADII_KM = [50, 150, 500, 1000];
