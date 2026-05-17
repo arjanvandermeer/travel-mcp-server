@@ -40,8 +40,8 @@ jobs:
               grep -inE 'bearer\s+[a-zA-Z0-9._-]{20,}' "$FILE" | sed "s|^|$FILE:|"
               FOUND=1
             fi
-            if grep -qinE '-----BEGIN (RSA |EC )?PRIVATE KEY-----' "$FILE"; then
-              grep -inE '-----BEGIN (RSA |EC )?PRIVATE KEY-----' "$FILE" | sed "s|^|$FILE:|"
+            if grep -qinE -e '-----BEGIN (RSA |EC )?PRIVATE KEY-----' "$FILE"; then
+              grep -inE -e '-----BEGIN (RSA |EC )?PRIVATE KEY-----' "$FILE" | sed "s|^|$FILE:|"
               FOUND=1
             fi
           done

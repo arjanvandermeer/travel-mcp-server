@@ -38,7 +38,7 @@ for FILE in $STAGED_FILES; do
   done
 
   # Private keys
-  echo "$CONTENT" | grep -inE '-----BEGIN (RSA |EC )?PRIVATE KEY-----' | while IFS= read -r LINE; do
+  echo "$CONTENT" | grep -inE -e '-----BEGIN (RSA |EC )?PRIVATE KEY-----' | while IFS= read -r LINE; do
     echo "CREDENTIAL DETECTED in $FILE: $LINE"
     echo 1 > /tmp/.precommit_cred_found
   done
