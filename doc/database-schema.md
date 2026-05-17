@@ -598,6 +598,24 @@ Missing rating, review, or star fields are omitted from the denominator instead 
 
 The category scores are capped at 100 before applying weights. Transit and pharmacy categories depend on the corresponding OSM mappings being imported, so older datasets may understate those signals until refreshed.
 
+### Itinerary builder
+
+`build_itinerary` accepts a hotel `osm_id`, optional interests, and a day count. It resolves the hotel from `osm_pois`, fetches nearby candidates with `ST_DWithin`, clusters candidates with `ST_ClusterKMeans`, then returns deterministic day plans with ordered stops.
+
+Supported interests map to POI type groups:
+
+| Interest | POI types |
+|----------|-----------|
+| `museums` | `museum`, `gallery`, `artwork` |
+| `history` | `monument`, `memorial`, `castle`, `ruins`, `archaeological_site` |
+| `landmarks` | `attraction`, `viewpoint`, `place_of_worship` |
+| `family` | `zoo`, `theme_park`, `attraction` |
+| `local_food` | `restaurant`, `cafe`, `food_court`, `fast_food` |
+| `nightlife` | `bar`, `pub`, `nightclub` |
+| `shopping` | `shopping_mall`, `department_store`, `supermarket` |
+
+The tool always includes default food types so each day can include meal stops when nearby data exists. Days are capped at 7 and candidate radius is capped at 25 km.
+
 ### Restaurant price levels and dining budgets
 
 Restaurant price filters use Google Places `price_level` values after the initial indexed OSM search has been enriched:

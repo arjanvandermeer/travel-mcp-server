@@ -128,6 +128,17 @@ const NEIGHBORHOOD_SCORE_CATEGORIES = [
   { key: 'pharmacies', label: 'Pharmacies', poiTypes: ['pharmacy'], target: 2, weight: 15 },
   { key: 'transit', label: 'Transit stops', poiTypes: ['bus_stop', 'train_station', 'subway_station', 'tram_stop', 'transit_station'], target: 4, weight: 20 },
 ];
+const ITINERARY_INTEREST_TYPES = {
+  museums: ['museum', 'gallery', 'artwork'],
+  history: ['monument', 'memorial', 'castle', 'ruins', 'archaeological_site'],
+  landmarks: ['attraction', 'viewpoint', 'place_of_worship'],
+  family: ['zoo', 'theme_park', 'attraction'],
+  local_food: ['restaurant', 'cafe', 'food_court', 'fast_food'],
+  nightlife: ['bar', 'pub', 'nightclub'],
+  shopping: ['shopping_mall', 'department_store', 'supermarket'],
+};
+const ITINERARY_DEFAULT_ATTRACTION_TYPES = ['attraction', 'museum', 'monument', 'gallery', 'viewpoint', 'castle', 'ruins', 'zoo', 'theme_park'];
+const ITINERARY_DEFAULT_FOOD_TYPES = ['restaurant', 'cafe', 'food_court'];
 
 function normalizeImportKeyword(value) {
   return String(value || '')
@@ -924,6 +935,164 @@ export class TravelDatabase {
       longitude: numericLon,
       radius_km: searchRadiusKm,
       ...score,
+    };
+  }
+
+  static resolveItineraryTypes(interests = []) {
+    const normalizedInterests = Array.isArray(interests)
+      ? interests.map(interest => String(interest || '').toLowerCase()).filter(Boolean)
+      : [];
+    const selected = normalizedInterests.flatMap(interest => ITINERARY_INTEREST_TYPES[interest] || []);
+    const poiTypes = selected.length > 0
+      ? [...new Set([...selected, ...ITINERARY_DEFAULT_FOOD_TYPES])]
+      : [...new Set([...ITINERARY_DEFAULT_ATTRACTION_TYPES, ...ITINERARY_DEFAULT_FOOD_TYPES])];
+    return {
+      interests: normalizedInterests,
+      poiTypes,
+      supported_interests: Object.keys(ITINERARY_INTEREST_TYPES),
+    };
+  }
+
+  static buildItineraryDays(hotel, candidates, days) {
+    const plans = Array.from({ length: days }, (_value, index) => ({
+      day: index + 1,
+      title: `Day ${index + 1}`,
+      cluster_id: null,
+      center: null,
+      stops: [],
+    }));
+
+    const clusters = new Map();
+    for (const candidate of candidates) {
+      const clusterId = Number.isInteger(Number(candidate.cluster_id)) ? Number(candidate.cluster_id) : 0;
+      if (!clusters.has(clusterId)) clusters.set(clusterId, []);
+      clusters.get(clusterId).push(candidate);
+    }
+
+    const sortedClusters = [...clusters.entries()]
+      .sort((a, b) => {
+        const aDistance = Math.min(...a[1].map(item => Number(item.distance_from_hotel_km) || Infinity));
+        const bDistance = Math.min(...b[1].map(item => Number(item.distance_from_hotel_km) || Infinity));
+        return aDistance - bDistance || a[0] - b[0];
+      });
+
+    sortedClusters.forEach(([clusterId, rows], index) => {
+      const plan = plans[index % days];
+      plan.cluster_id = plan.cluster_id ?? clusterId;
+      const sortedRows = rows.sort((a, b) => {
+        const categoryOrder = { attraction: 0, food: 1, nightlife: 2, shopping: 3 };
+        return (categoryOrder[a.itinerary_category] ?? 9) - (categoryOrder[b.itinerary_category] ?? 9) ||
+          (Number(a.distance_from_hotel_km) || 0) - (Number(b.distance_from_hotel_km) || 0) ||
+          String(a.name || '').localeCompare(String(b.name || ''));
+      });
+      plan.stops.push(...sortedRows.slice(0, 6).map((poi, stopIndex) => ({
+        order: plan.stops.length + stopIndex + 1,
+        osm_id: poi.osm_id,
+        name: poi.name,
+        poi_type: poi.poi_type,
+        category: poi.itinerary_category,
+        latitude: poi.latitude,
+        longitude: poi.longitude,
+        distance_from_hotel_km: Number(poi.distance_from_hotel_km?.toFixed?.(2) ?? Number(poi.distance_from_hotel_km || 0).toFixed(2)),
+      })));
+    });
+
+    for (const plan of plans) {
+      if (plan.stops.length > 0) {
+        const avgLat = plan.stops.reduce((sum, stop) => sum + Number(stop.latitude), 0) / plan.stops.length;
+        const avgLon = plan.stops.reduce((sum, stop) => sum + Number(stop.longitude), 0) / plan.stops.length;
+        plan.center = { latitude: Number(avgLat.toFixed(6)), longitude: Number(avgLon.toFixed(6)) };
+      } else {
+        plan.center = { latitude: Number(hotel.latitude), longitude: Number(hotel.longitude) };
+      }
+    }
+
+    return plans;
+  }
+
+  async buildItinerary({ hotelOsmId, interests = [], days = 3, radiusKm = 8 } = {}) {
+    const safeDays = Math.min(Math.max(Number(days) || 3, 1), 7);
+    const safeRadiusKm = Math.min(Math.max(Number(radiusKm) || 8, 1), 25);
+    const hotelResult = await this.pool.query(`
+      SELECT osm_id, poi_type, name, latitude, longitude
+      FROM osm_pois
+      WHERE osm_id = $1
+    `, [hotelOsmId]);
+    const hotel = hotelResult.rows[0] || null;
+    if (!hotel) return null;
+
+    const resolved = TravelDatabase.resolveItineraryTypes(interests);
+    const candidateLimit = Math.min(120, safeDays * 30);
+    const result = await this.pool.query(`
+      WITH candidates AS (
+        SELECT
+          p.osm_id,
+          p.poi_type,
+          p.name,
+          p.latitude,
+          p.longitude,
+          p.location,
+          CASE
+            WHEN p.poi_type = ANY($6) THEN 'food'
+            WHEN p.poi_type = ANY($7) THEN 'nightlife'
+            WHEN p.poi_type = ANY($8) THEN 'shopping'
+            ELSE 'attraction'
+          END as itinerary_category,
+          ST_Distance(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography
+          ) / 1000.0 as distance_from_hotel_km
+        FROM osm_pois p
+        WHERE p.name IS NOT NULL
+          AND p.osm_id != $1
+          AND p.poi_type = ANY($4)
+          AND ST_DWithin(
+            p.location::geography,
+            ST_SetSRID(ST_MakePoint($3, $2), 4326)::geography,
+            $5::float8 * 1000
+          )
+        ORDER BY distance_from_hotel_km ASC
+        LIMIT $9
+      )
+      SELECT
+        osm_id,
+        poi_type,
+        name,
+        latitude,
+        longitude,
+        itinerary_category,
+        distance_from_hotel_km,
+        ST_ClusterKMeans(location, $10) OVER () as cluster_id
+      FROM candidates
+      ORDER BY cluster_id ASC, itinerary_category ASC, distance_from_hotel_km ASC
+    `, [
+      hotel.osm_id,
+      hotel.latitude,
+      hotel.longitude,
+      resolved.poiTypes,
+      safeRadiusKm,
+      ITINERARY_DEFAULT_FOOD_TYPES,
+      ['bar', 'pub', 'nightclub'],
+      ['shopping_mall', 'department_store', 'supermarket'],
+      candidateLimit,
+      safeDays,
+    ]);
+
+    const daysPlan = TravelDatabase.buildItineraryDays(hotel, result.rows, safeDays);
+    return {
+      hotel: {
+        osm_id: hotel.osm_id,
+        name: hotel.name,
+        poi_type: hotel.poi_type,
+        latitude: hotel.latitude,
+        longitude: hotel.longitude,
+      },
+      days: safeDays,
+      radius_km: safeRadiusKm,
+      interests: resolved.interests,
+      supported_interests: resolved.supported_interests,
+      candidate_count: result.rows.length,
+      itinerary: daysPlan,
     };
   }
 

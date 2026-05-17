@@ -214,6 +214,35 @@ const baseToolsConfig = [
     },
   },
   {
+    name: 'build_itinerary',
+    description: 'Build a deterministic day-by-day itinerary from a hotel OSM ID. Groups nearby attractions and restaurants geographically using PostGIS clustering and returns structured daily stops.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        hotel_osm_id: {
+          type: 'number',
+          description: 'Hotel or accommodation OSM ID to use as the itinerary base.',
+        },
+        interests: {
+          type: 'array',
+          items: { type: 'string', enum: ['museums', 'history', 'landmarks', 'family', 'local_food', 'nightlife', 'shopping'] },
+          description: 'Optional interests used to bias candidate POI types.',
+        },
+        days: {
+          type: 'number',
+          description: 'Number of itinerary days (default: 3, max: 7).',
+          default: 3,
+        },
+        radius_km: {
+          type: 'number',
+          description: 'Candidate search radius around the hotel in kilometers (default: 8, max: 25).',
+          default: 8,
+        },
+      },
+      required: ['hotel_osm_id'],
+    },
+  },
+  {
     name: 'search_restaurants',
     description: 'Search for food & drink (restaurants, cafes, bars, fast food, coffee shops, etc.). Returns JSON results with coordinates, ratings, cuisine, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location - combine name filter with location. Supports cuisine filtering (e.g., "thai", "italian"), dietary restrictions (e.g., "vegan", "halal"), and open_now to find currently open places. WORKFLOW TIP: To find a chain restaurant near a landmark, first use search_pois to get the landmark coordinates, then use search_restaurants with those lat/long coordinates and query.',
     inputSchema: {
@@ -1095,6 +1124,31 @@ export async function executeToolHandler(name, args, db, options = {}) {
       return {
         content: [{ type: 'text', text: JSON.stringify(score, null, 2) }],
         structuredContent: score,
+      };
+    }
+
+    case 'build_itinerary': {
+      if (!args.hotel_osm_id) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: 'hotel_osm_id is required' }, null, 2) }],
+        };
+      }
+      const itinerary = await db.buildItinerary({
+        hotelOsmId: args.hotel_osm_id,
+        interests: args.interests || [],
+        days: validateLimit(args.days, 3, 7),
+        radiusKm: Math.min(Number(args.radius_km) || 8, 25),
+      });
+      if (!itinerary) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: 'Hotel not found', hotel_osm_id: args.hotel_osm_id }, null, 2) }],
+        };
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(itinerary, null, 2) }],
+        structuredContent: itinerary,
       };
     }
 

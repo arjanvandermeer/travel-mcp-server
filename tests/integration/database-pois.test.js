@@ -494,6 +494,61 @@ describe('TravelDatabase POI Search Functions', () => {
     });
   });
 
+  describe('buildItinerary', () => {
+    it('should build deterministic day plans from clustered spatial candidates', async () => {
+      mockPool.setResponse('WHERE osm_id = $1', dbResult([{
+        osm_id: 12345,
+        poi_type: 'hotel',
+        name: 'Grand Hotel Bangkok',
+        latitude: 13.75,
+        longitude: 100.5,
+      }]));
+      mockPool.setResponse('ST_ClusterKMeans', dbResult([
+        { osm_id: 1, poi_type: 'museum', name: 'City Museum', latitude: 13.751, longitude: 100.501, itinerary_category: 'attraction', distance_from_hotel_km: 0.2, cluster_id: 0 },
+        { osm_id: 2, poi_type: 'restaurant', name: 'Local Kitchen', latitude: 13.752, longitude: 100.502, itinerary_category: 'food', distance_from_hotel_km: 0.3, cluster_id: 0 },
+        { osm_id: 3, poi_type: 'gallery', name: 'River Gallery', latitude: 13.761, longitude: 100.511, itinerary_category: 'attraction', distance_from_hotel_km: 1.6, cluster_id: 1 },
+        { osm_id: 4, poi_type: 'cafe', name: 'Canal Cafe', latitude: 13.762, longitude: 100.512, itinerary_category: 'food', distance_from_hotel_km: 1.7, cluster_id: 1 },
+      ]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.buildItinerary({
+        hotelOsmId: 12345,
+        interests: ['museums', 'local_food'],
+        days: 2,
+      });
+
+      assert.strictEqual(result.hotel.osm_id, 12345);
+      assert.strictEqual(result.days, 2);
+      assert.deepStrictEqual(result.interests, ['museums', 'local_food']);
+      assert.strictEqual(result.candidate_count, 4);
+      assert.strictEqual(result.itinerary.length, 2);
+      assert.strictEqual(result.itinerary[0].day, 1);
+      assert.strictEqual(result.itinerary[0].stops[0].name, 'City Museum');
+      assert.strictEqual(result.itinerary[0].stops[1].category, 'food');
+      assert.strictEqual(result.itinerary[1].stops[0].name, 'River Gallery');
+      assert.ok(result.itinerary[0].center);
+
+      const calls = mockPool.getCalls();
+      const itineraryCall = calls.find(c => c.sql.includes('ST_ClusterKMeans'));
+      assert.ok(itineraryCall, 'Should use PostGIS clustering for itinerary candidates');
+      assert.ok(itineraryCall.sql.includes('ST_DWithin'), 'Should constrain itinerary candidates spatially');
+      assert.ok(itineraryCall.sql.includes('distance_from_hotel_km'), 'Should compute distance from hotel');
+      assert.deepStrictEqual(itineraryCall.params[0], 12345);
+      assert.ok(itineraryCall.params[3].includes('museum'));
+      assert.ok(itineraryCall.params[3].includes('restaurant'));
+      assert.strictEqual(itineraryCall.params[9], 2);
+    });
+
+    it('should return null when itinerary hotel is missing', async () => {
+      mockPool.setResponse('WHERE osm_id = $1', emptyResult());
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.buildItinerary({ hotelOsmId: 99999 });
+
+      assert.strictEqual(result, null);
+    });
+  });
+
   describe('searchPOIsNearCoordinates', () => {
     it('should search POIs near coordinates', async () => {
       mockPool.setResponse('osm_pois', dbResult(samplePOIs));

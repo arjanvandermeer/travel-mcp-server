@@ -22,6 +22,7 @@ function createMockDb(overrides = {}) {
     getDiningBudget: async () => null,
     findFoodDistricts: async () => null,
     getNeighborhoodScore: async () => null,
+    buildItinerary: async () => null,
     getPOIDetails: async () => null,
     getStats: async () => ({ total_pois: 100, total_cities: 50 }),
     batchEnrichPOIs: async () => {},
@@ -436,6 +437,66 @@ describe('executeToolHandler: get_neighborhood_score', () => {
     assert.ok(tool.inputSchema.properties.latitude);
     assert.ok(tool.inputSchema.properties.longitude);
     assert.strictEqual(tool.inputSchema.properties.radius_km.default, 1.5);
+  });
+});
+
+// =============================================================================
+// build_itinerary
+// =============================================================================
+
+describe('executeToolHandler: build_itinerary', () => {
+  it('should return structured itinerary content', async () => {
+    let capturedArgs;
+    const itinerary = {
+      hotel: { osm_id: 101, name: 'Central Hotel' },
+      days: 2,
+      itinerary: [
+        { day: 1, stops: [{ osm_id: 1, name: 'Museum' }] },
+        { day: 2, stops: [{ osm_id: 2, name: 'Restaurant' }] },
+      ],
+    };
+    const db = createMockDb({
+      buildItinerary: async (args) => {
+        capturedArgs = args;
+        return itinerary;
+      },
+    });
+
+    const result = await executeToolHandler('build_itinerary', {
+      hotel_osm_id: 101,
+      interests: ['museums', 'local_food'],
+      days: 2,
+    }, db);
+    const parsed = parseResponse(result);
+
+    assert.deepStrictEqual(parsed, itinerary);
+    assert.deepStrictEqual(result.structuredContent, itinerary);
+    assert.strictEqual(capturedArgs.hotelOsmId, 101);
+    assert.deepStrictEqual(capturedArgs.interests, ['museums', 'local_food']);
+    assert.strictEqual(capturedArgs.days, 2);
+  });
+
+  it('should reject missing hotel_osm_id', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('build_itinerary', {}, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /hotel_osm_id is required/);
+  });
+
+  it('should return an error when hotel is not found', async () => {
+    const db = createMockDb({ buildItinerary: async () => null });
+    const result = await executeToolHandler('build_itinerary', { hotel_osm_id: 999 }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /Hotel not found/);
+  });
+
+  it('should expose build_itinerary schema', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    const tool = tools.find(t => t.name === 'build_itinerary');
+    assert.ok(tool);
+    assert.deepStrictEqual(tool.inputSchema.required, ['hotel_osm_id']);
+    assert.ok(tool.inputSchema.properties.interests.items.enum.includes('museums'));
+    assert.strictEqual(tool.inputSchema.properties.days.default, 3);
   });
 });
 
