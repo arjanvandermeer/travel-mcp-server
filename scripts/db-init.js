@@ -10,8 +10,8 @@
  * 4. Shows database statistics
  *
  * Usage:
- *   node src/init.js
- *   node src/init.js --reset   # destructive local reset, then recreate schema
+ *   node scripts/db-init.js
+ *   node scripts/db-init.js --reset   # destructive local reset, then recreate schema
  */
 
 import pg from 'pg';
@@ -158,7 +158,7 @@ async function initializeDatabase({ reset = false } = {}) {
     console.log('\nNext steps:');
     console.log('  1. Import GeoNames data (countries, admin1 codes, cities): npm run db:import-geonames');
     console.log('  2. Download OSM data: curl -L -o data/thailand-latest.osm.pbf https://download.geofabrik.de/asia/thailand-latest.osm.pbf');
-    console.log('  3. Import OSM POI data: node src/import-osm-pbf.js data/thailand-latest.osm.pbf all');
+    console.log('  3. Import OSM POI data: node scripts/import-osm.js data/thailand-latest.osm.pbf all');
 
   } catch (error) {
     console.error('❌ Error initializing database:', error.message);

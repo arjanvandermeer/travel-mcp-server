@@ -21,7 +21,7 @@ describe('schema safety', () => {
   });
 
   it('keeps destructive reset behind an explicit npm script', () => {
-    assert.strictEqual(packageJson.scripts['db:init'], 'node src/init.js');
-    assert.strictEqual(packageJson.scripts['db:reset'], 'node src/init.js --reset');
+    assert.strictEqual(packageJson.scripts['db:init'], 'node scripts/db-init.js');
+    assert.strictEqual(packageJson.scripts['db:reset'], 'node scripts/db-init.js --reset');
   });
 });

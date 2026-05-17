@@ -204,10 +204,13 @@ function deployRepo(config, state, repo) {
       if (!healthCheck(repo)) {
         fail(`${repo.name}: rollback health check failed; manual intervention required`);
       }
-    } finally {
-      markBlocked(state, repo, targetSha, err.message);
-      throw err;
+    } catch (rollbackErr) {
+      fail(`${repo.name}: rollback failed: ${rollbackErr.message}`);
     }
+    finally {
+      markBlocked(state, repo, targetSha, err.message);
+    }
+    throw err;
   }
 }
 

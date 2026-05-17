@@ -7,7 +7,7 @@
  * Designed to be run as a cron job, Lambda function, or manually.
  *
  * Usage:
- *   node src/refresh-imports.js [options]
+ *   node scripts/refresh-imports.js [options]
  *
  * Options:
  *   --dry-run       Show what would be refreshed without actually importing
@@ -17,10 +17,10 @@
  *   --list          Just list all import sources and their status
  *
  * Examples:
- *   node src/refresh-imports.js --dry-run
- *   node src/refresh-imports.js --max=3
- *   node src/refresh-imports.js --region=thailand --force
- *   node src/refresh-imports.js --list
+ *   node scripts/refresh-imports.js --dry-run
+ *   node scripts/refresh-imports.js --max=3
+ *   node scripts/refresh-imports.js --region=thailand --force
+ *   node scripts/refresh-imports.js --list
  *
  * Environment:
  *   DATABASE_URL - PostgreSQL connection string
@@ -31,9 +31,9 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
-import * as telemetry from './telemetry.js';
-import { parseRefreshArgs } from './lib/arg-parsers.js';
-import { TravelDatabase } from './database.js';
+import * as telemetry from '../src/telemetry.js';
+import { parseRefreshArgs } from '../src/lib/arg-parsers.js';
+import { TravelDatabase } from '../src/database.js';
 
 dotenv.config();
 
@@ -52,7 +52,7 @@ function parseArgs() {
 Refresh stale imports based on refresh_interval_days
 
 Usage:
-  node src/refresh-imports.js [options]
+  node scripts/refresh-imports.js [options]
 
 Options:
   --dry-run       Show what would be refreshed without actually importing
@@ -66,11 +66,11 @@ Options:
   --help, -h      Show this help message
 
 Examples:
-  node src/refresh-imports.js --dry-run
-  node src/refresh-imports.js --max=3
-  node src/refresh-imports.js --region=thailand --force
-  node src/refresh-imports.js --list
-  node src/refresh-imports.js --optimize   # Refresh and optimize
+  node scripts/refresh-imports.js --dry-run
+  node scripts/refresh-imports.js --max=3
+  node scripts/refresh-imports.js --region=thailand --force
+  node scripts/refresh-imports.js --list
+  node scripts/refresh-imports.js --optimize   # Refresh and optimize
 `);
     process.exit(0);
   }
@@ -204,7 +204,7 @@ function padRight(str, len) {
  */
 async function runImport(keyword) {
   return new Promise((resolve, _reject) => {
-    const importScript = path.join(__dirname, 'import-osm-pbf.js');
+    const importScript = path.join(__dirname, 'import-osm.js');
 
     console.log(`\n${'='.repeat(60)}`);
     console.log(`Starting import for: ${keyword}`);
@@ -234,7 +234,7 @@ async function runImport(keyword) {
  */
 async function runGeonamesImport() {
   return new Promise((resolve) => {
-    const geonamesScript = path.join(__dirname, 'import-geonames-postgres.js');
+    const geonamesScript = path.join(__dirname, 'import-geonames.js');
 
     console.log(`\n${'='.repeat(60)}`);
     console.log('Running GeoNames import...');

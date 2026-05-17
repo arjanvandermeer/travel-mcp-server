@@ -66,22 +66,22 @@ CREATE TABLE import_log (
 
 ## Scripts
 
-### import-osm-pbf.js
+### import-osm.js
 
 Main import script supporting both keyword and file modes.
 
 **Keyword mode (recommended):**
 ```bash
 # Import from Geofabrik (downloads, imports, deletes file)
-node src/import-osm-pbf.js france
-node src/import-osm-pbf.js thailand all
-node src/import-osm-pbf.js maldives hotel
+node scripts/import-osm.js france
+node scripts/import-osm.js thailand all
+node scripts/import-osm.js maldives hotel
 ```
 
 **File mode:**
 ```bash
 # Import from local PBF file
-node src/import-osm-pbf.js /path/to/france-latest.osm.pbf all
+node scripts/import-osm.js /path/to/france-latest.osm.pbf all
 ```
 
 **POI types:**
@@ -96,16 +96,16 @@ Finds and refreshes stale imports based on `refresh_interval_days`.
 
 ```bash
 # List all sources and their status
-node src/refresh-imports.js --list
+node scripts/refresh-imports.js --list
 
 # Dry run - see what would be refreshed
-node src/refresh-imports.js --dry-run
+node scripts/refresh-imports.js --dry-run
 
 # Refresh stale imports (limit to 3 for Lambda timeout)
-node src/refresh-imports.js --max=3
+node scripts/refresh-imports.js --max=3
 
 # Force refresh a specific region
-node src/refresh-imports.js --region=thailand --force
+node scripts/refresh-imports.js --region=thailand --force
 ```
 
 **Options:**
@@ -176,7 +176,7 @@ ssh ubuntu@<ec2-hostname>
 export DATABASE_URL="postgresql://user:pass@rds-endpoint:5432/travel"
 
 # Run import
-node src/import-osm-pbf.js france all
+node scripts/import-osm.js france all
 ```
 
 ### Local against RDS
@@ -184,7 +184,7 @@ node src/import-osm-pbf.js france all
 ```bash
 # Use the no-verify connection string for self-signed certs
 DATABASE_URL="postgresql://user:pass@rds-endpoint:5432/travel?sslmode=no-verify" \
-  node src/import-osm-pbf.js thailand
+  node scripts/import-osm.js thailand
 ```
 
 ### Scheduled Refresh (Cron/Lambda)
@@ -194,7 +194,7 @@ DATABASE_URL="postgresql://user:pass@rds-endpoint:5432/travel?sslmode=no-verify"
 0 2 * * * DATABASE_URL="..." node /path/to/refresh-imports.js --max=3
 
 # Or as Lambda (15 min timeout, process 2 regions max)
-DATABASE_URL="..." node src/refresh-imports.js --max=2
+DATABASE_URL="..." node scripts/refresh-imports.js --max=2
 ```
 
 ## Database Migration
@@ -270,19 +270,19 @@ After large imports, run the optimization script to reclaim space and update sta
 
 ```bash
 # Standard optimization (VACUUM ANALYZE)
-node src/optimize-db.js
+node scripts/optimize-db.js
 
 # Full vacuum (reclaims more space, locks tables)
-node src/optimize-db.js --full
+node scripts/optimize-db.js --full
 
 # Also rebuild indexes
-node src/optimize-db.js --reindex
+node scripts/optimize-db.js --reindex
 
 # Only optimize specific table
-node src/optimize-db.js --table=osm_pois
+node scripts/optimize-db.js --table=osm_pois
 
 # Preview without executing
-node src/optimize-db.js --dry-run
+node scripts/optimize-db.js --dry-run
 ```
 
 **NPM Script:**
@@ -297,7 +297,7 @@ npm run db:optimize -- --reindex
 Run optimization automatically after refreshing imports:
 
 ```bash
-node src/refresh-imports.js --optimize
+node scripts/refresh-imports.js --optimize
 ```
 
 ### What it does:
@@ -309,10 +309,10 @@ node src/refresh-imports.js --optimize
 
 ```bash
 # Daily: refresh stale imports + optimize
-0 2 * * * DATABASE_URL="..." node src/refresh-imports.js --max=3 --optimize
+0 2 * * * DATABASE_URL="..." node scripts/refresh-imports.js --max=3 --optimize
 
 # Weekly: full optimization with reindex
-0 3 * * 0 DATABASE_URL="..." node src/optimize-db.js --reindex
+0 3 * * 0 DATABASE_URL="..." node scripts/optimize-db.js --reindex
 ```
 
 ## Telemetry

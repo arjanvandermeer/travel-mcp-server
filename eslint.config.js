@@ -50,7 +50,6 @@ export default [
       'data/',
       'tests/',
       'cloudflare-oauth-worker/',
-      'scripts/',
       'doc/',
     ],
   },

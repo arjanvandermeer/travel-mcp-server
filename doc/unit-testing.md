@@ -47,7 +47,7 @@ We're implementing unit testing with dependency injection across the codebase. T
 - [ ] `validateToolParams()` - Document (if exists) or create
 - [ ] Each tool handler - Document expected behavior
 
-#### src/import-osm-pbf.js
+#### scripts/import-osm.js
 - [ ] `POI_MAPPINGS` - Document mapping rules
 - [ ] `matchesPOIType()` - Document input/output
 - [ ] `extractPOIData()` - Document input/output
@@ -57,12 +57,12 @@ We're implementing unit testing with dependency injection across the codebase. T
 - [ ] `checkImportStillRunning()` - Document
 - [ ] `insertBatch()` - Document
 
-#### src/refresh-imports.js
+#### scripts/refresh-imports.js
 - [ ] `parseArgs()` - Document input/output
 - [ ] `getStaleImports()` - Document input/output
 - [ ] `listImportSources()` - Document
 
-#### src/optimize-db.js
+#### scripts/optimize-db.js
 - [ ] `parseArgs()` - Document input/output
 - [ ] `getTableStats()` - Document input/output
 
@@ -99,9 +99,9 @@ We're implementing unit testing with dependency injection across the codebase. T
 - [x] `src/database.js` - TravelDatabase constructor accepts optional pool parameter
 - [x] `src/db-interface.js` - Factory function for creating database with pool injection
 - [ ] `src/tools-config.js` - Accept db in tool handlers (future)
-- [ ] `src/import-osm-pbf.js` - Accept db in importOSM() (future)
-- [ ] `src/refresh-imports.js` - Accept db in main functions (future)
-- [ ] `src/optimize-db.js` - Accept db in main functions (future)
+- [ ] `scripts/import-osm.js` - Accept db in importOSM() (future)
+- [ ] `scripts/refresh-imports.js` - Accept db in main functions (future)
+- [ ] `scripts/optimize-db.js` - Accept db in main functions (future)
 
 ### Phase 7: CI Integration ✅ COMPLETE
 
@@ -172,9 +172,9 @@ We're implementing unit testing with dependency injection across the codebase. T
 
 ### 2026-02-06 (Source Files Updated)
 - **Updated source files to use extracted lib modules:**
-  - `src/refresh-imports.js` now imports and uses `parseRefreshArgs()` from lib
-  - `src/optimize-db.js` now imports and uses `parseOptimizeArgs()` from lib
-  - `src/import-osm-pbf.js` now imports and uses:
+  - `scripts/refresh-imports.js` now imports and uses `parseRefreshArgs()` from lib
+  - `scripts/optimize-db.js` now imports and uses `parseOptimizeArgs()` from lib
+  - `scripts/import-osm.js` now imports and uses:
     - `matchPOIType()` from lib
     - `extractPOIData()` from lib
     - `shouldFilterPOI()` from lib

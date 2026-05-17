@@ -10,7 +10,7 @@
  * Can be run standalone or called as a post-import step.
  *
  * Usage:
- *   node src/link-pois-to-cities.js [--region=thailand-latest] [--force] [--batch=10000]
+ *   node scripts/link-pois-to-cities.js [--region=thailand-latest] [--force] [--batch=10000]
  *
  * Options:
  *   --region=NAME   Only link POIs from this source_region

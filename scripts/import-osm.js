@@ -8,12 +8,12 @@
  * 2. File mode: Imports from an existing local PBF file
  *
  * Usage:
- *   node src/import-osm-pbf.js <keyword-or-file> [poi-type]
+ *   node scripts/import-osm.js <keyword-or-file> [poi-type]
  *
  * Examples:
- *   node src/import-osm-pbf.js france all          # Downloads and imports France
- *   node src/import-osm-pbf.js thailand            # Downloads and imports Thailand (all POIs)
- *   node src/import-osm-pbf.js local-file.osm.pbf  # Imports from local file
+ *   node scripts/import-osm.js france all          # Downloads and imports France
+ *   node scripts/import-osm.js thailand            # Downloads and imports Thailand (all POIs)
+ *   node scripts/import-osm.js local-file.osm.pbf  # Imports from local file
  *
  * The import_sources table contains keyword-to-URL mappings.
  * Run: psql $DATABASE_URL < data/migrations/001_import_sources.sql
@@ -27,16 +27,16 @@ import pg from 'pg';
 import parseOSM from 'osm-pbf-parser';
 import through2 from 'through2';
 import dotenv from 'dotenv';
-import * as telemetry from './telemetry.js';
-import { matchPOIType, extractPOIData, shouldFilterPOI } from './lib/osm-mappings.js';
-import { parseImportArgs } from './lib/arg-parsers.js';
+import * as telemetry from '../src/telemetry.js';
+import { matchPOIType, extractPOIData, shouldFilterPOI } from '../src/lib/osm-mappings.js';
+import { parseImportArgs } from '../src/lib/arg-parsers.js';
 import { linkPOIsToCities } from './link-pois-to-cities.js';
 
 dotenv.config();
 
 const PG_CONNECTION = process.env.DATABASE_URL || 'postgresql://<user>:<password>@localhost:5432/travel';
 
-// POI_MAPPINGS is now imported from './lib/osm-mappings.js'
+// POI_MAPPINGS is now imported from '../src/lib/osm-mappings.js'
 
 /**
  * Look up import source from database by keyword
@@ -795,7 +795,7 @@ async function parsePBFFile(pbfPath, pool, poiType, regionName, importId) {
   return processed;
 }
 
-// matchPOIType, extractPOIData, and shouldFilterPOI are now imported from './lib/osm-mappings.js'
+// matchPOIType, extractPOIData, and shouldFilterPOI are now imported from '../src/lib/osm-mappings.js'
 
 async function insertBatch(pool, pois) {
   if (pois.length === 0) return;
@@ -892,12 +892,12 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   const { input, poiType } = parseImportArgs(process.argv.slice(2));
 
   if (!input) {
-    console.log('Usage: node src/import-osm-pbf.js <keyword-or-file> [poi-type]');
+    console.log('Usage: node scripts/import-osm.js <keyword-or-file> [poi-type]');
     console.log('');
     console.log('Examples:');
-    console.log('  node src/import-osm-pbf.js france           # Download and import France (all POIs)');
-    console.log('  node src/import-osm-pbf.js thailand hotel   # Download and import Thailand hotels');
-    console.log('  node src/import-osm-pbf.js local.osm.pbf    # Import from local file');
+    console.log('  node scripts/import-osm.js france           # Download and import France (all POIs)');
+    console.log('  node scripts/import-osm.js thailand hotel   # Download and import Thailand hotels');
+    console.log('  node scripts/import-osm.js local.osm.pbf    # Import from local file');
     console.log('');
     console.log('Available keywords are stored in the import_sources table.');
     console.log('Run migration: psql $DATABASE_URL < data/migrations/001_import_sources.sql');

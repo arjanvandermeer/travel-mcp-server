@@ -19,13 +19,13 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 
 ## Quick Start
 
-See [GETTING_STARTED.md](GETTING_STARTED.md) for full setup instructions.
+See [doc/getting-started.md](doc/getting-started.md) for full setup instructions.
 
 ```bash
 npm install
 npm run db:init                                       # Safely create missing tables
 npm run db:import-geonames                            # Import ~150k cities
-node src/import-osm-pbf.js data/REGION.osm.pbf all    # Import OSM POIs
+node scripts/import-osm.js data/REGION.osm.pbf all     # Import OSM POIs
 npm start                                             # stdio (Claude Desktop)
 npm run start:http                                    # HTTP (port 3000)
 ```
@@ -74,7 +74,7 @@ Claude Desktop / ChatGPT / Web Browser
 
 | Document | Description |
 |----------|-------------|
-| [GETTING_STARTED.md](GETTING_STARTED.md) | Full setup guide (database, imports, Claude Desktop) |
+| [doc/getting-started.md](doc/getting-started.md) | Full setup guide (database, imports, Claude Desktop) |
 | [doc/authentication.md](doc/authentication.md) | OAuth 2.1 implementation details |
 | [doc/database-schema.md](doc/database-schema.md) | PostgreSQL schema reference |
 | [doc/osm-import-system.md](doc/osm-import-system.md) | OpenStreetMap import workflow |

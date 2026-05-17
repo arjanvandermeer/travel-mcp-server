@@ -8,7 +8,7 @@
  * - Cities with population > 1000 (cities1000.txt)
  *
  * Usage:
- *   node src/import-geonames-postgres.js
+ *   node scripts/import-geonames.js
  */
 
 import fs from 'fs';

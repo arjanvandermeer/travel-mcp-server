@@ -9,7 +9,7 @@
  * - Statistics update for query planner
  *
  * Usage:
- *   node src/optimize-db.js [options]
+ *   node scripts/optimize-db.js [options]
  *
  * Options:
  *   --full          Run VACUUM FULL (reclaims more space but locks tables)
@@ -18,10 +18,10 @@
  *   --dry-run       Show what would be done without executing
  *
  * Examples:
- *   node src/optimize-db.js                    # Standard optimization
- *   node src/optimize-db.js --full             # Full vacuum (locks tables)
- *   node src/optimize-db.js --table=osm_pois   # Only optimize osm_pois
- *   node src/optimize-db.js --reindex          # Also rebuild indexes
+ *   node scripts/optimize-db.js                    # Standard optimization
+ *   node scripts/optimize-db.js --full             # Full vacuum (locks tables)
+ *   node scripts/optimize-db.js --table=osm_pois   # Only optimize osm_pois
+ *   node scripts/optimize-db.js --reindex          # Also rebuild indexes
  *
  * Environment:
  *   DATABASE_URL - PostgreSQL connection string
@@ -29,8 +29,8 @@
 
 import pg from 'pg';
 import dotenv from 'dotenv';
-import * as telemetry from './telemetry.js';
-import { parseOptimizeArgs } from './lib/arg-parsers.js';
+import * as telemetry from '../src/telemetry.js';
+import { parseOptimizeArgs } from '../src/lib/arg-parsers.js';
 
 dotenv.config();
 
@@ -60,7 +60,7 @@ Database Optimization Script
 Runs maintenance tasks to optimize database performance after imports.
 
 Usage:
-  node src/optimize-db.js [options]
+  node scripts/optimize-db.js [options]
 
 Options:
   --full          Run VACUUM FULL (reclaims more space but locks tables)
@@ -70,10 +70,10 @@ Options:
   --help, -h      Show this help message
 
 Examples:
-  node src/optimize-db.js                    # Standard optimization
-  node src/optimize-db.js --full             # Full vacuum (locks tables)
-  node src/optimize-db.js --table=osm_pois   # Only optimize osm_pois
-  node src/optimize-db.js --reindex          # Also rebuild indexes
+  node scripts/optimize-db.js                    # Standard optimization
+  node scripts/optimize-db.js --full             # Full vacuum (locks tables)
+  node scripts/optimize-db.js --table=osm_pois   # Only optimize osm_pois
+  node scripts/optimize-db.js --reindex          # Also rebuild indexes
 `);
     process.exit(0);
   }

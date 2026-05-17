@@ -1,4 +1,4 @@
-# Getting Started with Travel MCP Server
+# Getting Started
 
 This guide walks you through setting up the Travel MCP Server on a new workstation, from installation to configuring Claude Desktop.
 
@@ -291,11 +291,11 @@ curl -L -o data/france-latest.osm.pbf https://download.geofabrik.de/europe/franc
 
 ```bash
 # Import all POI types from the downloaded file
-node src/import-osm-pbf.js data/thailand-latest.osm.pbf all
+node scripts/import-osm.js data/thailand-latest.osm.pbf all
 
 # Or import specific types only:
-node src/import-osm-pbf.js data/thailand-latest.osm.pbf hotel
-node src/import-osm-pbf.js data/thailand-latest.osm.pbf restaurant
+node scripts/import-osm.js data/thailand-latest.osm.pbf hotel
+node scripts/import-osm.js data/thailand-latest.osm.pbf restaurant
 ```
 
 **Expected output:**
@@ -750,7 +750,7 @@ unzip allCountries.zip
 
 ```bash
 # Increase Node.js memory limit
-node --max-old-space-size=4096 src/import-osm-pbf.js
+node --max-old-space-size=4096 scripts/import-osm.js
 ```
 
 ---
@@ -825,7 +825,7 @@ npm run inspect:http
 
 # Import data
 npm run db:import-geonames                         # Import GeoNames cities
-node src/import-osm-pbf.js data/REGION.osm.pbf all # Import OSM POIs
+node scripts/import-osm.js data/REGION.osm.pbf all # Import OSM POIs
 
 # Download OSM data
 curl -L -o data/thailand-latest.osm.pbf https://download.geofabrik.de/asia/thailand-latest.osm.pbf

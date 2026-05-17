@@ -99,7 +99,7 @@ gh issue create --title "<clear actionable title>" --body "<markdown body>"
 - Check unit and integration test coverage quality, including measurable coverage output where available.
 - Find code sprawl: files or functions becoming too long, modules taking on too many responsibilities, duplicate logic, or unclear ownership boundaries.
 - Find possible optimizations in database queries, indexing, caching, API calls, import jobs, frontend request patterns, startup behavior, and test runtime.
-- Find documentation drift between code, `README.md`, `GETTING_STARTED.md`, `doc/`, and workflow files.
+- Find documentation drift between code, `README.md`, `doc/getting-started.md`, `doc/`, and workflow files.
 - Find repo hygiene issues such as generated files, local artifacts, stale docs, unused files, inconsistent naming, or old migration assumptions.
 - Find dependency vulnerabilities from `npm audit` and create or update actionable GitHub issues.
 
@@ -119,7 +119,7 @@ Review these areas:
 - Local SLM agent under `slm/`
 - Tests under `tests/`
 - CI and review workflows under `.github/`
-- Existing documentation under `README.md`, `GETTING_STARTED.md`, and `doc/`
+- Existing documentation under `README.md`, `doc/getting-started.md`, and `doc/`
 - Current GitHub issues
 
 Exclude generated or dependency-heavy folders unless a repo hygiene issue points to them:
