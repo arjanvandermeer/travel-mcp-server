@@ -19,9 +19,9 @@
   <div class="app-shell">
     <header class="topbar">
       <nav class="nav-actions" aria-label="Primary">
-        <button class="nav-link" :class="{ active: $store.route.page === 'home' }" @click="$store.route.goHome()">City Pulse</button>
+        <button class="nav-link" :class="{ active: $store.route.page === 'home' }" @click="$store.route.goHome()">Pulse</button>
         <button class="nav-link" :class="{ active: $store.route.page === 'atlas' }" @click="$store.route.goAtlas()">Atlas</button>
-        <button class="nav-link" :class="{ active: $store.route.page === 'composer' }" @click="$store.route.goComposer()">Trip Composer</button>
+        <button class="nav-link" :class="{ active: $store.route.page === 'composer' }" @click="$store.route.goComposer()">Composer</button>
         <template x-if="$store.auth.checked && !$store.auth.authenticated">
           <button class="primary-button compact" @click="$store.auth.login()">Sign in</button>
         </template>
@@ -32,13 +32,13 @@
               <span x-text="$store.auth.user?.name || $store.auth.user?.email"></span>
             </button>
             <div class="account-menu" x-show="open" x-transition>
-              <button @click="$store.route.goComposer(); open = false">Trip Composer</button>
+              <button @click="$store.route.goComposer(); open = false">Composer</button>
               <button @click="$store.auth.logout()">Logout</button>
             </div>
           </div>
         </template>
       </nav>
-      <a class="build-chip" href="__APP_COMMIT_URL__" target="_blank" rel="noopener" title="View running build on GitHub">Build __APP_COMMIT__</a>
+      <a class="build-chip" href="__APP_COMMIT_URL__" target="_blank" rel="noopener" title="View running build on GitHub">__APP_COMMIT__</a>
     </header>
 
     <main class="workspace" :class="'page-' + $store.route.page">
@@ -69,25 +69,25 @@
             <button
               type="button"
               class="feed-search-toggle"
-              :class="{ active: $store.discovery.restaurantSearchOpen }"
-              aria-label="Search restaurants by name"
-              :aria-expanded="$store.discovery.restaurantSearchOpen"
-              @click="$store.discovery.toggleRestaurantSearch()">
+              :class="{ active: $store.discovery.placeSearchOpen }"
+              aria-label="Search selected categories by name"
+              :aria-expanded="$store.discovery.placeSearchOpen"
+              @click="$store.discovery.togglePlaceSearch()">
               ⌘
             </button>
           </div>
-          <form class="feed-search-panel" x-show="$store.discovery.restaurantSearchOpen" x-transition @submit.prevent="$store.discovery.searchRestaurantsByName()">
+          <form class="feed-search-panel" x-show="$store.discovery.placeSearchOpen" x-transition @submit.prevent="$store.discovery.searchPlacesByName()">
             <input
-              id="restaurant-name-search"
+              id="place-name-search"
               class="command-input"
               type="search"
               placeholder="Name..."
-              x-model="$store.discovery.restaurantSearchQuery">
-            <button class="primary-button" type="submit" :disabled="$store.discovery.restaurantSearchLoading">
-              <span x-text="$store.discovery.restaurantSearchLoading ? 'Searching' : 'Search'"></span>
+              x-model="$store.discovery.placeSearchQuery">
+            <button class="primary-button" type="submit" :disabled="$store.discovery.placeSearchLoading">
+              <span x-text="$store.discovery.placeSearchLoading ? 'Searching' : 'Search'"></span>
             </button>
           </form>
-          <p class="state-callout" x-show="$store.discovery.restaurantSearchError" x-text="$store.discovery.restaurantSearchError"></p>
+          <p class="state-callout" x-show="$store.discovery.placeSearchError" x-text="$store.discovery.placeSearchError"></p>
 
           <template x-if="$store.discovery.loading && !$store.discovery.activeFeedItems().length">
             <div class="home-card-list">

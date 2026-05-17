@@ -176,10 +176,10 @@ Alpine.store('discovery', {
     attractions: true,
   },
   feedLoading: false,
-  restaurantSearchOpen: false,
-  restaurantSearchQuery: '',
-  restaurantSearchLoading: false,
-  restaurantSearchError: '',
+  placeSearchOpen: false,
+  placeSearchQuery: '',
+  placeSearchLoading: false,
+  placeSearchError: '',
   heroImageUrl: '',
   heroImageCredit: '',
   locationError: '',
@@ -443,7 +443,7 @@ Alpine.store('discovery', {
   eyebrow() {
     if (this.locationState === 'requesting') return 'Finding your city';
     if (this.source === 'location') return 'Location discovery';
-    return this.source === 'local' ? 'Local discovery' : 'Random discovery';
+    return this.source === 'local' ? 'Discover' : 'Random discovery';
   },
   cityTitle() {
     if (this.locationState === 'requesting') return 'Locating you';
@@ -472,50 +472,58 @@ Alpine.store('discovery', {
     writeHomeFeedPreference(this.activeFeedKeys);
     if (this.isFeedActive(key) && !this.feedItems[key]?.length) this.loadMoreCategory(key);
   },
-  toggleRestaurantSearch() {
-    this.restaurantSearchOpen = !this.restaurantSearchOpen;
-    this.restaurantSearchError = '';
-    if (this.restaurantSearchOpen) {
-      requestAnimationFrame(() => document.getElementById('restaurant-name-search')?.focus());
+  togglePlaceSearch() {
+    this.placeSearchOpen = !this.placeSearchOpen;
+    this.placeSearchError = '';
+    if (this.placeSearchOpen) {
+      requestAnimationFrame(() => document.getElementById('place-name-search')?.focus());
     }
   },
-  async searchRestaurantsByName() {
-    const query = this.restaurantSearchQuery.trim();
+  async searchPlacesByName() {
+    const query = this.placeSearchQuery.trim();
     if (!query) {
-      this.restaurantSearchError = 'Enter a restaurant name to search.';
+      this.placeSearchError = 'Enter a place name to search.';
       return;
     }
     if (!this.city?.name) {
-      this.restaurantSearchError = 'Choose a city before searching restaurants.';
+      this.placeSearchError = 'Choose a city before searching places.';
       return;
     }
 
-    const dining = this.feedCategories.find(category => category.key === 'dining');
-    if (!dining) return;
-
-    this.restaurantSearchLoading = true;
-    this.restaurantSearchError = '';
+    this.placeSearchLoading = true;
+    this.placeSearchError = '';
     try {
-      const data = await apiGet('/api/v1/search/pois', {
-        q: query,
-        city_name: this.city.name,
-        country_code: this.city.country_code || this.country?.code,
-        poi_types: dining.types.join(','),
-        limit: HOME_FEED_PAGE_SIZE * 2,
-      });
-      const results = data.results || [];
-      this.feedItems = { ...this.feedItems, dining: results };
-      this.feedOffsets = { ...this.feedOffsets, dining: results.length };
-      this.feedHasMore = { ...this.feedHasMore, dining: false };
-      if (!this.isFeedActive('dining')) {
-        this.activeFeedKeys = [...this.activeFeedKeys, 'dining'];
-        writeHomeFeedPreference(this.activeFeedKeys);
+      const responses = await Promise.all(this.feedCategories.map(async category => {
+        const data = await apiGet('/api/v1/search/pois', {
+          q: query,
+          city_name: this.city.name,
+          country_code: this.city.country_code || this.country?.code,
+          poi_types: category.types.join(','),
+          limit: HOME_FEED_PAGE_SIZE * 2,
+        });
+        return [category.key, data.results || []];
+      }));
+
+      const nextItems = { ...this.feedItems };
+      const nextOffsets = { ...this.feedOffsets };
+      const nextHasMore = { ...this.feedHasMore };
+      let totalResults = 0;
+
+      for (const [key, results] of responses) {
+        nextItems[key] = results;
+        nextOffsets[key] = results.length;
+        nextHasMore[key] = false;
+        totalResults += results.length;
       }
-      if (!results.length) this.restaurantSearchError = `No restaurant matches found for "${query}".`;
+
+      this.feedItems = nextItems;
+      this.feedOffsets = nextOffsets;
+      this.feedHasMore = nextHasMore;
+      if (!totalResults) this.placeSearchError = `No place matches found for "${query}".`;
     } catch {
-      this.restaurantSearchError = 'Restaurant search is unavailable right now.';
+      this.placeSearchError = 'Place search is unavailable right now.';
     }
-    this.restaurantSearchLoading = false;
+    this.placeSearchLoading = false;
   },
   canLoadMore() {
     return Alpine.store('route').page === 'home'

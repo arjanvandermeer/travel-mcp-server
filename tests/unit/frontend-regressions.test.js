@@ -26,7 +26,7 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /\$store\.route\.page === 'atlas'/, 'Navigation should expose the atlas as a first-class page');
     assert.match(indexHtml, /home-category-strip/, 'City Pulse should expose the Stay, Eat, and See feed controls');
     assert.match(indexHtml, /aria-pressed="\$store\.discovery\.isFeedActive\(category\.key\)"/, 'Homepage filters should be toggle buttons');
-    assert.match(indexHtml, /restaurant-name-search/, 'Homepage should expose city-scoped restaurant name search');
+    assert.match(indexHtml, /place-name-search/, 'Homepage should expose city-scoped place name search');
     assert.match(indexHtml, /hero-credit/, 'City Pulse should keep image attribution on the hero');
     assert.match(indexHtml, /atlas-status-grid/, 'Atlas should surface result and layer status');
     assert.match(indexHtml, /\$store\.atlas\.resetView\(\)/, 'Atlas should provide a reset control');
@@ -34,7 +34,8 @@ describe('frontend regressions', () => {
     assert.match(appJs, /toggleFeed\(key\)/, 'Discovery store should support combined category toggles');
     assert.match(appJs, /defaultHomeFeedKeys\(\)[\s\S]*return \['dining'\]/, 'Homepage should default to Eat only for new visitors');
     assert.match(appJs, /HOME_FEED_PREFERENCE_KEY/, 'Homepage category toggles should persist between sessions');
-    assert.match(appJs, /searchRestaurantsByName\(\)/, 'Discovery store should search restaurants by name');
+    assert.match(appJs, /searchPlacesByName\(\)/, 'Discovery store should search selected categories by name');
+    assert.match(appJs, /Promise\.all\(this\.feedCategories\.map/, 'Homepage name search should query Stay, Eat, and See result groups');
     assert.match(appJs, /loadMoreFeed\(\)/, 'Discovery store should support loading more homepage cards');
     assert.match(appJs, /resultsLabel\(\)/, 'Atlas store should provide result status text');
     assert.match(appJs, /resetView\(\)/, 'Atlas store should provide a reset action');

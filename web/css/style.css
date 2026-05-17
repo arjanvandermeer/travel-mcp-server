@@ -122,15 +122,19 @@ button { cursor: pointer; }
 }
 .pulse-panel {
   max-width: 900px;
-  padding: clamp(20px, 4vw, 34px);
+  padding: clamp(16px, 3vw, 26px);
   border: 1px solid rgba(255,255,255,.64);
   border-radius: 22px;
-  background: rgba(251,250,247,.78);
+  background: rgba(251,250,247,.66);
   box-shadow: var(--shadow);
   backdrop-filter: blur(18px);
 }
+.pulse-panel > .eyebrow {
+  display: inline-flex;
+  margin: -4px 0 6px;
+}
 .pulse-panel h1, .composer-header h1, .dossier-hero h1 {
-  margin: 8px 0 12px;
+  margin: 4px 0 8px;
   font-size: clamp(42px, 7vw, 88px);
   line-height: .95;
   letter-spacing: 0;
@@ -516,7 +520,7 @@ button { cursor: pointer; }
     right: auto;
     bottom: 8px;
   }
-  .pulse-panel { padding: 18px; }
+  .pulse-panel { padding: 14px; }
   .pulse-panel h1 { font-size: 42px; }
   .command-wrap { display: grid; }
   .suggestions { right: 0; }
