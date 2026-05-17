@@ -26,6 +26,72 @@
       color: #666;
       margin-top: 4px;
     }
+    .toolbar {
+      display: flex;
+      gap: 8px;
+      margin: 12px 0;
+      overflow-x: auto;
+      padding-bottom: 2px;
+    }
+    .filter-chip {
+      border: 1px solid #d7dce8;
+      background: #fff;
+      border-radius: 999px;
+      padding: 6px 10px;
+      color: #4b5563;
+      font-size: 12px;
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .filter-chip.active {
+      border-color: #667eea;
+      background: rgba(102, 126, 234, .1);
+      color: #4f46e5;
+    }
+    .map-panel {
+      position: relative;
+      height: 180px;
+      margin-bottom: 14px;
+      overflow: hidden;
+      border: 1px solid #d7dce8;
+      border-radius: 12px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,.55) 1px, transparent 1px),
+        linear-gradient(rgba(255,255,255,.55) 1px, transparent 1px),
+        linear-gradient(135deg, #d9f0ec, #eef2ff 54%, #f9efe0);
+      background-size: 28px 28px, 28px 28px, cover;
+    }
+    .map-empty {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      padding: 18px;
+      color: #64748b;
+      text-align: center;
+      font-size: 13px;
+    }
+    .map-marker {
+      position: absolute;
+      width: 26px;
+      height: 26px;
+      transform: translate(-50%, -50%);
+      border: 3px solid #fff;
+      border-radius: 50%;
+      background: #667eea;
+      box-shadow: 0 8px 18px rgba(15, 23, 42, .25);
+      cursor: pointer;
+    }
+    .map-marker[data-group="stay"] { background: #2563eb; }
+    .map-marker[data-group="eat"] { background: #dc2626; }
+    .map-marker[data-group="see"] { background: #15803d; }
+    .map-marker.active {
+      width: 32px;
+      height: 32px;
+      z-index: 3;
+      box-shadow: 0 0 0 4px rgba(255,255,255,.72), 0 10px 22px rgba(15, 23, 42, .32);
+    }
+    .map-marker.hidden { display: none; }
     .results-list {
       display: flex;
       flex-direction: column;
@@ -42,6 +108,11 @@
       color: inherit;
       display: flex;
       gap: 12px;
+    }
+    .result-card.hidden { display: none; }
+    .result-card.selected {
+      outline: 2px solid #667eea;
+      box-shadow: 0 0 0 4px rgba(102, 126, 234, .12);
     }
     .result-card:hover {
       transform: translateY(-2px);
@@ -103,6 +174,22 @@
       color: #667eea;
       margin-top: 6px;
     }
+    .photo-gallery {
+      display: flex;
+      gap: 6px;
+      margin-top: 8px;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .photo-gallery::-webkit-scrollbar { display: none; }
+    .photo-gallery img {
+      width: 52px;
+      height: 40px;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      object-fit: cover;
+      flex: 0 0 auto;
+    }
     .empty-state {
       text-align: center;
       padding: 40px 20px;
@@ -124,13 +211,22 @@
     <h1 id="title">{{title}}</h1>
     <div class="count" id="count">{{count}} results found</div>
   </div>
+  <div class="toolbar" role="toolbar" aria-label="Result filters">
+    <button class="filter-chip active" data-filter="all">All</button>
+    <button class="filter-chip" data-filter="stay">Stay</button>
+    <button class="filter-chip" data-filter="eat">Eat</button>
+    <button class="filter-chip" data-filter="see">See</button>
+  </div>
+  <div class="map-panel" id="result-map" aria-label="Result map">
+    <div class="map-empty">Map markers appear when results include coordinates.</div>
+  </div>
 
   <div id="results-container">
     {{!-- Server-side rendered results (fallback) --}}
     {{#if results}}
     <div class="results-list">
       {{#each results}}
-      <a class="result-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
+      <a class="result-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-poi-type="{{poi_type}}" data-lat="{{or latitude osm_latitude}}" data-lng="{{or longitude osm_longitude}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
         {{#if photo_url}}
         <img class="card-thumb" src="{{photo_url}}" alt="">
         {{/if}}
@@ -161,6 +257,13 @@
           {{/if}}
           {{#if osm_cuisine}}
           <div class="card-cuisine">{{osm_cuisine}}</div>
+          {{/if}}
+          {{#if google_photos}}
+          <div class="photo-gallery" aria-label="Place photos">
+            {{#each google_photos}}
+            {{#if url}}<img src="{{url}}" alt="" loading="lazy">{{/if}}
+            {{/each}}
+          </div>
           {{/if}}
         </div>
       </a>
@@ -227,16 +330,21 @@
         cuisine = '<div class="card-cuisine">' + escapeHtml(poi.osm_cuisine) + '</div>';
       }
 
-      // Get photo URL from google_photos array if available
-      var photoUrl = poi.photo_url;
-      if (!photoUrl && poi.google_photos && poi.google_photos.length > 0) {
-        photoUrl = poi.google_photos[0].url;
-      }
+      var photoUrls = getPhotoUrls(poi);
+      var photoUrl = photoUrls[0] || '';
+      var gallery = photoUrls.length > 1
+        ? '<div class="photo-gallery" aria-label="Place photos">' + photoUrls.slice(0, 5).map(function(url) {
+            return '<img src="' + escapeHtml(url) + '" alt="" loading="lazy">';
+          }).join('') + '</div>'
+        : '';
 
       var card = document.createElement('a');
       card.className = 'result-card';
       card.href = poi.resource_uri || '#';
       card.setAttribute('data-osm-id', poi.osm_id);
+      card.setAttribute('data-poi-type', poi.poi_type || '');
+      card.setAttribute('data-lat', poi.latitude || poi.osm_latitude || '');
+      card.setAttribute('data-lng', poi.longitude || poi.osm_longitude || '');
       card.setAttribute('data-resource-uri', poi.resource_uri || '');
       card.setAttribute('data-preview-url', poi.preview_url || '');
 
@@ -252,9 +360,26 @@
           (stayQuality || rating || distance ? '<div class="card-meta">' + stayQuality + rating + distance + '</div>' : '') +
           address +
           cuisine +
+          gallery +
         '</div>';
 
       return card;
+    }
+
+    function getPhotoUrls(poi) {
+      var urls = [];
+      if (poi.photo_url) urls.push(poi.photo_url);
+      if (Array.isArray(poi.photo_urls)) {
+        urls = urls.concat(poi.photo_urls);
+      }
+      if (Array.isArray(poi.google_photos)) {
+        urls = urls.concat(poi.google_photos.map(function(photo) {
+          return photo && (photo.url || photo.url_thumbnail);
+        }));
+      }
+      return urls.filter(Boolean).filter(function(url, index, arr) {
+        return arr.indexOf(url) === index;
+      });
     }
 
     // Escape HTML to prevent XSS
@@ -262,6 +387,104 @@
       var div = document.createElement('div');
       div.textContent = text;
       return div.innerHTML;
+    }
+
+    function typeGroup(type) {
+      if (['hotel', 'hostel', 'guest_house', 'motel', 'resort', 'apartment', 'camp_site', 'chalet', 'bed_and_breakfast'].indexOf(type) >= 0) return 'stay';
+      if (['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'].indexOf(type) >= 0) return 'eat';
+      if (['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park', 'gallery', 'artwork'].indexOf(type) >= 0) return 'see';
+      return 'other';
+    }
+
+    function cardData(card) {
+      return {
+        osm_id: card.getAttribute('data-osm-id'),
+        poi_type: card.getAttribute('data-poi-type') || '',
+        latitude: parseFloat(card.getAttribute('data-lat')),
+        longitude: parseFloat(card.getAttribute('data-lng')),
+      };
+    }
+
+    function buildMapFromCards() {
+      var cards = Array.prototype.slice.call(document.querySelectorAll('.result-card'));
+      buildMap(cards.map(cardData).filter(function(poi) {
+        return !isNaN(poi.latitude) && !isNaN(poi.longitude);
+      }));
+    }
+
+    function buildMap(results) {
+      var map = document.getElementById('result-map');
+      if (!map) return;
+      map.innerHTML = '';
+      var mapped = (results || []).map(function(poi) {
+        return {
+          osm_id: String(poi.osm_id || ''),
+          poi_type: poi.poi_type || '',
+          latitude: parseFloat(poi.latitude || poi.osm_latitude),
+          longitude: parseFloat(poi.longitude || poi.osm_longitude),
+        };
+      }).filter(function(poi) {
+        return poi.osm_id && !isNaN(poi.latitude) && !isNaN(poi.longitude);
+      });
+
+      if (mapped.length === 0) {
+        map.innerHTML = '<div class="map-empty">Map markers appear when results include coordinates.</div>';
+        return;
+      }
+
+      var lats = mapped.map(function(poi) { return poi.latitude; });
+      var lngs = mapped.map(function(poi) { return poi.longitude; });
+      var minLat = Math.min.apply(null, lats);
+      var maxLat = Math.max.apply(null, lats);
+      var minLng = Math.min.apply(null, lngs);
+      var maxLng = Math.max.apply(null, lngs);
+      var latSpan = Math.max(maxLat - minLat, 0.001);
+      var lngSpan = Math.max(maxLng - minLng, 0.001);
+
+      mapped.forEach(function(poi) {
+        var marker = document.createElement('button');
+        marker.type = 'button';
+        marker.className = 'map-marker';
+        marker.setAttribute('data-osm-id', poi.osm_id);
+        marker.setAttribute('data-group', typeGroup(poi.poi_type));
+        marker.setAttribute('aria-label', 'Focus result ' + poi.osm_id);
+        marker.style.left = (8 + ((poi.longitude - minLng) / lngSpan) * 84) + '%';
+        marker.style.top = (92 - ((poi.latitude - minLat) / latSpan) * 84) + '%';
+        marker.addEventListener('click', function() {
+          selectResult(poi.osm_id);
+        });
+        map.appendChild(marker);
+      });
+    }
+
+    function selectResult(osmId) {
+      document.querySelectorAll('.result-card, .map-marker').forEach(function(el) {
+        el.classList.toggle('selected', el.getAttribute('data-osm-id') === String(osmId));
+        el.classList.toggle('active', el.getAttribute('data-osm-id') === String(osmId));
+      });
+      var card = Array.prototype.slice.call(document.querySelectorAll('.result-card')).find(function(item) {
+        return item.getAttribute('data-osm-id') === String(osmId);
+      });
+      if (card) card.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    }
+
+    function applyFilter(filter) {
+      document.querySelectorAll('.filter-chip').forEach(function(button) {
+        button.classList.toggle('active', button.getAttribute('data-filter') === filter);
+      });
+      document.querySelectorAll('.result-card, .map-marker').forEach(function(el) {
+        var group = typeGroup(el.getAttribute('data-poi-type') || el.getAttribute('data-group') || '');
+        var visible = filter === 'all' || group === filter || el.getAttribute('data-group') === filter;
+        el.classList.toggle('hidden', !visible);
+      });
+    }
+
+    function initFilters() {
+      document.querySelectorAll('.filter-chip').forEach(function(button) {
+        button.addEventListener('click', function() {
+          applyFilter(button.getAttribute('data-filter') || 'all');
+        });
+      });
     }
 
     // Render all results
@@ -303,8 +526,9 @@
 
       container.appendChild(list);
 
-      // Attach click handlers
+      buildMap(results);
       attachCardHandlers();
+      initFilters();
     }
 
     // Attach click handlers to cards
@@ -326,6 +550,9 @@
             window.open(previewUrl, '_blank');
           }
         });
+        card.addEventListener('mouseenter', function() {
+          selectResult(this.getAttribute('data-osm-id'));
+        });
       });
     }
 
@@ -343,6 +570,8 @@
           loading.style.display = 'none';
         }
         attachCardHandlers();
+        initFilters();
+        buildMapFromCards();
       }
     });
   </script>

@@ -576,6 +576,45 @@ describe('renderNearbyWidget', () => {
 });
 
 // =============================================================================
+// search-results MCP Apps widget
+// =============================================================================
+
+describe('search-results widget', () => {
+  it('renders map, filters, marker data, and Google photo gallery hooks', () => {
+    const html = render('search-results', {
+      title: 'Search Results',
+      count: 2,
+      results: [
+        {
+          osm_id: 1,
+          name: 'Grand Hotel',
+          poi_type: 'hotel',
+          latitude: 13.75,
+          longitude: 100.5,
+          google_photos: [{ url: 'https://example.com/hotel-a.jpg' }, { url: 'https://example.com/hotel-b.jpg' }],
+        },
+        {
+          osm_id: 2,
+          name: 'Thai Kitchen',
+          poi_type: 'restaurant',
+          latitude: 13.751,
+          longitude: 100.501,
+        },
+      ],
+    });
+
+    assert.ok(html.includes('role="toolbar"'), 'Should expose filter toolbar');
+    assert.ok(html.includes('data-filter="stay"'), 'Should include accommodation filter');
+    assert.ok(html.includes('id="result-map"'), 'Should include map panel');
+    assert.ok(html.includes('data-poi-type="hotel"'), 'Should include marker/list type data');
+    assert.ok(html.includes('data-lat="13.75"'), 'Should include marker/list latitude data');
+    assert.ok(html.includes('photo-gallery'), 'Should render photo gallery for Google photos');
+    assert.ok(html.includes('buildMap'), 'Should include interactive map builder');
+    assert.ok(html.includes('applyFilter'), 'Should include filter interaction handler');
+  });
+});
+
+// =============================================================================
 // renderPOIPreview nearby section
 // =============================================================================
 
