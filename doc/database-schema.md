@@ -582,6 +582,19 @@ Restaurant price filters use Google Places `price_level` values after the initia
 
 `get_dining_budget` aggregates active Google Places mappings by city, optional cuisine, and price level. It returns sample size, a data-quality label, the price-level distribution, and USD per-person low/median/high estimates when at least 5 mapped venues have price data.
 
+### Restaurant occasions
+
+`search_restaurants` and `search_restaurants_ui` accept an `occasion` value that expands into explainable restaurant filters. Matching results include `restaurant_occasion` and `restaurant_occasion_explanation`. Rating and price checks use Google Places enrichment when present; results without those Google fields are not excluded solely because the enrichment data is missing.
+
+| Occasion | Filter signals |
+|----------|----------------|
+| `business_dinner` | Full-service restaurants, reservation/table-service/card-payment tags, 4+ Google rating when known, moderate-or-higher price when known |
+| `casual_lunch` | Restaurants, cafes, fast food, or food courts with takeaway, outdoor-seating, cuisine, or moderate/lower price signals |
+| `date_night` | Restaurants, bars, or pubs with reservation, outdoor-seating, live-music, cuisine, 4+ Google rating when known, moderate-or-higher price when known |
+| `family_meal` | Restaurants, cafes, or fast food with highchair, kids-area, child-friendly, changing-table, or playground tags |
+| `quick_bite` | Fast food, cafes, or food courts with takeaway, drive-through, self-service, or inexpensive/free price signals |
+| `late_night` | Restaurants, bars, pubs, or fast food with `24/7` or late-hour opening-hours patterns |
+
 ## PostGIS Reference
 
 All coordinates use **WGS84 (SRID 4326)**.

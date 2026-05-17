@@ -16,6 +16,7 @@ export { getResourcesConfig, handleReadResource } from './resources-config.js';
 export { accommodationTypes, attractionTypes, fetchNearbyForPOI, foodTypes, getNearbyTitle, getNearbyTypes, isOpenNow, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
 
 const hotelIntents = ['remote_work', 'family', 'romantic', 'budget', 'accessible', 'pet_friendly'];
+const restaurantOccasions = ['business_dinner', 'casual_lunch', 'date_night', 'family_meal', 'quick_bite', 'late_night'];
 
 // Base tool definitions
 const baseToolsConfig = [
@@ -230,6 +231,11 @@ const baseToolsConfig = [
           ],
           description: 'Filter by Google Places price level: 0/free, 1/inexpensive, 2/moderate, 3/expensive, 4/very_expensive. Requires Google enrichment data.',
         },
+        occasion: {
+          type: 'string',
+          enum: restaurantOccasions,
+          description: 'Occasion-based restaurant search. Maps to explainable filters: business_dinner, casual_lunch, date_night, family_meal, quick_bite, late_night.',
+        },
         open_now: {
           type: 'boolean',
           description: 'If true, only return restaurants that are currently open. Uses Google Places hours when available and OSM opening_hours as fallback. POIs without hours data are excluded.',
@@ -281,6 +287,7 @@ const baseToolsConfig = [
           ],
           description: 'Google Places price level filter.',
         },
+        occasion: { type: 'string', enum: restaurantOccasions, description: 'Occasion-based restaurant search: business_dinner, casual_lunch, date_night, family_meal, quick_bite, late_night.' },
         open_now: { type: 'boolean', description: 'Only return currently open restaurants.' },
         open_at: { type: 'string', description: 'ISO datetime to return only restaurants open at that time.' },
         limit: { type: 'number', description: 'Max results (default: 50, max: 100)', default: 50 },
@@ -789,6 +796,12 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
     case 'search_restaurants':
     case 'search_restaurants_ui': {
+      if (args.occasion && !restaurantOccasions.includes(args.occasion)) {
+        return {
+          isError: true,
+          content: [{ type: 'text', text: JSON.stringify({ error: `Unsupported occasion: ${args.occasion}` }, null, 2) }],
+        };
+      }
       if (args.latitude !== undefined && args.longitude !== undefined) {
         const coords = validateCoordinates(args.latitude, args.longitude);
         if (!coords.valid) {
@@ -810,6 +823,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         cuisine: args.cuisine,
         dietary: args.dietary,
         priceLevel: args.price_level,
+        occasion: args.occasion,
         openNow: args.open_now || false,
         openAt: args.open_at,
         limit: validateLimit(args.limit, 50, 100),

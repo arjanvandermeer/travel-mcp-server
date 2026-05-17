@@ -344,6 +344,30 @@ describe('executeToolHandler: search_restaurants', () => {
     assert.strictEqual(capturedArgs.priceLevel, 2);
   });
 
+  it('should pass occasion filters for restaurants', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_restaurants', {
+      city_name: 'NYC',
+      country_code: 'US',
+      occasion: 'date_night',
+    }, db);
+    assert.strictEqual(capturedArgs.occasion, 'date_night');
+  });
+
+  it('should reject unsupported restaurant occasions', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('search_restaurants', {
+      city_name: 'NYC',
+      country_code: 'US',
+      occasion: 'surprise_me',
+    }, db);
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /Unsupported occasion: surprise_me/);
+  });
+
   it('should pass open_now and open_at filters for restaurants', async () => {
     let capturedArgs;
     const db = createMockDb({
@@ -385,6 +409,21 @@ describe('executeToolHandler: search_restaurants', () => {
       assert.ok(schema, `${toolName} should expose price_level`);
       assert.ok(schema.oneOf[0].enum.includes(2));
       assert.ok(schema.oneOf[1].enum.includes('moderate'));
+    }
+  });
+
+  it('should expose occasion schema on restaurant tools', () => {
+    const tools = getToolsConfig('https://mcp.example.com');
+    for (const toolName of ['search_restaurants', 'search_restaurants_ui']) {
+      const tool = tools.find(t => t.name === toolName);
+      const schema = tool.inputSchema.properties.occasion;
+      assert.strictEqual(schema.type, 'string');
+      assert.ok(schema.enum.includes('business_dinner'));
+      assert.ok(schema.enum.includes('casual_lunch'));
+      assert.ok(schema.enum.includes('date_night'));
+      assert.ok(schema.enum.includes('family_meal'));
+      assert.ok(schema.enum.includes('quick_bite'));
+      assert.ok(schema.enum.includes('late_night'));
     }
   });
 });

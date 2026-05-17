@@ -769,6 +769,72 @@ export class TravelDatabase {
     },
   };
 
+  static RESTAURANT_OCCASION_MAP = {
+    business_dinner: {
+      explanation: 'Prioritizes full-service restaurants with reservation, table-service, card-payment, rating, and moderate-or-higher price signals.',
+      typeClauses: ["p.poi_type = 'restaurant'"],
+      clauses: [
+        "(p.tags ? 'reservation' AND p.tags->>'reservation' != 'no')",
+        "(p.tags ? 'table_service' AND p.tags->>'table_service' != 'no')",
+        "(p.tags ? 'payment:credit_cards' AND p.tags->>'payment:credit_cards' != 'no')",
+      ],
+      minGoogleRating: 4,
+      priceLevels: ['PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE'],
+    },
+    casual_lunch: {
+      explanation: 'Prioritizes accessible lunch spots such as restaurants, cafes, fast food, and food courts with takeaway or outdoor-seating signals.',
+      typeClauses: ["p.poi_type = ANY(ARRAY['restaurant','cafe','fast_food','food_court'])"],
+      clauses: [
+        "(p.tags ? 'takeaway' AND p.tags->>'takeaway' != 'no')",
+        "(p.tags ? 'outdoor_seating' AND p.tags->>'outdoor_seating' != 'no')",
+        'p.cuisine IS NOT NULL',
+      ],
+      priceLevels: ['PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE'],
+    },
+    date_night: {
+      explanation: 'Prioritizes restaurants, bars, and pubs with reservation, outdoor-seating, live-music, cuisine, rating, and moderate-or-higher price signals.',
+      typeClauses: ["p.poi_type = ANY(ARRAY['restaurant','bar','pub'])"],
+      clauses: [
+        "(p.tags ? 'reservation' AND p.tags->>'reservation' != 'no')",
+        "(p.tags ? 'outdoor_seating' AND p.tags->>'outdoor_seating' != 'no')",
+        "(p.tags ? 'live_music' AND p.tags->>'live_music' != 'no')",
+        'p.cuisine IS NOT NULL',
+      ],
+      minGoogleRating: 4,
+      priceLevels: ['PRICE_LEVEL_MODERATE', 'PRICE_LEVEL_EXPENSIVE', 'PRICE_LEVEL_VERY_EXPENSIVE'],
+    },
+    family_meal: {
+      explanation: 'Prioritizes restaurants, cafes, and quick-service places with child-friendly OSM tags.',
+      typeClauses: ["p.poi_type = ANY(ARRAY['restaurant','cafe','fast_food'])"],
+      clauses: [
+        "(p.tags ? 'highchair' AND p.tags->>'highchair' != 'no')",
+        "(p.tags ? 'kids_area' AND p.tags->>'kids_area' != 'no')",
+        "(p.tags ? 'child_friendly' AND p.tags->>'child_friendly' != 'no')",
+        "(p.tags ? 'changing_table' AND p.tags->>'changing_table' != 'no')",
+        "(p.tags ? 'playground' AND p.tags->>'playground' != 'no')",
+      ],
+      priceLevels: ['PRICE_LEVEL_INEXPENSIVE', 'PRICE_LEVEL_MODERATE'],
+    },
+    quick_bite: {
+      explanation: 'Prioritizes fast, informal venues with takeaway, drive-through, or self-service signals and lower price levels where known.',
+      typeClauses: ["p.poi_type = ANY(ARRAY['fast_food','cafe','food_court'])"],
+      clauses: [
+        "(p.tags ? 'takeaway' AND p.tags->>'takeaway' != 'no')",
+        "(p.tags ? 'drive_through' AND p.tags->>'drive_through' != 'no')",
+        "(p.tags ? 'self_service' AND p.tags->>'self_service' != 'no')",
+      ],
+      priceLevels: ['PRICE_LEVEL_FREE', 'PRICE_LEVEL_INEXPENSIVE'],
+    },
+    late_night: {
+      explanation: 'Prioritizes restaurants, bars, pubs, and quick-service places with late or 24/7 opening-hours signals.',
+      typeClauses: ["p.poi_type = ANY(ARRAY['restaurant','bar','pub','fast_food'])"],
+      clauses: [
+        "p.opening_hours ILIKE '%24/7%'",
+        "p.opening_hours ~ '(22|23|00|01|02):'",
+      ],
+    },
+  };
+
   static normalizeExtraFilterList(value) {
     if (!value) return [];
     const values = Array.isArray(value) ? value : [value];
@@ -866,6 +932,47 @@ export class TravelDatabase {
     }));
   }
 
+  static buildRestaurantOccasionFilter(occasion) {
+    const occasionConfig = TravelDatabase.RESTAURANT_OCCASION_MAP[occasion];
+    if (!occasionConfig) return '';
+
+    const parts = [];
+    if (occasionConfig.typeClauses?.length > 0) {
+      parts.push(`(${occasionConfig.typeClauses.join(' OR ')})`);
+    }
+    if (occasionConfig.clauses?.length > 0) {
+      parts.push(`(${occasionConfig.clauses.join(' OR ')})`);
+    }
+    return parts.length > 0 ? ` AND (${parts.join(' AND ')})` : '';
+  }
+
+  filterByRestaurantOccasion(pois, occasion) {
+    const occasionConfig = TravelDatabase.RESTAURANT_OCCASION_MAP[occasion];
+    if (!occasionConfig) return pois;
+
+    return pois.filter(poi => {
+      const rating = Number(poi.google_rating);
+      if (occasionConfig.minGoogleRating && Number.isFinite(rating) && rating < occasionConfig.minGoogleRating) {
+        return false;
+      }
+      if (occasionConfig.priceLevels?.length > 0 && poi.google_price_level && !occasionConfig.priceLevels.includes(poi.google_price_level)) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  static annotateRestaurantOccasion(pois, occasion) {
+    const occasionConfig = TravelDatabase.RESTAURANT_OCCASION_MAP[occasion];
+    if (!occasionConfig) return pois;
+
+    return pois.map(poi => ({
+      ...poi,
+      restaurant_occasion: occasion,
+      restaurant_occasion_explanation: occasionConfig.explanation,
+    }));
+  }
+
   /**
    * Append cuisine, amenity, and dietary WHERE clauses to a query.
    * Mutates queryParams array. Returns SQL fragment string to append.
@@ -932,6 +1039,7 @@ export class TravelDatabase {
    * @param {string|null} params.brand - Hotel brand filter
    * @param {string|null} params.chain - Hotel chain filter including known sub-brands
    * @param {string|null} params.intent - Hotel intent filter
+   * @param {string|null} params.occasion - Restaurant occasion filter
    * @param {number|string|null} params.priceLevel - Google Places price level filter
    * @param {boolean} params.openNow - Filter to only currently open POIs
    * @param {Date|string|null} params.openAt - Filter to only POIs open at this time
@@ -956,6 +1064,7 @@ export class TravelDatabase {
       brand = null,       // Hotel brand filter
       chain = null,       // Hotel chain filter
       intent = null,      // Hotel intent filter
+      occasion = null,    // Restaurant occasion filter
       priceLevel = null,  // Google Places price level filter
       openNow = false,    // Filter to only currently open POIs
       openAt = null,      // Filter to POIs open at a specific time
@@ -978,6 +1087,7 @@ export class TravelDatabase {
       brand && `brand=${brand}`,
       chain && `chain=${chain}`,
       intent && `intent=${intent}`,
+      occasion && `occasion=${occasion}`,
       normalizedPriceLevel && `priceLevel=${normalizedPriceLevel}`,
       openNow && 'openNow',
       openAt && `openAt=${openAt}`,
@@ -1041,6 +1151,7 @@ export class TravelDatabase {
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
       query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
       query += TravelDatabase.buildHotelIntentFilter(intent);
+      query += TravelDatabase.buildRestaurantOccasionFilter(occasion);
 
       query += ` ORDER BY name_similarity DESC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
@@ -1080,13 +1191,14 @@ export class TravelDatabase {
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
       query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
       query += TravelDatabase.buildHotelIntentFilter(intent);
+      query += TravelDatabase.buildRestaurantOccasionFilter(occasion);
 
       query += ` ORDER BY p.name ASC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
     }
     // Case 2: Location only (city or coordinates)
     else if (!hasName && (hasCity || hasCoords)) {
-      const extraFilters = { cuisine, amenities, dietary, brand, chain, intent, priceLevel: normalizedPriceLevel };
+      const extraFilters = { cuisine, amenities, dietary, brand, chain, intent, occasion, priceLevel: normalizedPriceLevel };
       if (hasCity) {
         const city = await this.getCityByName(cityName, countryCode, state);
         if (!city) {
@@ -1188,6 +1300,7 @@ export class TravelDatabase {
       query += TravelDatabase.buildExtraFilters(cuisine, amenities, dietary, queryParams);
       query += TravelDatabase.buildHotelBrandFilters(brand, chain, queryParams);
       query += TravelDatabase.buildHotelIntentFilter(intent);
+      query += TravelDatabase.buildRestaurantOccasionFilter(occasion);
 
       query += ` ORDER BY name_similarity DESC, distance_km ASC LIMIT $${queryParams.length + 1}`;
       queryParams.push(limit);
@@ -1199,11 +1312,12 @@ export class TravelDatabase {
     const openAtDate = coerceOpenAt(openAt);
     const shouldFilterByHours = openNow || openAtDate;
     const shouldFilterByPrice = !!normalizedPriceLevel;
+    const shouldFilterByOccasion = !!TravelDatabase.RESTAURANT_OCCASION_MAP[occasion];
 
     // For hours filtering, over-fetch and post-filter using Google or OSM opening hours.
-    const fetchLimit = (shouldFilterByHours || shouldFilterByPrice) ? limit * 3 : limit;
+    const fetchLimit = (shouldFilterByHours || shouldFilterByPrice || shouldFilterByOccasion) ? limit * 3 : limit;
     // Replace the limit param (always the last one) with the potentially larger fetch limit
-    if (shouldFilterByHours || shouldFilterByPrice) {
+    if (shouldFilterByHours || shouldFilterByPrice || shouldFilterByOccasion) {
       queryParams[queryParams.length - 1] = fetchLimit;
     }
 
@@ -1214,11 +1328,15 @@ export class TravelDatabase {
     if (shouldFilterByPrice) {
       filtered = this.filterByPriceLevel(filtered, normalizedPriceLevel);
     }
+    if (shouldFilterByOccasion) {
+      filtered = this.filterByRestaurantOccasion(filtered, occasion);
+    }
     if (shouldFilterByHours) {
       filtered = this.filterOpenAt(filtered, openAtDate || new Date());
     }
     filtered = filtered.slice(0, limit);
     filtered = TravelDatabase.annotateHotelIntent(filtered, intent);
+    filtered = TravelDatabase.annotateRestaurantOccasion(filtered, occasion);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
@@ -1444,15 +1562,17 @@ export class TravelDatabase {
       );
       query += TravelDatabase.buildHotelBrandFilters(extraFilters.brand, extraFilters.chain, params);
       query += TravelDatabase.buildHotelIntentFilter(extraFilters.intent);
+      query += TravelDatabase.buildRestaurantOccasionFilter(extraFilters.occasion);
     }
 
     const openAtDate = coerceOpenAt(openAt);
     const shouldFilterByHours = openNow || openAtDate;
     const normalizedPriceLevel = TravelDatabase.normalizePriceLevel(extraFilters?.priceLevel);
     const shouldFilterByPrice = !!normalizedPriceLevel;
+    const shouldFilterByOccasion = !!TravelDatabase.RESTAURANT_OCCASION_MAP[extraFilters?.occasion];
     // For hours filtering, over-fetch and post-filter (offset not applied since post-filtering changes counts)
-    const fetchLimit = (shouldFilterByHours || shouldFilterByPrice) ? limit * 3 : limit;
-    const fetchOffset = (shouldFilterByHours || shouldFilterByPrice) ? 0 : offset;
+    const fetchLimit = (shouldFilterByHours || shouldFilterByPrice || shouldFilterByOccasion) ? limit * 3 : limit;
+    const fetchOffset = (shouldFilterByHours || shouldFilterByPrice || shouldFilterByOccasion) ? 0 : offset;
     query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(fetchLimit, fetchOffset);
 
@@ -1463,11 +1583,15 @@ export class TravelDatabase {
     if (shouldFilterByPrice) {
       filtered = this.filterByPriceLevel(filtered, normalizedPriceLevel);
     }
+    if (shouldFilterByOccasion) {
+      filtered = this.filterByRestaurantOccasion(filtered, extraFilters?.occasion);
+    }
     if (shouldFilterByHours) {
       filtered = this.filterOpenAt(filtered, openAtDate || new Date());
     }
     filtered = filtered.slice(0, limit);
     filtered = TravelDatabase.annotateHotelIntent(filtered, extraFilters?.intent);
+    filtered = TravelDatabase.annotateRestaurantOccasion(filtered, extraFilters?.occasion);
 
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);

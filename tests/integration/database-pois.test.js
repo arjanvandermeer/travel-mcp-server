@@ -124,6 +124,29 @@ describe('TravelDatabase POI Search Functions', () => {
         assert.ok(searchCall.params.includes('%japanese%'), 'Should bind second cuisine');
       });
 
+      it('should add restaurant occasion filters to name searches', async () => {
+        mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
+        mockPool.setResponse('google_places', dbResult([
+          { osm_id: 12346, google_rating: 4.6, google_price_level: 'PRICE_LEVEL_EXPENSIVE' },
+        ]));
+
+        db = new TravelDatabase({ pool: mockPool });
+        const results = await db.searchPOIs({
+          name: 'Kitchen',
+          poiTypes: ['restaurant'],
+          occasion: 'date_night',
+          limit: 20,
+        });
+
+        const calls = mockPool.getCalls();
+        const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes("p.poi_type = ANY(ARRAY['restaurant','bar','pub'])"));
+        assert.ok(searchCall, 'Should include date night type clauses');
+        assert.ok(searchCall.sql.includes("p.tags ? 'reservation'"), 'Should include explainable reservation signal');
+        assert.strictEqual(searchCall.params.at(-1), 60, 'Should over-fetch for occasion post-filtering');
+        assert.strictEqual(results[0].restaurant_occasion, 'date_night');
+        assert.match(results[0].restaurant_occasion_explanation, /reservation, outdoor-seating, live-music/);
+      });
+
       it('should accept a single cuisine string', async () => {
         mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
 
@@ -566,6 +589,26 @@ describe('TravelDatabase POI Search Functions', () => {
       const searchCall = calls.find(c => c.sql.includes('osm_pois') && c.sql.includes('ST_DWithin'));
       assert.strictEqual(searchCall.params.at(-2), 60, 'Should over-fetch for price post-filtering');
       assert.strictEqual(searchCall.params.at(-1), 0, 'Should reset offset when post-filtering by price');
+    });
+
+    it('should add restaurant occasion filters to coordinate searches', async () => {
+      mockPool.setResponse('osm_pois', dbResult([samplePOIs[1]]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const results = await db.searchPOIsNearCoordinates(
+        13.75, 100.5, 10, ['restaurant', 'bar'], 20, null, null, { occasion: 'late_night' }, false, 5
+      );
+
+      const calls = mockPool.getCalls();
+      const searchCall = calls.find(c =>
+        c.sql.includes('osm_pois') &&
+        c.sql.includes('ST_DWithin') &&
+        c.sql.includes("p.opening_hours ILIKE '%24/7%'")
+      );
+      assert.ok(searchCall, 'Should include late night opening-hours clauses');
+      assert.strictEqual(searchCall.params.at(-2), 60, 'Should over-fetch for occasion post-filtering');
+      assert.strictEqual(searchCall.params.at(-1), 0, 'Should reset offset for occasion post-filtering');
+      assert.strictEqual(results[0].restaurant_occasion, 'late_night');
     });
 
     it('should over-fetch coordinate searches when filtering by open_at', async () => {
