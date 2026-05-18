@@ -12,6 +12,7 @@ import { registerAutocompleteRoutes } from '../../src/api/autocomplete.js';
 import { registerPOIRoutes } from '../../src/api/poi.js';
 import { registerFavoritesRoutes } from '../../src/api/favorites.js';
 import { registerCityOverviewRoutes } from '../../src/api/city-overview.js';
+import { registerMapRoutes } from '../../src/api/map.js';
 import { fakeReq, fakePostReq, fakeRes } from '../mocks/http-helpers.js';
 
 // Mock database with all methods the API handlers need
@@ -254,6 +255,26 @@ describe('GET /api/v1/search/pois', () => {
 
     assert.strictEqual(res.statusCode, 200);
     assert.strictEqual(capturedParams.openNow, true);
+  });
+
+  it('should pass clamped radius and strict offset to POI search', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedParams;
+    const db = createApiMockDb({
+      searchPOIs: async (params) => {
+        capturedParams = params;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/pois?latitude=13.75&longitude=100.5&radius_km=999&offset=12abc');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedParams.radius, 50);
+    assert.strictEqual(capturedParams.offset, 0);
   });
 
   it('should return 400 without search criteria', async () => {
@@ -637,6 +658,26 @@ describe('Search API edge cases', () => {
     assert.strictEqual(capturedOpts.minPoiCount, 25);
   });
 
+  it('GET /api/v1/search/cities should default partial numeric strings instead of parsing prefixes', async () => {
+    const router = new ApiRouter();
+    registerSearchRoutes(router);
+    let capturedOpts;
+    const db = createApiMockDb({
+      searchCities: async (opts) => {
+        capturedOpts = opts;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/search/cities?latitude=13.75&longitude=100.5&radius_km=150abc&min_pois=25abc');
+    const res = fakeRes();
+    await router.handle(req, res, { db });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedOpts.radiusKm, 50);
+    assert.strictEqual(capturedOpts.minPoiCount, 0);
+  });
+
   it('GET /api/v1/search/pois should accept query-only search', async () => {
     const router = new ApiRouter();
     registerSearchRoutes(router);
@@ -692,6 +733,80 @@ describe('Search API edge cases', () => {
 
     assert.strictEqual(res.statusCode, 400);
     assert.strictEqual(res.json().error, 'Invalid coordinate values');
+  });
+});
+
+describe('GET /api/v1/map/pois', () => {
+  it('should pass a strict bbox query to the database', async () => {
+    const router = new ApiRouter();
+    registerMapRoutes(router);
+    let capturedArgs;
+    const db = createApiMockDb({
+      searchPOIsInBBox: async (...args) => {
+        capturedArgs = args;
+        return [];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/map/pois?sw_lat=13&sw_lng=100&ne_lat=14&ne_lng=101&limit=999&min_rating=4.2abc');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedArgs[5], 500);
+    assert.strictEqual(capturedArgs[6], 0);
+  });
+
+  it('should reject inverted bounding boxes', async () => {
+    const router = new ApiRouter();
+    registerMapRoutes(router);
+    const db = createApiMockDb();
+
+    const req = fakeReq('GET', '/api/v1/map/pois?sw_lat=14&sw_lng=100&ne_lat=13&ne_lng=101');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.json().code, 'invalid_bbox');
+  });
+});
+
+describe('GET /api/v1/poi/:osm_id/nearby', () => {
+  it('should return nearby POIs for a source POI', async () => {
+    const router = new ApiRouter();
+    registerPOIRoutes(router);
+    let capturedArgs;
+    const db = createApiMockDb({
+      searchPOIsNearCoordinates: async (...args) => {
+        capturedArgs = args;
+        return [{ osm_id: 124, name: 'Nearby Cafe', poi_type: 'cafe', photo_url: 'javascript:alert(1)' }];
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/poi/123/nearby?radius=99&limit=99');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(capturedArgs[2], 10);
+    assert.strictEqual(capturedArgs[4], 20);
+    assert.deepStrictEqual(capturedArgs[6], [123]);
+    assert.strictEqual(res.json().results[0].photo_url, null);
+  });
+
+  it('should reject nearby lookup when source coordinates are missing', async () => {
+    const router = new ApiRouter();
+    registerPOIRoutes(router);
+    const db = createApiMockDb({
+      getPOIDetails: async () => ({ osm_id: 123, osm_name: 'No coords', poi_type: 'hotel' }),
+    });
+
+    const req = fakeReq('GET', '/api/v1/poi/123/nearby');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 422);
+    assert.strictEqual(res.json().code, 'missing_coordinates');
   });
 });
 
