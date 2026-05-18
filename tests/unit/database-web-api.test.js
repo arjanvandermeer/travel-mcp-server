@@ -355,7 +355,8 @@ describe('createUserToken', () => {
 
     assert.strictEqual(result.name, null);
     const calls = pool.getCalls();
-    assert.strictEqual(calls[0].params[2], null, 'Token name should default to null');
+    assert.match(calls[0].params[2], /^[a-f0-9]{8}$/, 'Token prefix should be stored with hashed tokens');
+    assert.strictEqual(calls[0].params[3], null, 'Token name should default to null');
   });
 });
 

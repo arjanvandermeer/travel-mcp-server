@@ -15,7 +15,6 @@ id = "1a159160fb3241f3811117521f673878"  # Replace after: wrangler kv:namespace 
 # Required secrets (use: wrangler secret put SECRET_NAME):
 #   GOOGLE_CLIENT_ID     - Google OAuth client ID
 #   GOOGLE_CLIENT_SECRET - Google OAuth client secret
-#   COOKIE_ENCRYPTION_KEY - Random 32-byte hex string for cookie encryption
 #   MCP_SERVER_URL       - Your MCP server URL (e.g., https://travel.arjanvandermeer.com)
 
 [vars]

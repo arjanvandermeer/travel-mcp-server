@@ -1,4 +1,13 @@
+import crypto from 'node:crypto';
 import { SEARCH_LIMIT_MAX } from './config.js';
+
+function hashUserToken(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function tokenPrefix(token) {
+  return String(token).slice(0, 8);
+}
 
 export const databaseUserMethods = {
   /**
@@ -7,20 +16,42 @@ export const databaseUserMethods = {
    */
   async getUserByToken(token) {
     if (!token) return null;
+    const tokenHash = hashUserToken(token);
 
-    const result = await this.pool.query(`
-      SELECT
-        u.id, u.google_id, u.email, u.name, u.picture_url,
-        u.created_at, u.last_login_at,
-        t.id as token_id,
-        uc.key as config_key, uc.value as config_value
-      FROM user_tokens t
-      JOIN users u ON t.user_id = u.id
-      LEFT JOIN user_config uc ON uc.user_id = u.id
-      WHERE t.token = $1
-        AND t.revoked_at IS NULL
-        AND (t.expires_at IS NULL OR t.expires_at > NOW())
-    `, [token]);
+    let result;
+    let supportsTokenHash = true;
+    try {
+      result = await this.pool.query(`
+        SELECT
+          u.id, u.google_id, u.email, u.name, u.picture_url,
+          u.created_at, u.last_login_at,
+          t.id as token_id,
+          t.token_hash,
+          uc.key as config_key, uc.value as config_value
+        FROM user_tokens t
+        JOIN users u ON t.user_id = u.id
+        LEFT JOIN user_config uc ON uc.user_id = u.id
+        WHERE (t.token_hash = $1 OR (t.token_hash IS NULL AND t.token = $2))
+          AND t.revoked_at IS NULL
+          AND (t.expires_at IS NULL OR t.expires_at > NOW())
+      `, [tokenHash, token]);
+    } catch (err) {
+      if (err.code !== '42703') throw err;
+      supportsTokenHash = false;
+      result = await this.pool.query(`
+        SELECT
+          u.id, u.google_id, u.email, u.name, u.picture_url,
+          u.created_at, u.last_login_at,
+          t.id as token_id,
+          uc.key as config_key, uc.value as config_value
+        FROM user_tokens t
+        JOIN users u ON t.user_id = u.id
+        LEFT JOIN user_config uc ON uc.user_id = u.id
+        WHERE t.token = $1
+          AND t.revoked_at IS NULL
+          AND (t.expires_at IS NULL OR t.expires_at > NOW())
+      `, [token]);
+    }
 
     if (result.rows.length === 0) return null;
 
@@ -42,9 +73,18 @@ export const databaseUserMethods = {
       }
     }
 
-    this.pool.query(`
-      UPDATE user_tokens SET last_used_at = NOW() WHERE id = $1
-    `, [firstRow.token_id]).catch(() => {});
+    const updateSql = supportsTokenHash
+      ? `UPDATE user_tokens
+         SET last_used_at = NOW(),
+             token_hash = COALESCE(token_hash, $2),
+             token_prefix = COALESCE(token_prefix, $3),
+             token = NULL
+         WHERE id = $1`
+      : 'UPDATE user_tokens SET last_used_at = NOW() WHERE id = $1';
+    const updateParams = supportsTokenHash
+      ? [firstRow.token_id, tokenHash, tokenPrefix(token)]
+      : [firstRow.token_id];
+    this.pool.query(updateSql, updateParams).catch(() => {});
 
     return user;
   },
@@ -96,16 +136,27 @@ export const databaseUserMethods = {
   },
 
   async createUserToken(userId, tokenName = null) {
-    const crypto = await import('crypto');
     const token = crypto.randomBytes(32).toString('hex');
+    const tokenHash = hashUserToken(token);
+    const prefix = tokenPrefix(token);
 
-    const result = await this.pool.query(`
-      INSERT INTO user_tokens (user_id, token, name)
-      VALUES ($1, $2, $3)
-      RETURNING id, token, name, created_at
-    `, [userId, token, tokenName]);
+    let result;
+    try {
+      result = await this.pool.query(`
+        INSERT INTO user_tokens (user_id, token_hash, token_prefix, name)
+        VALUES ($1, $2, $3, $4)
+        RETURNING id, token_prefix, name, created_at
+      `, [userId, tokenHash, prefix, tokenName]);
+    } catch (err) {
+      if (err.code !== '42703') throw err;
+      result = await this.pool.query(`
+        INSERT INTO user_tokens (user_id, token, name)
+        VALUES ($1, $2, $3)
+        RETURNING id, token, name, created_at
+      `, [userId, token, tokenName]);
+    }
 
-    return result.rows[0];
+    return { ...result.rows[0], token };
   },
 
   async getUserConfig(userId, key) {
@@ -133,16 +184,31 @@ export const databaseUserMethods = {
   },
 
   async listUserTokens(userId) {
-    const result = await this.pool.query(`
-      SELECT id, name, created_at, expires_at, last_used_at,
-             CASE WHEN revoked_at IS NOT NULL THEN 'revoked'
-                  WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired'
-                  ELSE 'active' END as status
-      FROM user_tokens
-      WHERE user_id = $1
-      ORDER BY created_at DESC
-      LIMIT 100
-    `, [userId]);
+    let result;
+    try {
+      result = await this.pool.query(`
+        SELECT id, name, token_prefix, created_at, expires_at, last_used_at,
+               CASE WHEN revoked_at IS NOT NULL THEN 'revoked'
+                    WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired'
+                    ELSE 'active' END as status
+        FROM user_tokens
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 100
+      `, [userId]);
+    } catch (err) {
+      if (err.code !== '42703') throw err;
+      result = await this.pool.query(`
+        SELECT id, name, substring(token from 1 for 8) as token_prefix, created_at, expires_at, last_used_at,
+               CASE WHEN revoked_at IS NOT NULL THEN 'revoked'
+                    WHEN expires_at IS NOT NULL AND expires_at < NOW() THEN 'expired'
+                    ELSE 'active' END as status
+        FROM user_tokens
+        WHERE user_id = $1
+        ORDER BY created_at DESC
+        LIMIT 100
+      `, [userId]);
+    }
 
     return result.rows;
   },

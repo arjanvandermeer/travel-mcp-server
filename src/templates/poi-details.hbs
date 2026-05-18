@@ -396,12 +396,12 @@
       <span class="address-line">{{this}}</span>
       {{/each}}
       <div class="action-buttons">
-        <a class="action-btn" href="{{mapsUrl osm_latitude osm_longitude google_place_id}}" target="_blank">
+        <a class="action-btn" href="{{mapsUrl osm_latitude osm_longitude google_place_id}}" target="_blank" rel="noopener noreferrer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
           Google Maps
         </a>
         {{#if website_url}}
-        <a class="action-btn" href="{{website_url}}" target="_blank">
+        <a class="action-btn" href="{{website_url}}" target="_blank" rel="noopener noreferrer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
           Website
         </a>
@@ -409,15 +409,15 @@
       </div>
       {{#if has_contact}}
       <div class="contact-row">
-        {{#if google_phone}}
-        <a href="tel:{{google_phone}}">{{google_phone}}</a>
+        {{#if google_phone_href}}
+        <a href="{{google_phone_href}}">{{google_phone}}</a>
         {{else}}
-        {{#if osm_phone}}
-        <a href="tel:{{osm_phone}}">{{osm_phone}}</a>
+        {{#if osm_phone_href}}
+        <a href="{{osm_phone_href}}">{{osm_phone}}</a>
         {{/if}}
         {{/if}}
-        {{#if osm_email}}
-        <a href="mailto:{{osm_email}}">{{osm_email}}</a>
+        {{#if email_href}}
+        <a href="{{email_href}}">{{osm_email}}</a>
         {{/if}}
       </div>
       {{/if}}

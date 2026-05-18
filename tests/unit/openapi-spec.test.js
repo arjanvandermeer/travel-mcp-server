@@ -29,6 +29,19 @@ function registeredRoutes() {
   return routes;
 }
 
+function documentedApiRoutes() {
+  const routes = [];
+  const pathBlocks = openapi.matchAll(/^  (\/(?:api\/v1|auth)\/[^:\n]*):\n([\s\S]*?)(?=^  \/|^components:)/gm);
+  for (const block of pathBlocks) {
+    const routePath = block[1];
+    const methods = block[2].matchAll(/^\s{4}(get|post|patch|delete):/gm);
+    for (const method of methods) {
+      routes.push({ method: method[1], path: routePath });
+    }
+  }
+  return routes;
+}
+
 function operationBlock(spec, routePath, method) {
   const pathIndex = spec.indexOf(`  ${routePath}:`);
   assert.notStrictEqual(pathIndex, -1, `${routePath} should be documented`);
@@ -45,6 +58,15 @@ describe('OpenAPI spec', () => {
     for (const route of registeredRoutes()) {
       operationBlock(openapi, route.path, route.method);
     }
+  });
+
+  it('does not advertise unimplemented API or auth routes', () => {
+    const implemented = new Set(registeredRoutes().map(route => `${route.method} ${route.path}`));
+    const advertisedButMissing = documentedApiRoutes()
+      .map(route => `${route.method} ${route.path}`)
+      .filter(route => !implemented.has(route));
+
+    assert.deepStrictEqual(advertisedButMissing, []);
   });
 
   it('documents auth schemes and protected favorites operations', () => {

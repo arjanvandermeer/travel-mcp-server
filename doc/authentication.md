@@ -336,7 +336,6 @@ Go to your Worker → **Settings → Variables**:
 |------|-------|----------|
 | `GOOGLE_CLIENT_ID` | Your Google OAuth client ID | Yes |
 | `GOOGLE_CLIENT_SECRET` | Your Google OAuth client secret | Yes |
-| `COOKIE_ENCRYPTION_KEY` | Run `openssl rand -hex 32` to generate | Yes |
 | `MCP_SERVER_URL` | `https://<mcp-server-url>` | No |
 | `OAUTH_ISSUER` | `https://<oauth-worker-url>` | No |
 
@@ -385,10 +384,6 @@ wrangler secret put GOOGLE_CLIENT_ID
 
 wrangler secret put GOOGLE_CLIENT_SECRET
 # Paste your Google Client Secret
-
-# Cookie encryption key (generate with: openssl rand -hex 32)
-wrangler secret put COOKIE_ENCRYPTION_KEY
-# Paste a 64-character hex string
 
 # Your MCP server URL
 wrangler secret put MCP_SERVER_URL
@@ -567,7 +562,7 @@ authentication is required.
 2. **State Parameter**: Prevents CSRF attacks
 3. **Token Rotation**: Refresh tokens are rotated on each use
 4. **Short-lived Codes**: Authorization codes expire in 5 minutes
-5. **Cookie Encryption**: Session cookies are encrypted
+5. **Cookie Flags**: Web session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` on HTTPS
 
 ### Troubleshooting
 
@@ -610,7 +605,6 @@ npm install
 ```
 GOOGLE_CLIENT_ID=<google-client-id>
 GOOGLE_CLIENT_SECRET=<google-client-secret>
-COOKIE_ENCRYPTION_KEY=<32-byte-hex-key>
 MCP_SERVER_URL=http://localhost:3000
 OAUTH_ISSUER=http://localhost:8787
 ```

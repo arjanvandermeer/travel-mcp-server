@@ -5,10 +5,18 @@
  * Grouped by domain: SEARCH, AUTH, CACHE, GEO, GOOGLE_PLACES, NEARBY, SESSION.
  */
 
+function positiveIntFromEnv(name, defaultValue) {
+  const parsed = Number.parseInt(process.env[name] || '', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : defaultValue;
+}
+
 // --- Search defaults and limits ---
 export const SEARCH_LIMIT_DEFAULT = 50;
 export const SEARCH_LIMIT_MAX = 100;
 export const SEARCH_RADIUS_DEFAULT_KM = 50;
+export const SEARCH_RADIUS_MAX_KM = 50;
+export const CITY_SEARCH_RADIUS_MAX_KM = 1000;
+export const MAP_POI_LIMIT_MAX = 500;
 
 // --- Nearby POI defaults ---
 export const NEARBY_RADIUS_DEFAULT_KM = 1.5;
@@ -33,6 +41,9 @@ export const COUNTRIES_CACHE_TTL_MS = 60 * 60 * 1000;             // 1 hour
 // --- Session ---
 export const SESSION_MAX_AGE_MS = 30 * 60 * 1000;                 // 30 minutes
 export const SESSION_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;         // 5 minutes
+export const SESSION_MAX_ACTIVE = positiveIntFromEnv('MCP_SESSION_MAX_ACTIVE', 500);
+export const SESSION_CREATE_WINDOW_MS = 60 * 1000;                 // 1 minute
+export const SESSION_CREATE_MAX_PER_WINDOW = positiveIntFromEnv('MCP_SESSION_CREATE_MAX_PER_WINDOW', 60);
 
 // --- Database ---
 export const DB_STATEMENT_TIMEOUT_MS = 30000;                     // 30 seconds

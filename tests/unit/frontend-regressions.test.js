@@ -12,14 +12,14 @@ const styleCss = fs.readFileSync(path.join(__dirname, '../../web/css/style.css')
 const dossierCss = fs.readFileSync(path.join(__dirname, '../../web/css/dossier.css'), 'utf8');
 
 describe('frontend regressions', () => {
-  it('forces random city fallback from geolocation failure paths', () => {
-    const forcedFallbackCalls = [...appJs.matchAll(/loadRandomCity\(\{ historyMode: 'replace', force: true \}\)/g)];
+  it('uses New York City when geolocation cannot produce a usable city', () => {
+    const defaultFallbackCalls = [...appJs.matchAll(/loadDefaultCity\(\{ historyMode: 'replace' \}\)/g)];
 
-    assert.ok(forcedFallbackCalls.length >= 4, 'Geolocation and nearest-city fallbacks should force random discovery');
+    assert.ok(defaultFallbackCalls.length >= 5, 'Geolocation, nearest-city, and failed city-search fallbacks should load New York City');
     assert.match(
       appJs,
-      /if \(!force && this\.loading && this\._loadKey === loadKey\) return;/,
-      'Random city guard should be bypassable for recovery paths'
+      /DEFAULT_CITY_FALLBACK[\s\S]*New York City, New York/,
+      'Default fallback should be New York City, New York'
     );
   });
 
@@ -67,7 +67,9 @@ describe('frontend regressions', () => {
     assert.doesNotMatch(formatStoreJs, /propertyFacts\(poi = \{\}\)/, 'PDP fact-box formatter should be removed with the fact boxes');
     assert.doesNotMatch(indexHtml, /\$store\.poi\.summary\(\)/, 'PDP should not render the generated listed-as summary sentence');
     assert.doesNotMatch(appJs, /is listed as/, 'PDP summary copy should not keep the listed-as sentence generator');
-    assert.doesNotMatch(indexHtml, /visitor-details|contact-card|contactLinks\(\$store\.poi\.current\)/, 'PDP should remove the lower status and contact text boxes');
+    assert.doesNotMatch(indexHtml, /visitor-details|contact-card|contactLinks\(\$store\.poi\.current\)/, 'PDP should remove the old lower status and separate contact text boxes');
+    assert.match(indexHtml, /place-contact-box[\s\S]*Address[\s\S]*Phone[\s\S]*Website/, 'PDP should show name, address, phone, and website in one contact box');
+    assert.match(appJs, /phoneNumber\(\)/, 'PDP should preserve the formatted phone number for display');
     assert.match(indexHtml, /hero-actions[\s\S]*hero-icon-button[\s\S]*websiteUrl\(\)[\s\S]*phoneUrl\(\)/, 'PDP should expose save, maps, website, and call as hero icon actions');
     assert.match(indexHtml, /<img class="photo-tile"/, 'PDP photos should be image tiles in the horizontal strip');
     assert.doesNotMatch(indexHtml, /detail-list/, 'PDP should not use the old large detail-list fields');

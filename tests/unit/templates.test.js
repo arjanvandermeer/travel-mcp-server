@@ -290,7 +290,7 @@ describe('renderPOIPreview general rendering', () => {
     });
     const html = renderPOIPreview(poi, render);
 
-    assert.ok(html.includes('href="https://www.testhotel.com"'), 'Should link to website');
+    assert.ok(html.includes('href="https://www.testhotel.com/"'), 'Should link to normalized website');
     assert.ok(html.includes('Website'), 'Should have Website text');
     // Verify it's an action button (not just in CSS)
     const websiteIdx = html.indexOf('https://www.testhotel.com');

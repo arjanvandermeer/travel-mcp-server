@@ -15,7 +15,6 @@
  * @property {KVNamespace} OAUTH_KV - Cloudflare KV namespace for token/session storage
  * @property {string} GOOGLE_CLIENT_ID - Google OAuth client ID
  * @property {string} GOOGLE_CLIENT_SECRET - Google OAuth client secret
- * @property {string} COOKIE_ENCRYPTION_KEY - Random 32-byte hex for cookie encryption
  * @property {string} MCP_SERVER_URL - MCP server URL (e.g., https://mcp.example.com)
  * @property {string} OAUTH_ISSUER - This worker's public URL
  *
@@ -33,6 +32,13 @@
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const GOOGLE_USERINFO_URL = 'https://www.googleapis.com/oauth2/v3/userinfo';
+const ACCESS_TOKEN_TTL_SECONDS = 3600 * 24 * 7;
+const REFRESH_TOKEN_TTL_SECONDS = 3600 * 24 * 30;
+const AUTH_CODE_TTL_SECONDS = 300;
+const AUTH_SESSION_TTL_SECONDS = 600;
+const CLIENT_TTL_SECONDS = 3600 * 24 * 365;
+const ALLOWED_SCOPES = new Set(['openid', 'profile', 'email']);
+const TOKEN_ENDPOINT_AUTH_METHODS = new Set(['none', 'client_secret_post', 'client_secret_basic']);
 
 /**
  * Handle Google OAuth callback
@@ -91,6 +97,9 @@ async function handleGoogleCallback(request, env) {
   }
 
   const userInfo = await userInfoResponse.json();
+  if (!userInfo.sub || !userInfo.email) {
+    return new Response('Google user info missing subject or email', { status: 500 });
+  }
 
   // Generate authorization code for MCP client
   const authCode = crypto.randomUUID();
@@ -105,7 +114,7 @@ async function handleGoogleCallback(request, env) {
       picture: userInfo.picture,
     },
     createdAt: now,
-  }), { expirationTtl: 300 }); // 5 minute expiry
+  }), { expirationTtl: AUTH_CODE_TTL_SECONDS });
 
   // Redirect back to MCP client with authorization code
   const redirectUrl = new URL(session.redirectUri);
@@ -124,11 +133,12 @@ async function handleTokenExchange(request, env) {
   const code = formData.get('code');
   const codeVerifier = formData.get('code_verifier');
   const redirectUri = formData.get('redirect_uri');
+  const clientId = formData.get('client_id');
 
   if (grantType !== 'authorization_code') {
     // Handle refresh token grant
     if (grantType === 'refresh_token') {
-      return handleRefreshToken(formData, env);
+      return handleRefreshToken(request, formData, env);
     }
     return jsonResponse({ error: 'unsupported_grant_type' }, 400);
   }
@@ -146,22 +156,26 @@ async function handleTokenExchange(request, env) {
   const authData = JSON.parse(codeData);
   await env.OAUTH_KV.delete(`auth_code:${code}`);
 
-  // Verify PKCE code_verifier
-  if (authData.codeChallenge && authData.codeChallengeMethod === 'S256') {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(codeVerifier);
-    const hashBuffer = await crypto.subtle.digest('SHA-256', data);
-    const hashArray = new Uint8Array(hashBuffer);
-    const computedChallenge = base64UrlEncode(hashArray);
-
-    if (computedChallenge !== authData.codeChallenge) {
-      return jsonResponse({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
-    }
+  const basicCredentials = getBasicClientCredentials(request);
+  const resolvedClientId = clientId || basicCredentials?.clientId;
+  const client = await getRegisteredClient(env, resolvedClientId);
+  if (!client || client.client_id !== authData.clientId) {
+    return jsonResponse({ error: 'invalid_client', error_description: 'Unknown or mismatched client' }, 401);
   }
 
-  // Verify redirect_uri matches
-  if (redirectUri && redirectUri !== authData.redirectUri) {
+  const clientAuthError = await verifyClientAuthentication(request, formData, client);
+  if (clientAuthError) return clientAuthError;
+
+  if (!redirectUri || redirectUri !== authData.redirectUri) {
     return jsonResponse({ error: 'invalid_grant', error_description: 'Redirect URI mismatch' }, 400);
+  }
+
+  if (!codeVerifier || authData.codeChallengeMethod !== 'S256') {
+    return jsonResponse({ error: 'invalid_grant', error_description: 'PKCE verifier required' }, 400);
+  }
+  const computedChallenge = await pkceChallenge(codeVerifier);
+  if (computedChallenge !== authData.codeChallenge) {
+    return jsonResponse({ error: 'invalid_grant', error_description: 'PKCE verification failed' }, 400);
   }
 
   // Generate tokens
@@ -175,26 +189,28 @@ async function handleTokenExchange(request, env) {
     name: authData.user.name,
     picture: authData.user.picture,
     iat: now,
-    exp: now + 3600 * 24 * 7, // 7 days
+    exp: now + ACCESS_TOKEN_TTL_SECONDS,
+    client_id: client.client_id,
+    scope: authData.scope,
   };
 
   // Store tokens
-  await env.OAUTH_KV.put(`token:${accessToken}`, JSON.stringify(tokenPayload), {
-    expirationTtl: 3600 * 24 * 7,
+  await env.OAUTH_KV.put(`token:${await hashSecret(accessToken)}`, JSON.stringify(tokenPayload), {
+    expirationTtl: ACCESS_TOKEN_TTL_SECONDS,
   });
 
-  await env.OAUTH_KV.put(`refresh:${refreshToken}`, JSON.stringify({
+  await env.OAUTH_KV.put(`refresh:${await hashSecret(refreshToken)}`, JSON.stringify({
     user: authData.user,
     clientId: authData.clientId,
     scope: authData.scope,
   }), {
-    expirationTtl: 3600 * 24 * 30, // 30 days
+    expirationTtl: REFRESH_TOKEN_TTL_SECONDS,
   });
 
   return jsonResponse({
     access_token: accessToken,
     token_type: 'Bearer',
-    expires_in: 3600 * 24 * 7,
+    expires_in: ACCESS_TOKEN_TTL_SECONDS,
     refresh_token: refreshToken,
     scope: authData.scope,
   });
@@ -203,19 +219,29 @@ async function handleTokenExchange(request, env) {
 /**
  * Handle refresh token grant
  */
-async function handleRefreshToken(formData, env) {
+async function handleRefreshToken(request, formData, env) {
   const refreshToken = formData.get('refresh_token');
 
   if (!refreshToken) {
     return jsonResponse({ error: 'invalid_request', error_description: 'Missing refresh_token' }, 400);
   }
 
-  const refreshData = await env.OAUTH_KV.get(`refresh:${refreshToken}`);
+  const refreshHash = await hashSecret(refreshToken);
+  let refreshData = await env.OAUTH_KV.get(`refresh:${refreshHash}`);
+  if (!refreshData) {
+    refreshData = await migrateLegacyToken(env, 'refresh', refreshToken, REFRESH_TOKEN_TTL_SECONDS);
+  }
   if (!refreshData) {
     return jsonResponse({ error: 'invalid_grant', error_description: 'Invalid refresh token' }, 400);
   }
 
   const data = JSON.parse(refreshData);
+  const client = await getRegisteredClient(env, data.clientId);
+  if (!client) {
+    return jsonResponse({ error: 'invalid_client', error_description: 'Unknown client' }, 401);
+  }
+  const clientAuthError = await verifyClientAuthentication(request, formData, client);
+  if (clientAuthError) return clientAuthError;
 
   // Generate new access token
   const now = Math.floor(Date.now() / 1000);
@@ -227,24 +253,27 @@ async function handleRefreshToken(formData, env) {
     name: data.user.name,
     picture: data.user.picture,
     iat: now,
-    exp: now + 3600 * 24 * 7,
+    exp: now + ACCESS_TOKEN_TTL_SECONDS,
+    client_id: data.clientId,
+    scope: data.scope,
   };
 
-  await env.OAUTH_KV.put(`token:${newAccessToken}`, JSON.stringify(tokenPayload), {
-    expirationTtl: 3600 * 24 * 7,
+  await env.OAUTH_KV.put(`token:${await hashSecret(newAccessToken)}`, JSON.stringify(tokenPayload), {
+    expirationTtl: ACCESS_TOKEN_TTL_SECONDS,
   });
 
   // Optionally rotate refresh token
   const newRefreshToken = generateToken();
-  await env.OAUTH_KV.put(`refresh:${newRefreshToken}`, refreshData, {
-    expirationTtl: 3600 * 24 * 30,
+  await env.OAUTH_KV.put(`refresh:${await hashSecret(newRefreshToken)}`, refreshData, {
+    expirationTtl: REFRESH_TOKEN_TTL_SECONDS,
   });
+  await env.OAUTH_KV.delete(`refresh:${refreshHash}`);
   await env.OAUTH_KV.delete(`refresh:${refreshToken}`);
 
   return jsonResponse({
     access_token: newAccessToken,
     token_type: 'Bearer',
-    expires_in: 3600 * 24 * 7,
+    expires_in: ACCESS_TOKEN_TTL_SECONDS,
     refresh_token: newRefreshToken,
     scope: data.scope,
   });
@@ -261,7 +290,11 @@ async function handleIntrospection(request, env) {
     return jsonResponse({ active: false });
   }
 
-  const tokenData = await env.OAUTH_KV.get(`token:${token}`);
+  const tokenHash = await hashSecret(token);
+  let tokenData = await env.OAUTH_KV.get(`token:${tokenHash}`);
+  if (!tokenData) {
+    tokenData = await migrateLegacyToken(env, 'token', token, ACCESS_TOKEN_TTL_SECONDS);
+  }
   if (!tokenData) {
     return jsonResponse({ active: false });
   }
@@ -270,6 +303,7 @@ async function handleIntrospection(request, env) {
   const now = Math.floor(Date.now() / 1000);
 
   if (payload.exp < now) {
+    await env.OAUTH_KV.delete(`token:${tokenHash}`);
     await env.OAUTH_KV.delete(`token:${token}`);
     return jsonResponse({ active: false });
   }
@@ -290,7 +324,22 @@ async function handleIntrospection(request, env) {
  * Handle Dynamic Client Registration (DCR)
  */
 async function handleClientRegistration(request, env) {
-  const body = await request.json();
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return jsonResponse({ error: 'invalid_request', error_description: 'Invalid JSON body' }, 400);
+  }
+
+  const redirectUris = Array.isArray(body.redirect_uris) ? body.redirect_uris : [];
+  if (redirectUris.length === 0 || !redirectUris.every(isValidRedirectUri)) {
+    return jsonResponse({ error: 'invalid_redirect_uri', error_description: 'redirect_uris must contain valid http(s) redirect URLs' }, 400);
+  }
+
+  const authMethod = body.token_endpoint_auth_method || 'client_secret_post';
+  if (!TOKEN_ENDPOINT_AUTH_METHODS.has(authMethod)) {
+    return jsonResponse({ error: 'invalid_client_metadata', error_description: 'Unsupported token_endpoint_auth_method' }, 400);
+  }
 
   // Generate client credentials
   const clientId = crypto.randomUUID();
@@ -298,27 +347,30 @@ async function handleClientRegistration(request, env) {
 
   const clientData = {
     client_id: clientId,
-    client_secret: clientSecret,
-    redirect_uris: body.redirect_uris || [],
+    client_secret_hash: authMethod === 'none' ? null : await hashSecret(clientSecret),
+    redirect_uris: redirectUris,
     client_name: body.client_name || 'MCP Client',
-    token_endpoint_auth_method: body.token_endpoint_auth_method || 'client_secret_post',
+    token_endpoint_auth_method: authMethod,
     created_at: Date.now(),
   };
 
   // Store client registration
   await env.OAUTH_KV.put(`client:${clientId}`, JSON.stringify(clientData), {
-    expirationTtl: 3600 * 24 * 365, // 1 year
+    expirationTtl: CLIENT_TTL_SECONDS,
   });
 
-  return jsonResponse({
+  const response = {
     client_id: clientId,
-    client_secret: clientSecret,
     client_id_issued_at: Math.floor(Date.now() / 1000),
-    client_secret_expires_at: 0, // Never expires
     redirect_uris: clientData.redirect_uris,
     client_name: clientData.client_name,
     token_endpoint_auth_method: clientData.token_endpoint_auth_method,
-  }, 201);
+  };
+  if (authMethod !== 'none') {
+    response.client_secret = clientSecret;
+    response.client_secret_expires_at = 0; // Never expires
+  }
+  return jsonResponse(response, 201);
 }
 
 /**
@@ -362,9 +414,100 @@ function generateToken() {
   return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join('');
 }
 
+async function hashSecret(secret) {
+  const data = new TextEncoder().encode(secret);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function pkceChallenge(verifier) {
+  const data = new TextEncoder().encode(verifier);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data);
+  return base64UrlEncode(new Uint8Array(hashBuffer));
+}
+
 function base64UrlEncode(bytes) {
   const base64 = btoa(String.fromCharCode(...bytes));
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+function isValidRedirectUri(value) {
+  if (typeof value !== 'string') return false;
+  try {
+    const url = new URL(value);
+    if (url.hash) return false;
+    if (url.protocol === 'https:') return true;
+    if (url.protocol !== 'http:') return false;
+    return ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function normalizeScopes(scope) {
+  const requested = String(scope || 'openid profile email').split(/\s+/).filter(Boolean);
+  if (requested.length === 0) return null;
+  if (!requested.every(item => ALLOWED_SCOPES.has(item))) return null;
+  return requested.join(' ');
+}
+
+async function getRegisteredClient(env, clientId) {
+  if (!clientId) return null;
+  const clientData = await env.OAUTH_KV.get(`client:${clientId}`);
+  return clientData ? JSON.parse(clientData) : null;
+}
+
+function getBasicClientCredentials(request) {
+  if (!request) return null;
+  const header = request.headers.get('authorization') || '';
+  if (!header.startsWith('Basic ')) return null;
+  try {
+    const decoded = atob(header.slice(6));
+    const separator = decoded.indexOf(':');
+    if (separator === -1) return null;
+    return {
+      clientId: decoded.slice(0, separator),
+      clientSecret: decoded.slice(separator + 1),
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function verifyClientAuthentication(request, formData, client) {
+  const authMethod = client.token_endpoint_auth_method || 'client_secret_post';
+  const formClientId = formData.get('client_id');
+  if (authMethod === 'none') {
+    return formClientId === client.client_id
+      ? null
+      : jsonResponse({ error: 'invalid_client', error_description: 'client_id is required' }, 401);
+  }
+
+  let suppliedClientId = formClientId;
+  let suppliedSecret = formData.get('client_secret');
+  if (authMethod === 'client_secret_basic') {
+    const basic = getBasicClientCredentials(request);
+    suppliedClientId = basic?.clientId;
+    suppliedSecret = basic?.clientSecret;
+  }
+
+  if (suppliedClientId !== client.client_id || !suppliedSecret) {
+    return jsonResponse({ error: 'invalid_client', error_description: 'Client authentication failed' }, 401);
+  }
+
+  const suppliedHash = await hashSecret(suppliedSecret);
+  return suppliedHash === client.client_secret_hash
+    ? null
+    : jsonResponse({ error: 'invalid_client', error_description: 'Client authentication failed' }, 401);
+}
+
+async function migrateLegacyToken(env, prefix, token, ttlSeconds) {
+  const legacyKey = `${prefix}:${token}`;
+  const data = await env.OAUTH_KV.get(legacyKey);
+  if (!data) return null;
+  await env.OAUTH_KV.put(`${prefix}:${await hashSecret(token)}`, data, { expirationTtl: ttlSeconds });
+  await env.OAUTH_KV.delete(legacyKey);
+  return data;
 }
 
 function jsonResponse(data, status = 200) {
@@ -413,22 +556,45 @@ export default {
       if (path === '/authorize' && request.method === 'GET') {
         const clientId = url.searchParams.get('client_id') || '';
         const redirectUri = url.searchParams.get('redirect_uri') || '';
+        const responseType = url.searchParams.get('response_type') || '';
         const scope = url.searchParams.get('scope') || 'openid profile email';
         const state = url.searchParams.get('state') || '';
         const codeChallenge = url.searchParams.get('code_challenge') || '';
-        const codeChallengeMethod = url.searchParams.get('code_challenge_method') || 'S256';
+        const codeChallengeMethod = url.searchParams.get('code_challenge_method') || '';
+
+        if (responseType !== 'code') {
+          return jsonResponse({ error: 'unsupported_response_type', error_description: 'response_type must be code' }, 400);
+        }
+
+        const client = await getRegisteredClient(env, clientId);
+        if (!client) {
+          return jsonResponse({ error: 'invalid_client', error_description: 'Unknown client' }, 401);
+        }
+
+        if (!redirectUri || !client.redirect_uris.includes(redirectUri)) {
+          return jsonResponse({ error: 'invalid_request', error_description: 'Invalid redirect_uri' }, 400);
+        }
+
+        if (!codeChallenge || codeChallengeMethod !== 'S256') {
+          return jsonResponse({ error: 'invalid_request', error_description: 'S256 PKCE code_challenge is required' }, 400);
+        }
+
+        const normalizedScope = normalizeScopes(scope);
+        if (!normalizedScope) {
+          return jsonResponse({ error: 'invalid_scope', error_description: 'Unsupported scope requested' }, 400);
+        }
 
         // Store auth session and redirect to Google
         const authSessionId = crypto.randomUUID();
         await env.OAUTH_KV.put(`auth_session:${authSessionId}`, JSON.stringify({
           clientId,
           redirectUri,
-          scope,
+          scope: normalizedScope,
           state,
           codeChallenge,
           codeChallengeMethod,
           createdAt: Date.now(),
-        }), { expirationTtl: 600 });
+        }), { expirationTtl: AUTH_SESSION_TTL_SECONDS });
 
         const googleAuthUrl = new URL(GOOGLE_AUTH_URL);
         googleAuthUrl.searchParams.set('client_id', env.GOOGLE_CLIENT_ID);
@@ -462,6 +628,8 @@ export default {
         const formData = await request.formData();
         const token = formData.get('token');
         if (token) {
+          await env.OAUTH_KV.delete(`token:${await hashSecret(token)}`);
+          await env.OAUTH_KV.delete(`refresh:${await hashSecret(token)}`);
           await env.OAUTH_KV.delete(`token:${token}`);
           await env.OAUTH_KV.delete(`refresh:${token}`);
         }

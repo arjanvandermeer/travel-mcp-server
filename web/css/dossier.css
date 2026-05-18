@@ -137,6 +137,45 @@
 .tabs button.active { background: var(--ink); color: white; border-color: var(--ink); }
 .copy-block { color: #334155; line-height: 1.7; }
 .copy-block > p { font-size: 17px; margin-top: 0; }
+.place-contact-box {
+  max-width: 760px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  overflow: hidden;
+}
+.place-contact-box h2 {
+  margin: 0;
+  padding: 16px 16px 12px;
+  color: var(--ink);
+  font-size: 22px;
+  line-height: 1.15;
+}
+.place-contact-rows {
+  display: grid;
+  border-top: 1px solid var(--line);
+}
+.place-contact-row {
+  display: grid;
+  gap: 3px;
+  padding: 13px 16px;
+  color: var(--ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--line);
+}
+.place-contact-row:last-child { border-bottom: 0; }
+.place-contact-row:hover { background: #f8fafc; }
+.place-contact-row span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+.place-contact-row strong {
+  font-size: 15px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
 .open-compact {
   width: fit-content;
   display: inline-grid;

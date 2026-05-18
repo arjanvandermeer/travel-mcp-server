@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { validateCoordinates, validateLimit, validateCountryCode } from '../../src/validation.js';
+import { parseStrictInteger, parseStrictNumber, validateCoordinates, validateLimit, validateCountryCode, validateRadiusKm } from '../../src/validation.js';
 
 describe('validateCoordinates', () => {
   it('should accept valid coordinates', () => {
@@ -15,6 +15,18 @@ describe('validateCoordinates', () => {
 
   it('should reject NaN latitude', () => {
     const result = validateCoordinates('abc', 10);
+    assert.strictEqual(result.valid, false);
+    assert.strictEqual(result.error, 'Invalid coordinate values');
+  });
+
+  it('should reject coordinates with trailing junk', () => {
+    const result = validateCoordinates('12abc', '20');
+    assert.strictEqual(result.valid, false);
+    assert.strictEqual(result.error, 'Invalid coordinate values');
+  });
+
+  it('should reject exponent notation for coordinates', () => {
+    const result = validateCoordinates('1e2', '20');
     assert.strictEqual(result.valid, false);
     assert.strictEqual(result.error, 'Invalid coordinate values');
   });
@@ -69,6 +81,14 @@ describe('validateLimit', () => {
     assert.strictEqual(validateLimit('25', 5, 50), 25);
   });
 
+  it('should reject partial integer strings', () => {
+    assert.strictEqual(validateLimit('25abc', 5, 50), 5);
+  });
+
+  it('should reject decimal limits', () => {
+    assert.strictEqual(validateLimit('25.5', 5, 50), 5);
+  });
+
   it('should return default for null', () => {
     assert.strictEqual(validateLimit(null, 5, 50), 5);
   });
@@ -95,6 +115,32 @@ describe('validateLimit', () => {
 
   it('should allow value equal to max', () => {
     assert.strictEqual(validateLimit(50, 5, 50), 50);
+  });
+});
+
+describe('strict numeric parsers', () => {
+  it('should parse plain decimal numbers only', () => {
+    assert.strictEqual(parseStrictNumber('12.5'), 12.5);
+    assert.strictEqual(parseStrictNumber('-0.5'), -0.5);
+    assert.strictEqual(parseStrictNumber('12abc'), null);
+    assert.strictEqual(parseStrictNumber('1e3'), null);
+  });
+
+  it('should parse positive integer strings only', () => {
+    assert.strictEqual(parseStrictInteger('42'), 42);
+    assert.strictEqual(parseStrictInteger('042'), 42);
+    assert.strictEqual(parseStrictInteger('-1'), null);
+    assert.strictEqual(parseStrictInteger('4.2'), null);
+  });
+});
+
+describe('validateRadiusKm', () => {
+  it('should clamp radius to max', () => {
+    assert.strictEqual(validateRadiusKm('500', 10, 50), 50);
+  });
+
+  it('should default malformed radius values', () => {
+    assert.strictEqual(validateRadiusKm('10abc', 7, 50), 7);
   });
 });
 

@@ -377,9 +377,19 @@
           return photo && (photo.url || photo.url_thumbnail);
         }));
       }
-      return urls.filter(Boolean).filter(function(url, index, arr) {
+      return urls.map(safeHttpUrl).filter(Boolean).filter(function(url, index, arr) {
         return arr.indexOf(url) === index;
       });
+    }
+
+    function safeHttpUrl(value) {
+      if (typeof value !== 'string') return '';
+      try {
+        var url = new URL(value, window.location.origin);
+        return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
+      } catch (err) {
+        return '';
+      }
     }
 
     // Escape HTML to prevent XSS

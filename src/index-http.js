@@ -36,7 +36,15 @@ import { registerAuthRoutes } from './api/auth.js';
 import { registerHomepageRoutes } from './api/homepage.js';
 import { registerMapRoutes } from './api/map.js';
 import { registerCityOverviewRoutes } from './api/city-overview.js';
-import { SESSION_MAX_AGE_MS, SESSION_CLEANUP_INTERVAL_MS, AUTH_TOKEN_MIN_LENGTH, OAUTH_INTROSPECTION_CACHE_TTL_MS } from './config.js';
+import {
+  SESSION_MAX_AGE_MS,
+  SESSION_CLEANUP_INTERVAL_MS,
+  SESSION_MAX_ACTIVE,
+  SESSION_CREATE_WINDOW_MS,
+  SESSION_CREATE_MAX_PER_WINDOW,
+  AUTH_TOKEN_MIN_LENGTH,
+  OAUTH_INTROSPECTION_CACHE_TTL_MS,
+} from './config.js';
 import { getStaticHeaders, obfuscateEmail, renderWebIndex } from './http-static-utils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,9 +60,95 @@ const PORT = process.argv[2] ? parseInt(process.argv[2]) : 3000;
 
 // Store active sessions: sessionId -> { server, transport, user }
 const sessions = new Map();
+const sessionCreationBuckets = new Map();
 
 // Cache OAuth introspection results: token -> { user, expiry }
 const introspectionCache = new Map();
+
+function authCacheKey(token) {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
+function getClientKey(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  if (typeof forwarded === 'string' && forwarded.trim()) {
+    return forwarded.split(',')[0].trim();
+  }
+  return req.socket?.remoteAddress || 'unknown';
+}
+
+function canCreateSession(req) {
+  const key = getClientKey(req);
+  const now = Date.now();
+  const cutoff = now - SESSION_CREATE_WINDOW_MS;
+  const bucket = (sessionCreationBuckets.get(key) || []).filter(timestamp => timestamp > cutoff);
+  if (bucket.length >= SESSION_CREATE_MAX_PER_WINDOW) {
+    sessionCreationBuckets.set(key, bucket);
+    return false;
+  }
+  bucket.push(now);
+  sessionCreationBuckets.set(key, bucket);
+  return true;
+}
+
+function deleteSession(sessionId, reason = 'deleted') {
+  const session = sessions.get(sessionId);
+  sessions.delete(sessionId);
+  telemetry.incrementCounter('session.deleted', 1, {
+    reason,
+    wasAuthenticated: session?.userRef?.current ? 'true' : 'false',
+  });
+}
+
+function cleanupExpiredSessions() {
+  const maxAge = SESSION_MAX_AGE_MS;
+  const now = Date.now();
+  let expiredCount = 0;
+  for (const [sessionId, session] of sessions) {
+    if (now - (session.lastAccessedAt || session.createdAt) > maxAge) {
+      deleteSession(sessionId, 'expired');
+      expiredCount++;
+      console.error(`Session expired: ${sessionId} (remaining: ${sessions.size})`);
+    }
+  }
+  if (expiredCount > 0) {
+    telemetry.recordGauge('session.active', sessions.size);
+    telemetry.captureMessage(`Session cleanup: ${expiredCount} expired`, 'info', {
+      expiredCount,
+      remainingSessions: sessions.size,
+    });
+  }
+  return expiredCount;
+}
+
+function cleanupSessionCreationBuckets() {
+  const cutoff = Date.now() - SESSION_CREATE_WINDOW_MS;
+  for (const [key, timestamps] of sessionCreationBuckets) {
+    const active = timestamps.filter(timestamp => timestamp > cutoff);
+    if (active.length > 0) {
+      sessionCreationBuckets.set(key, active);
+    } else {
+      sessionCreationBuckets.delete(key);
+    }
+  }
+}
+
+function ensureSessionCapacity(incomingAuthenticated) {
+  if (sessions.size < SESSION_MAX_ACTIVE) return true;
+
+  const ordered = [...sessions.entries()].sort((a, b) =>
+    (a[1].lastAccessedAt || a[1].createdAt) - (b[1].lastAccessedAt || b[1].createdAt)
+  );
+  let victim = ordered.find(([, session]) => !session.userRef?.current);
+  if (!victim && incomingAuthenticated) {
+    victim = ordered[0];
+  }
+  if (!victim) return false;
+
+  deleteSession(victim[0], 'capacity');
+  telemetry.recordGauge('session.active', sessions.size);
+  return true;
+}
 
 /**
  * Extract user from Authorization header
@@ -64,29 +158,25 @@ const introspectionCache = new Map();
 async function getUserFromRequest(req) {
   const auth = req.headers['authorization'];
   if (!auth?.startsWith('Bearer ')) {
-    console.error('[Auth] No Bearer token provided');
     return null;
   }
 
   const token = auth.slice(7);
-  const tokenPrefix = token.slice(0, 8);
   const tokenLength = token.length;
-  console.error(`[Auth] Token received: ${tokenPrefix}... (${tokenLength} chars)`);
 
   // Basic token validation - catch obviously malformed tokens
   if (tokenLength < AUTH_TOKEN_MIN_LENGTH) {
-    console.error(`[Auth] Token too short: ${tokenLength} chars`);
+    console.error('[Auth] Token too short');
     telemetry.incrementCounter('auth.failure', 1, { reason: 'token_too_short' });
     telemetry.captureMessage('Auth failed: token too short', 'warning', {
       reason: 'token_too_short',
-      tokenLength,
-      tokenPrefix,
     });
     return null;
   }
 
   // Check introspection cache
-  const cached = introspectionCache.get(token);
+  const cacheKey = authCacheKey(token);
+  const cached = introspectionCache.get(cacheKey);
   if (cached && cached.expiry > Date.now()) {
     console.error(`[Auth] Cache hit for ${obfuscateEmail(cached.user.email)}`);
     telemetry.incrementCounter('auth.cache_hit', 1);
@@ -97,7 +187,7 @@ async function getUserFromRequest(req) {
 
   // Track auth attempt
   telemetry.incrementCounter('auth.attempts', 1);
-  telemetry.addBreadcrumb('Auth attempt started', 'auth', { tokenPrefix, tokenLength });
+  telemetry.addBreadcrumb('Auth attempt started', 'auth');
   const authStartTime = Date.now();
 
   try {
@@ -120,7 +210,7 @@ async function getUserFromRequest(req) {
         duration: authDuration,
       });
 
-      introspectionCache.set(token, { user: dbUser, expiry: Date.now() + OAUTH_INTROSPECTION_CACHE_TTL_MS });
+      introspectionCache.set(cacheKey, { user: dbUser, expiry: Date.now() + OAUTH_INTROSPECTION_CACHE_TTL_MS });
       return dbUser;
     }
 
@@ -170,7 +260,7 @@ async function getUserFromRequest(req) {
             introspectDuration,
           });
 
-          introspectionCache.set(token, { user, expiry: Date.now() + OAUTH_INTROSPECTION_CACHE_TTL_MS });
+          introspectionCache.set(cacheKey, { user, expiry: Date.now() + OAUTH_INTROSPECTION_CACHE_TTL_MS });
           return user;
         } else {
           const authDuration = Date.now() - authStartTime;
@@ -196,8 +286,6 @@ async function getUserFromRequest(req) {
           telemetry.captureMessage(`Auth failed: token not active (${inactiveReason})`, severity, {
             reason: 'token_inactive',
             inactiveReason,
-            tokenPrefix,
-            tokenLength,
             duration: authDuration,
             // Include any context from introspection (will be empty for forged tokens)
             hasSub: !!data.sub,
@@ -217,7 +305,6 @@ async function getUserFromRequest(req) {
           reason: 'introspection_error',
           httpStatus: response.status,
           errorText: errorText.slice(0, 200),
-          tokenPrefix,
           duration: authDuration,
         });
       }
@@ -226,7 +313,6 @@ async function getUserFromRequest(req) {
       telemetry.incrementCounter('auth.failure', 1, { reason: 'no_introspection_url' });
       telemetry.captureMessage('Auth failed: no introspection URL configured', 'warning', {
         reason: 'no_introspection_url',
-        tokenPrefix,
       });
     }
 
@@ -242,13 +328,11 @@ async function getUserFromRequest(req) {
     telemetry.recordDistribution('auth.latency', authDuration, { tags: { status: 'error' }, unit: 'millisecond' });
     telemetry.captureException(err, {
       context: 'auth_validation',
-      tokenPrefix,
       duration: authDuration,
     });
     telemetry.captureMessage(`Auth failed: ${err.message}`, 'error', {
       reason: 'exception',
       error: err.message,
-      tokenPrefix,
       duration: authDuration,
     });
 
@@ -632,6 +716,21 @@ async function main() {
           const session = sessions.get(sessionId);
           session.lastAccessedAt = Date.now();
           const newUser = await getUserFromRequest(req);
+          const currentUser = session.userRef.current;
+
+          if (currentUser && !newUser) {
+            telemetry.incrementCounter('session.auth_rejected', 1, { reason: 'missing_or_invalid_token' });
+            res.writeHead(401, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Authentication required for this MCP session' }));
+            return;
+          }
+
+          if (currentUser && newUser && currentUser.id !== newUser.id) {
+            telemetry.incrementCounter('session.auth_rejected', 1, { reason: 'user_mismatch' });
+            res.writeHead(403, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'MCP session is bound to a different authenticated user' }));
+            return;
+          }
 
           // Update user if authentication changed (anonymous -> authenticated or different user)
           if (newUser && (!session.userRef.current || session.userRef.current.email !== newUser.email)) {
@@ -652,8 +751,22 @@ async function main() {
           await session.transport.handleRequest(req, res);
         } else {
           // No session ID or invalid/expired session - create new session
+          cleanupExpiredSessions();
+          if (!canCreateSession(req)) {
+            telemetry.incrementCounter('session.create_rejected', 1, { reason: 'rate_limit' });
+            res.writeHead(429, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Too many MCP sessions created. Try again shortly.' }));
+            return;
+          }
+
           // Check for authentication (optional - null means anonymous)
           const user = await getUserFromRequest(req);
+          if (!ensureSessionCapacity(!!user)) {
+            telemetry.incrementCounter('session.create_rejected', 1, { reason: 'capacity' });
+            res.writeHead(503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Too many active MCP sessions. Try again later.' }));
+            return;
+          }
           const userRef = { current: user };
 
           const newSessionId = crypto.randomUUID();
@@ -720,28 +833,8 @@ async function main() {
 
   // Clean up stale sessions every 5 minutes
   setInterval(() => {
-    const maxAge = SESSION_MAX_AGE_MS;
-    const now = Date.now();
-    let expiredCount = 0;
-    for (const [sessionId, session] of sessions) {
-      if (now - (session.lastAccessedAt || session.createdAt) > maxAge) {
-        const wasAuthenticated = !!session.userRef?.current;
-        sessions.delete(sessionId);
-        expiredCount++;
-        console.error(`Session expired: ${sessionId} (remaining: ${sessions.size})`);
-
-        // Telemetry: session cleanup
-        telemetry.incrementCounter('session.cleanup_expired', 1, { wasAuthenticated: wasAuthenticated ? 'true' : 'false' });
-      }
-    }
-    // Update active sessions gauge after cleanup
-    if (expiredCount > 0) {
-      telemetry.recordGauge('session.active', sessions.size);
-      telemetry.captureMessage(`Session cleanup: ${expiredCount} expired`, 'info', {
-        expiredCount,
-        remainingSessions: sessions.size,
-      });
-    }
+    cleanupExpiredSessions();
+    cleanupSessionCreationBuckets();
   }, SESSION_CLEANUP_INTERVAL_MS);
 
   // Clean up expired introspection cache entries every 5 minutes

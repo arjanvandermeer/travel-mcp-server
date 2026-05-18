@@ -1,4 +1,5 @@
 import { isGoogleOpenAt } from './lib/opening-hours.js';
+import { displayHostname, sanitizeEmailHref, sanitizeHttpUrl, sanitizeHttpUrlList, sanitizePhoneHref, sanitizePoiExternalUrlsArray } from './url-utils.js';
 
 // Shared POI groups used by tools, web APIs, and template rendering.
 export const accommodationTypes = [
@@ -77,8 +78,9 @@ export function isOpenNow(openingHours, utcOffsetMinutes) {
 
 export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title = null) {
   const opening_hours_list = poi.google_opening_hours?.weekdayDescriptions || null;
-  const photo_url = poi.google_photos?.[0]?.url || null;
-  const photo_urls = poi.google_photos?.map(p => p.url).filter(Boolean) || null;
+  const sanitizedPhotoUrls = sanitizeHttpUrlList(poi.google_photos?.map(p => p.url || p.url_thumbnail).filter(Boolean));
+  const photo_urls = sanitizedPhotoUrls.length > 0 ? sanitizedPhotoUrls : null;
+  const photo_url = sanitizedPhotoUrls[0] || null;
   const address = poi.osm_address || poi.google_address || '';
   const address_lines = address.split(',').map(s => s.trim()).filter(Boolean);
 
@@ -91,7 +93,10 @@ export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title =
 
   const starDisplay = poi.osm_stars ? '★'.repeat(parseInt(poi.osm_stars, 10) || 0) : null;
   const has_hotel_info = poi.osm_rooms || poi.osm_beds || poi.osm_stars || poi.stay_quality_score !== undefined;
-  const has_contact = poi.google_phone || poi.osm_phone || poi.osm_email;
+  const google_phone_href = sanitizePhoneHref(poi.google_phone);
+  const osm_phone_href = sanitizePhoneHref(poi.osm_phone);
+  const email_href = sanitizeEmailHref(poi.osm_email);
+  const has_contact = google_phone_href || osm_phone_href || email_href;
 
   const priceLevelMap = {
     PRICE_LEVEL_FREE: 'Free',
@@ -114,15 +119,8 @@ export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title =
     }
   }
 
-  let website_display = null;
-  if (poi.google_website) {
-    try {
-      const url = new URL(poi.google_website);
-      website_display = url.hostname.replace(/^www\./, '');
-    } catch {
-      website_display = poi.google_website;
-    }
-  }
+  const website_url = sanitizeHttpUrl(poi.google_website) || sanitizeHttpUrl(poi.osm_website);
+  const website_display = displayHostname(website_url);
 
   let service_options_list = null;
   if (poi.google_service_options) {
@@ -193,7 +191,6 @@ export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title =
     ? isOpenNow(poi.google_opening_hours, poi.google_utc_offset_minutes)
     : null;
   const opening_hours = !is_accommodation ? opening_hours_list : null;
-  const website_url = poi.google_website || poi.osm_website || null;
   const raw_data_json = JSON.stringify(poi, null, 2);
 
   return render('poi-details', {
@@ -213,6 +210,9 @@ export function renderPOIPreview(poi, render, nearby_pois = null, nearby_title =
     business_status_class,
     website_display,
     website_url,
+    google_phone_href,
+    osm_phone_href,
+    email_href,
     service_options_list,
     amenities_list,
     accessibility_list,
@@ -233,7 +233,7 @@ export function renderNearbyWidget(sourcePoi, nearbyPois, render) {
     title: getNearbyTitle(resultTypes),
     source_name: sourcePoi.google_name || sourcePoi.osm_name || sourcePoi.name || null,
     source_osm_id: sourcePoi.osm_id,
-    results: nearbyPois,
+    results: sanitizePoiExternalUrlsArray(nearbyPois),
     count: nearbyPois.length,
   });
 }

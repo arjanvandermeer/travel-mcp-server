@@ -1,7 +1,7 @@
 import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
 import { apiDelete, apiGet, apiPatch, apiPost } from './api.js?v=pdp-cache-20260517';
 import { LAYERS } from './constants.js?v=pdp-cache-20260517';
-import { createFormatStore } from './format-store.js?v=pdp-cache-20260517';
+import { createFormatStore, cssUrl, safeHttpUrl } from './format-store.js?v=pdp-cache-20260517';
 import { markerIcon } from './map-utils.js?v=pdp-cache-20260517';
 
 const DISCOVERY_MIN_POIS = 25;
@@ -224,7 +224,7 @@ Alpine.store('discovery', {
       this.locationState = 'blocked';
       this.locationError = 'Browser location requires a secure context. Use http://localhost:3001 instead of an IP address, or serve the app over HTTPS.';
       console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
-      await this.loadRandomCity({ historyMode: 'replace', force: true });
+      await this.loadDefaultCity({ historyMode: 'replace' });
       return;
     }
 
@@ -232,7 +232,7 @@ Alpine.store('discovery', {
       this.locationState = 'unsupported';
       this.locationError = 'This browser does not expose the Geolocation API.';
       console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
-      await this.loadRandomCity({ historyMode: 'replace', force: true });
+      await this.loadDefaultCity({ historyMode: 'replace' });
       return;
     }
 
@@ -252,7 +252,7 @@ Alpine.store('discovery', {
       this.locationState = 'unavailable';
       this.locationError = this.describeLocationError(err);
       console.warn('[City Pulse] Geolocation failed:', this.locationError, err);
-      await this.loadRandomCity({ historyMode: 'replace', force: true });
+      await this.loadDefaultCity({ historyMode: 'replace' });
       return;
     }
     this.loading = false;
@@ -279,8 +279,8 @@ Alpine.store('discovery', {
     }
 
     if (!nearest) {
-      console.info('[City Pulse] No loaded city with enough POIs near coordinates; loading random city.');
-      await this.loadRandomCity({ historyMode: 'replace', force: true });
+      console.info('[City Pulse] No loaded city with enough POIs near coordinates; loading default city.');
+      await this.loadDefaultCity({ historyMode: 'replace' });
       return;
     }
 
@@ -467,9 +467,10 @@ Alpine.store('discovery', {
   },
   wikipediaHeroImageFromPage(page) {
     const source = page?.original?.source || page?.thumbnail?.source || '';
-    if (!source || !page?.title) return null;
-    if (this.isUnsuitableWikipediaHeroImage(page, source)) return null;
-    return { url: source, title: page.title };
+    const safeSource = safeHttpUrl(source);
+    if (!safeSource || !page?.title) return null;
+    if (this.isUnsuitableWikipediaHeroImage(page, safeSource)) return null;
+    return { url: safeSource, title: page.title };
   },
   isUnsuitableWikipediaHeroImage(page, source) {
     const imageName = String(page?.pageimage || source).toLowerCase();
@@ -484,8 +485,9 @@ Alpine.store('discovery', {
       imageName.endsWith('.svg');
   },
   heroStyle() {
-    if (!this.heroImageUrl) return '';
-    return `--city-hero: url("${this.heroImageUrl}")`;
+    const url = cssUrl(this.heroImageUrl);
+    if (!url) return '';
+    return `--city-hero: url("${url}")`;
   },
   eyebrow() {
     if (this.locationState === 'requesting') return 'Finding your city';
@@ -1002,11 +1004,14 @@ Alpine.store('poi', {
   websiteUrl() {
     return Alpine.store('format').bestWebsite(this.current || {});
   },
+  phoneNumber() {
+    return Alpine.store('format').bestPhone(this.current || {});
+  },
   phoneUrl() {
-    const phone = Alpine.store('format').bestPhone(this.current || {});
+    const phone = this.phoneNumber();
     if (!phone) return '';
     const compactPhone = phone.replace(/[^\d+]/g, '');
-    return `tel:${compactPhone || phone}`;
+    return /^\+?\d{3,20}$/.test(compactPhone) ? `tel:${compactPhone}` : '';
   },
   rawJson() {
     return JSON.stringify(this.current || {}, null, 2);

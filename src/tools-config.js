@@ -7,9 +7,10 @@
 import { render } from './templates/index.js';
 import * as telemetry from './telemetry.js';
 import { normalizeUserPreferenceInput, saveUserPreferences, userPreferencesFromConfig } from './user-preferences.js';
-import { NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX } from './config.js';
-import { validateCoordinates, validateLimit } from './validation.js';
+import { NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX, SEARCH_RADIUS_MAX_KM } from './config.js';
+import { validateCoordinates, validateLimit, validateRadiusKm } from './validation.js';
 import { accommodationTypes, fetchNearbyForPOI, foodTypes, getNearbyTypes, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
+import { sanitizePoiExternalUrlsArray } from './url-utils.js';
 
 export { getPromptMessages, promptsConfig } from './prompts-config.js';
 export { getResourcesConfig, handleReadResource } from './resources-config.js';
@@ -784,13 +785,14 @@ export function getToolsConfig(widgetDomain) {
  * to render interactive search results that users can click.
  */
 export function buildSearchResponse(pois) {
+  const results = sanitizePoiExternalUrlsArray(pois);
   return {
     // Text content for model narration (summarizes results)
-    content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }],
+    content: [{ type: 'text', text: JSON.stringify(results, null, 2) }],
     // Structured content for UI rendering (passed to window.openai.toolOutput)
     structuredContent: {
-      results: pois,
-      count: pois.length,
+      results,
+      count: results.length,
     },
   };
 }
@@ -1050,13 +1052,14 @@ export async function executeToolHandler(name, args, db, options = {}) {
       }
 
       const limit = validateLimit(args.limit, 10, 100);
+      const radiusKm = validateRadiusKm(args.radius_km, 50, 100);
       const cities = await db.searchCities({
         query: args.query,
         countryCode: args.country_code,
         state: args.state,
         latitude: args.latitude,
         longitude: args.longitude,
-        radiusKm: args.radius_km,
+        radiusKm,
         limit,
       });
       return {
@@ -1081,6 +1084,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         args.latitude = coords.lat;
         args.longitude = coords.lon;
       }
+      const radiusKm = validateRadiusKm(args.radius_km, 15, SEARCH_RADIUS_MAX_KM);
       const pois = await db.searchPOIs({
         name: args.query,
         cityName: args.city_name,
@@ -1088,7 +1092,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         state: args.state,
         latitude: args.latitude,
         longitude: args.longitude,
-        radius: args.radius_km,
+        radius: radiusKm,
         poiTypes: accommodationTypeFilter.types,
         amenities: args.amenities,
         brand: args.brand,
@@ -1144,7 +1148,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         osmId: args.osm_id,
         latitude: args.latitude,
         longitude: args.longitude,
-        radiusKm: Math.min(Number(args.radius_km) || 1.5, 5),
+        radiusKm: validateRadiusKm(args.radius_km, 1.5, 5),
       });
       if (!score) {
         return {
@@ -1169,7 +1173,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         hotelOsmId: args.hotel_osm_id,
         interests: args.interests || [],
         days: validateLimit(args.days, 3, 7),
-        radiusKm: Math.min(Number(args.radius_km) || 8, 25),
+        radiusKm: validateRadiusKm(args.radius_km, 8, 25),
       });
       if (!itinerary) {
         return {
@@ -1228,6 +1232,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         args.longitude = coords.lon;
       }
       const types = args.type ? [args.type] : foodTypes;
+      const radiusKm = validateRadiusKm(args.radius_km, 15, SEARCH_RADIUS_MAX_KM);
       const pois = await db.searchPOIs({
         name: args.query,
         cityName: args.city_name,
@@ -1235,7 +1240,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         state: args.state,
         latitude: args.latitude,
         longitude: args.longitude,
-        radius: args.radius_km,
+        radius: radiusKm,
         poiTypes: types,
         cuisine: args.cuisine,
         dietary: args.dietary,
@@ -1283,7 +1288,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
           cityName: args.city_name,
           countryCode: args.country_code,
           state: args.state,
-          radiusKm: args.radius_km,
+          radiusKm: validateRadiusKm(args.radius_km, 15, SEARCH_RADIUS_MAX_KM),
           minRestaurants: args.min_restaurants,
           limit: validateLimit(args.limit, 10, 100),
         });
@@ -1315,6 +1320,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         args.latitude = coords.lat;
         args.longitude = coords.lon;
       }
+      const radiusKm = validateRadiusKm(args.radius_km, 15, SEARCH_RADIUS_MAX_KM);
       const pois = await db.searchPOIs({
         name: args.query,
         cityName: args.city_name,
@@ -1322,7 +1328,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
         state: args.state,
         latitude: args.latitude,
         longitude: args.longitude,
-        radius: args.radius_km,
+        radius: radiusKm,
         poiType: args.poi_type,
         limit: validateLimit(args.limit, 50, 100),
         userId: options.user?.id,
@@ -1396,7 +1402,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
       }
 
       const resultTypes = args.result_types || getNearbyTypes(sourcePoi.poi_type);
-      const radiusKm = Math.min(args.radius_km || NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM);
+      const radiusKm = validateRadiusKm(args.radius_km, NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM);
       const nearbyLimit = validateLimit(args.limit, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX);
 
       const nearbyPois = await db.searchPOIsNearCoordinates(

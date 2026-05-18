@@ -201,6 +201,16 @@
       return div.innerHTML;
     }
 
+    function safeHttpUrl(value) {
+      if (typeof value !== 'string') return '';
+      try {
+        var url = new URL(value, window.location.origin);
+        return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
+      } catch (err) {
+        return '';
+      }
+    }
+
     function getTypeEmoji(type) {
       if (type === 'restaurant') return '&#127869;';
       if (type === 'cafe') return '&#9749;';
@@ -210,9 +220,9 @@
 
     function renderCard(poi) {
       var name = poi.name || 'Unknown';
-      var photoUrl = poi.photo_url;
+      var photoUrl = safeHttpUrl(poi.photo_url);
       if (!photoUrl && poi.google_photos && poi.google_photos.length > 0) {
-        photoUrl = poi.google_photos[0].url;
+        photoUrl = safeHttpUrl(poi.google_photos[0].url || poi.google_photos[0].url_thumbnail);
       }
 
       var card = document.createElement('a');

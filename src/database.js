@@ -2,11 +2,12 @@ import pg from 'pg';
 import { GooglePlacesClient } from './google-places.js';
 import * as telemetry from './telemetry.js';
 import dotenv from 'dotenv';
-import { CONFIG_CACHE_TTL_MS, DB_STATEMENT_TIMEOUT_MS, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, HOMEPAGE_CACHE_MAX_SIZE, HOMEPAGE_CACHE_TTL_MS, COUNTRIES_CACHE_TTL_MS, EARTH_RADIUS_METERS, GOOGLE_PLACES_DAILY_LIMIT_DEFAULT } from './config.js';
+import { CONFIG_CACHE_TTL_MS, DB_STATEMENT_TIMEOUT_MS, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX, SEARCH_RADIUS_DEFAULT_KM, SEARCH_RADIUS_MAX_KM, MAP_POI_LIMIT_MAX, HOMEPAGE_CACHE_MAX_SIZE, HOMEPAGE_CACHE_TTL_MS, COUNTRIES_CACHE_TTL_MS, EARTH_RADIUS_METERS, GOOGLE_PLACES_DAILY_LIMIT_DEFAULT } from './config.js';
 import { addResourceUris, removeNullFields } from './response-utils.js';
 import { databaseUserMethods } from './database-user-methods.js';
 import { databaseImportMethods } from './database-import-methods.js';
 import { coerceOpenAt, isPoiOpenAt } from './lib/opening-hours.js';
+import { sanitizeHttpUrl, sanitizePoiExternalUrlsArray } from './url-utils.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
@@ -16,6 +17,30 @@ if (!process.env.DATABASE_URL && process.env.NODE_ENV === 'production') {
 }
 const CONNECTION_STRING = process.env.DATABASE_URL ||
   'postgresql://<user>:<password>@localhost:5432/travel';
+
+function clampPositiveInteger(value, defaultValue, maxValue) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return defaultValue;
+  return Math.min(Math.floor(parsed), maxValue);
+}
+
+function clampNonNegativeInteger(value, defaultValue) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return defaultValue;
+  return Math.floor(parsed);
+}
+
+function clampSearchRadiusKm(value, defaultValue = SEARCH_RADIUS_DEFAULT_KM) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+  return Math.min(Math.max(parsed, 0.1), SEARCH_RADIUS_MAX_KM);
+}
+
+function clampMapRating(value) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return 0;
+  return Math.min(parsed, 5);
+}
 
 const IMPORT_SOURCE_COUNTRY_CODES = {
   thailand: ['TH'],
@@ -371,7 +396,7 @@ export class TravelDatabase {
       if (google_photos && Array.isArray(google_photos) && google_photos.length > 0) {
         const firstPhoto = google_photos[0];
         // Use pre-resolved thumbnail URL from enrichment
-        photo_url = firstPhoto.url_thumbnail || firstPhoto.url || null;
+        photo_url = sanitizeHttpUrl(firstPhoto.url_thumbnail || firstPhoto.url);
       }
 
       return { ...rest, photo_url };
@@ -1781,7 +1806,9 @@ export class TravelDatabase {
       offset = 0,
       userId = null,    // For including favorite status in results
     } = params;
-    const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
+    const limit = clampPositiveInteger(rawLimit, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX);
+    const safeOffset = clampNonNegativeInteger(offset, 0);
+    const requestedRadius = radius === null || radius === undefined ? null : clampSearchRadiusKm(radius);
 
     // Debug logging
     const typeDesc = poiTypes ? poiTypes.join(',') : poiType || 'all';
@@ -1801,7 +1828,7 @@ export class TravelDatabase {
       openNow && 'openNow',
       openAt && `openAt=${openAt}`,
     ].filter(Boolean).join(', ');
-    console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${radius}km, types=${typeDesc}, limit=${limit}${extraDesc ? `, ${extraDesc}` : ''}`);
+    console.error(`[searchPOIs] query=${name}, city=${cityName}, country=${countryCode}, state=${state}, lat=${latitude}, lon=${longitude}, radius=${requestedRadius ?? 'default'}km, types=${typeDesc}, limit=${limit}${extraDesc ? `, ${extraDesc}` : ''}`);
 
     let query;
     let queryParams;
@@ -1916,7 +1943,7 @@ export class TravelDatabase {
           return [];
         }
 
-        const searchRadius = radius || this.getRadiusForPopulation(city.population || 100000);
+        const searchRadius = clampSearchRadiusKm(requestedRadius, this.getRadiusForPopulation(city.population || 100000));
         return this.searchPOIsNearCoordinates(
           city.latitude,
           city.longitude,
@@ -1927,11 +1954,11 @@ export class TravelDatabase {
           null,
           extraFilters,
           openNow,
-          offset,
+          safeOffset,
           openAt,
         );
       } else {
-        const searchRadius = radius || 10; // Default 10km
+        const searchRadius = clampSearchRadiusKm(requestedRadius, 10); // Default 10km
         return this.searchPOIsNearCoordinates(
           latitude,
           longitude,
@@ -1942,7 +1969,7 @@ export class TravelDatabase {
           null,
           extraFilters,
           openNow,
-          offset,
+          safeOffset,
           openAt,
         );
       }
@@ -1952,7 +1979,7 @@ export class TravelDatabase {
       // First resolve city to coordinates if needed
       let searchLat = latitude;
       let searchLon = longitude;
-      let searchRadius = radius;
+      let searchRadius = requestedRadius;
 
       if (hasCity) {
         const city = await this.getCityByName(cityName, countryCode, state);
@@ -1961,9 +1988,9 @@ export class TravelDatabase {
         }
         searchLat = city.latitude;
         searchLon = city.longitude;
-        searchRadius = searchRadius || this.getRadiusForPopulation(city.population || 100000);
+        searchRadius = clampSearchRadiusKm(searchRadius, this.getRadiusForPopulation(city.population || 100000));
       } else {
-        searchRadius = searchRadius || 10; // Default 10km for coordinates
+        searchRadius = clampSearchRadiusKm(searchRadius, 10); // Default 10km for coordinates
       }
 
       // Combined query: name filter + distance filter
@@ -2054,7 +2081,7 @@ export class TravelDatabase {
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
     const withPhotos = await this.addPhotoUrls(withUris);
-    return this.addFavoriteStatus(withPhotos, userId);
+    return this.addFavoriteStatus(sanitizePoiExternalUrlsArray(withPhotos), userId);
   }
 
   /**
@@ -2219,10 +2246,10 @@ export class TravelDatabase {
       return null;
     }
 
-    const searchRadius = radiusKm || this.getRadiusForPopulation(city.population || 100000);
+    const searchRadius = clampSearchRadiusKm(radiusKm, this.getRadiusForPopulation(city.population || 100000));
     const clusterRadiusMeters = 350;
     const minPoints = Math.max(3, Math.min(Number(minRestaurants) || 5, 25));
-    const resultLimit = Math.min(Number(limit) || 10, SEARCH_LIMIT_MAX);
+    const resultLimit = clampPositiveInteger(limit, 10, SEARCH_LIMIT_MAX);
     const params = [
       city.latitude,
       city.longitude,
@@ -2323,10 +2350,12 @@ export class TravelDatabase {
    * @returns {Promise<Array<Object>>} Array of POI objects with distance_km included
    */
   async searchPOIsNearCoordinates(latitude, longitude, radiusKm, typeFilter = null, rawLimit = SEARCH_LIMIT_DEFAULT, userId = null, excludeOsmIds = null, extraFilters = null, openNow = false, offset = 0, openAt = null) {
-    const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
+    const limit = clampPositiveInteger(rawLimit, SEARCH_LIMIT_DEFAULT, SEARCH_LIMIT_MAX);
+    const safeRadiusKm = clampSearchRadiusKm(radiusKm);
+    const safeOffset = clampNonNegativeInteger(offset, 0);
     // Debug logging
     const typeDesc = typeFilter ? (Array.isArray(typeFilter) ? typeFilter.join(',') : typeFilter) : 'all';
-    console.error(`[searchPOIsNearCoordinates] lat=${latitude}, lon=${longitude}, radius=${radiusKm}km, types=${typeDesc}, limit=${limit}`);
+    console.error(`[searchPOIsNearCoordinates] lat=${latitude}, lon=${longitude}, radius=${safeRadiusKm}km, types=${typeDesc}, limit=${limit}`);
 
     let query = `
       SELECT
@@ -2355,7 +2384,7 @@ export class TravelDatabase {
         )
     `;
 
-    const params = [latitude, longitude, radiusKm];
+    const params = [latitude, longitude, safeRadiusKm];
 
     if (typeFilter) {
       query += ` AND p.poi_type = ANY($${params.length + 1})`;
@@ -2384,7 +2413,7 @@ export class TravelDatabase {
     const shouldFilterByOccasion = !!TravelDatabase.RESTAURANT_OCCASION_MAP[extraFilters?.occasion];
     // For hours filtering, over-fetch and post-filter (offset not applied since post-filtering changes counts)
     const fetchLimit = (shouldFilterByHours || shouldFilterByPrice || shouldFilterByOccasion) ? limit * 3 : limit;
-    const fetchOffset = (shouldFilterByHours || shouldFilterByPrice || shouldFilterByOccasion) ? 0 : offset;
+    const fetchOffset = (shouldFilterByHours || shouldFilterByPrice || shouldFilterByOccasion) ? 0 : safeOffset;
     query += ` ORDER BY distance_km ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`;
     params.push(fetchLimit, fetchOffset);
 
@@ -2409,7 +2438,7 @@ export class TravelDatabase {
     const baseUrl = await this.getServerBaseUrl();
     const withUris = addResourceUris(removeNullFields(filtered), baseUrl);
     const withPhotos = await this.addPhotoUrls(withUris);
-    return this.addFavoriteStatus(withPhotos, userId);
+    return this.addFavoriteStatus(sanitizePoiExternalUrlsArray(withPhotos), userId);
   }
 
   /**
@@ -2427,8 +2456,9 @@ export class TravelDatabase {
    * @returns {Promise<Array>} Lightweight POI objects for map markers
    */
   async searchPOIsInBBox(swLat, swLng, neLat, neLng, typeFilter = null, rawLimit = 200, minRating = 0, userId = null) {
-    const limit = Math.min(rawLimit, SEARCH_LIMIT_MAX);
-    console.error(`[searchPOIsInBBox] sw=${swLat},${swLng} ne=${neLat},${neLng} types=${typeFilter || 'all'} minRating=${minRating} limit=${limit}`);
+    const limit = clampPositiveInteger(rawLimit, 200, MAP_POI_LIMIT_MAX);
+    const safeMinRating = clampMapRating(minRating);
+    console.error(`[searchPOIsInBBox] sw=${swLat},${swLng} ne=${neLat},${neLng} types=${typeFilter || 'all'} minRating=${safeMinRating} limit=${limit}`);
 
     let query = `
       SELECT
@@ -2461,9 +2491,9 @@ export class TravelDatabase {
       params.push(typeFilter);
     }
 
-    if (minRating > 0) {
+    if (safeMinRating > 0) {
       query += ` AND g.rating >= $${params.length + 1}`;
-      params.push(minRating);
+      params.push(safeMinRating);
     }
 
     // Prefer POIs with ratings, then by rating desc
@@ -2472,7 +2502,7 @@ export class TravelDatabase {
 
     const result = await this.pool.query(query, params);
     const cleaned = removeNullFields(result.rows);
-    return this.addFavoriteStatus(cleaned, userId);
+    return this.addFavoriteStatus(sanitizePoiExternalUrlsArray(cleaned), userId);
   }
 
   async getCityByName(name, countryCode = null, state = null) {

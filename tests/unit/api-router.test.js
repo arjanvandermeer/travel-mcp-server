@@ -63,6 +63,20 @@ describe('ApiRouter', () => {
     assert.deepStrictEqual(capturedParams, { osm_id: '12345' });
   });
 
+  it('should return 400 for malformed percent-encoding in path params', async () => {
+    router.get('/api/v1/poi/:osm_id', async (req, res) => {
+      sendJson(res, 200, {});
+    });
+
+    const req = fakeReq('GET', '/api/v1/poi/%E0%A4%A');
+    const res = fakeRes();
+    const handled = await router.handle(req, res, {});
+
+    assert.strictEqual(handled, true);
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.json().code, 'invalid_path_param');
+  });
+
   it('should parse query string', async () => {
     let capturedQuery = null;
     router.get('/api/v1/search', async (req, res, ctx) => {
@@ -145,6 +159,13 @@ describe('parseCookies', () => {
     const cookies = parseCookies(req);
     assert.strictEqual(cookies.name, 'hello world');
   });
+
+  it('should skip malformed cookie values', () => {
+    const req = { headers: { cookie: 'session=%E0%A4%A; theme=dark' } };
+    const cookies = parseCookies(req);
+    assert.strictEqual(cookies.session, undefined);
+    assert.strictEqual(cookies.theme, 'dark');
+  });
 });
 
 describe('parseBody', () => {
@@ -163,6 +184,22 @@ describe('parseBody', () => {
   it('should reject invalid JSON', async () => {
     const req = fakeReqWithBody('POST', '/test', { body: 'not json' });
     await assert.rejects(() => parseBody(req), { message: 'Invalid JSON body' });
+  });
+
+  it('should return 400 from routes when JSON body is invalid', async () => {
+    const router = new ApiRouter();
+    router.post('/api/v1/body', async (req, res) => {
+      await parseBody(req);
+      sendJson(res, 200, {});
+    });
+
+    const req = fakeReqWithBody('POST', '/api/v1/body', { body: 'not json' });
+    const res = fakeRes();
+    const handled = await router.handle(req, res, {});
+
+    assert.strictEqual(handled, true);
+    assert.strictEqual(res.statusCode, 400);
+    assert.strictEqual(res.json().code, 'invalid_json');
   });
 
   it('should reject body exceeding 1MB', async () => {

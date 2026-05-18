@@ -793,7 +793,7 @@ describe('executeToolHandler: find_food_districts', () => {
       cityName: 'Bangkok',
       countryCode: 'TH',
       state: undefined,
-      radiusKm: undefined,
+      radiusKm: 15,
       minRestaurants: 6,
       limit: 100,
     });

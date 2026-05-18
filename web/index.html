@@ -265,6 +265,23 @@
             <div class="dossier-grid">
               <section class="dossier-main">
                 <div class="copy-block">
+                  <div class="place-contact-box" x-show="$store.format.bestAddress($store.poi.current) || $store.poi.phoneNumber() || $store.poi.websiteUrl()">
+                    <h2 x-text="$store.poi.current.name || $store.poi.current.osm_name || 'Place details'"></h2>
+                    <div class="place-contact-rows">
+                      <a class="place-contact-row" x-show="$store.format.bestAddress($store.poi.current)" :href="$store.poi.mapsUrl()" target="_blank" rel="noopener">
+                        <span>Address</span>
+                        <strong x-text="$store.format.bestAddress($store.poi.current)"></strong>
+                      </a>
+                      <a class="place-contact-row" x-show="$store.poi.phoneNumber()" :href="$store.poi.phoneUrl()">
+                        <span>Phone</span>
+                        <strong x-text="$store.poi.phoneNumber()"></strong>
+                      </a>
+                      <a class="place-contact-row" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener">
+                        <span>Website</span>
+                        <strong x-text="$store.poi.websiteUrl()"></strong>
+                      </a>
+                    </div>
+                  </div>
                   <div class="inline-loading" x-show="$store.poi.isEnriching()" aria-live="polite">
                     <span class="tiny-spinner" aria-hidden="true"></span>
                     <span>Refreshing place details</span>

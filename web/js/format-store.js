@@ -1,5 +1,20 @@
 import { TYPE_COLORS } from './constants.js';
 
+export function safeHttpUrl(value) {
+  if (typeof value !== 'string') return '';
+  try {
+    const url = new URL(value, window.location.origin);
+    return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+export function cssUrl(value) {
+  const url = safeHttpUrl(value);
+  return url ? url.replace(/["\\\n\r\f]/g, char => encodeURIComponent(char)) : '';
+}
+
 export function createFormatStore() {
   return {
     placeMeta(poi = {}) {
@@ -15,14 +30,14 @@ export function createFormatStore() {
       return `${Number(poi.distance_km).toFixed(1)} km · ${this.placeMeta(poi)}`;
     },
     thumbStyle(poi = {}) {
-      const url = poi.photo_url || poi.primary_photo_url;
+      const url = cssUrl(poi.photo_url || poi.primary_photo_url);
       if (url) return `background-image:url("${url}")`;
       const color = TYPE_COLORS.get(poi.poi_type) || '#475569';
       return `background:linear-gradient(135deg, ${color}, #f59e0b)`;
     },
     heroStyle(poi = {}) {
       const photos = poi.google_photos || poi.photos || [];
-      const url = poi.photo_url || poi.primary_photo_url || photos?.[0]?.url || photos?.[0]?.url_thumbnail;
+      const url = cssUrl(poi.photo_url || poi.primary_photo_url || photos?.[0]?.url || photos?.[0]?.url_thumbnail);
       if (url) return `background-image:linear-gradient(90deg, rgba(23,32,51,.86), rgba(23,32,51,.34) 52%, rgba(23,32,51,.08)), url("${url}")`;
       return 'background-image:linear-gradient(135deg, #172033, #0f766e 58%, #b45309)';
     },
@@ -30,6 +45,7 @@ export function createFormatStore() {
       const photos = poi.google_photos || poi.photos || [];
       return photos
         .map(photo => photo?.url || photo?.url_thumbnail)
+        .map(safeHttpUrl)
         .filter(Boolean)
         .slice(0, 10);
     },
@@ -40,14 +56,17 @@ export function createFormatStore() {
       return poi.google_phone || poi.google_international_phone || poi.osm_phone || poi.phone || '';
     },
     bestWebsite(poi = {}) {
-      return poi.google_website || poi.osm_website || poi.website || '';
+      return safeHttpUrl(poi.google_website) || safeHttpUrl(poi.osm_website) || safeHttpUrl(poi.website) || '';
     },
     bestMapsUrl(poi = {}) {
-      if (poi.google_maps_url) return poi.google_maps_url;
+      const storedUrl = safeHttpUrl(poi.google_maps_url);
+      if (storedUrl) return storedUrl;
       const lat = poi.osm_latitude ?? poi.latitude ?? poi.google_latitude;
       const lng = poi.osm_longitude ?? poi.longitude ?? poi.google_longitude;
-      return lat !== undefined && lat !== null && lng !== undefined && lng !== null
-        ? `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`
+      const latNum = Number(lat);
+      const lngNum = Number(lng);
+      return Number.isFinite(latNum) && Number.isFinite(lngNum)
+        ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${latNum},${lngNum}`)}`
         : `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(poi.name || poi.osm_name || '')}`;
     },
     openStatus(poi = {}) {

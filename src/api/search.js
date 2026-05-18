@@ -4,17 +4,18 @@
  */
 
 import { sendJson } from '../api-router.js';
-import { validateCoordinates, validateLimit } from '../validation.js';
+import { CITY_SEARCH_RADIUS_MAX_KM, SEARCH_RADIUS_MAX_KM } from '../config.js';
+import { parseStrictInteger, validateCoordinates, validateLimit, validateRadiusKm } from '../validation.js';
 
 function parsePositiveInt(value, defaultValue, maxValue) {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+  const parsed = parseStrictInteger(value);
+  if (parsed === null || parsed <= 0) return defaultValue;
   return Math.min(parsed, maxValue);
 }
 
-function parsePositiveFloat(value, defaultValue, maxValue) {
-  const parsed = Number.parseFloat(value);
-  if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
+function parseNonNegativeInt(value, defaultValue, maxValue) {
+  const parsed = parseStrictInteger(value);
+  if (parsed === null || parsed < 0) return defaultValue;
   return Math.min(parsed, maxValue);
 }
 
@@ -51,8 +52,8 @@ export function registerSearchRoutes(router) {
     const state = query.state || null;
     const q = query.q || null;
     const limit = validateLimit(query.limit, 10, 50);
-    const radiusKm = parsePositiveFloat(query.radius_km, 50, 1000);
-    const minPoiCount = parsePositiveInt(query.min_pois, 0, 1000);
+    const radiusKm = validateRadiusKm(query.radius_km, 50, CITY_SEARCH_RADIUS_MAX_KM);
+    const minPoiCount = parseNonNegativeInt(query.min_pois, 0, 1000);
 
     // searchCities requires either country_code or coordinates
     if (!countryCode && !hasAnyQueryCoordinate(query)) {
@@ -94,7 +95,8 @@ export function registerSearchRoutes(router) {
     const dietary = parseListParam(query.dietary);
     const name = query.q || null;
     const limit = validateLimit(query.limit, 50, 100);
-    const offset = Math.max(0, parseInt(query.offset ?? '0', 10) || 0);
+    const offset = parseNonNegativeInt(query.offset ?? '0', 0, 100000);
+    const radiusKm = validateRadiusKm(query.radius_km, null, SEARCH_RADIUS_MAX_KM);
     const openNow = parseBooleanParam(query.open_now);
 
     let latitude = null;
@@ -124,6 +126,7 @@ export function registerSearchRoutes(router) {
       cuisine,
       dietary,
       name,
+      radius: radiusKm,
       openNow,
       limit,
       offset,

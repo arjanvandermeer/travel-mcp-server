@@ -704,7 +704,9 @@ CREATE INDEX IF NOT EXISTS idx_users_google_id ON users(google_id) WHERE google_
 CREATE TABLE IF NOT EXISTS user_tokens (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token VARCHAR(64) UNIQUE NOT NULL,       -- Secure random token
+    token VARCHAR(64) UNIQUE,                -- Legacy plaintext token; new tokens use token_hash
+    token_hash VARCHAR(64),                  -- SHA-256 hash of the bearer token
+    token_prefix VARCHAR(12),                -- Non-secret display prefix for token management
     name VARCHAR(100),                       -- Optional token name (e.g., "Claude Desktop")
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     expires_at TIMESTAMP,                    -- NULL = never expires
@@ -712,7 +714,15 @@ CREATE TABLE IF NOT EXISTS user_tokens (
     revoked_at TIMESTAMP                     -- NULL = active, set to revoke
 );
 
-CREATE INDEX IF NOT EXISTS idx_user_tokens_token ON user_tokens(token) WHERE revoked_at IS NULL;
+ALTER TABLE IF EXISTS user_tokens
+    ALTER COLUMN token DROP NOT NULL;
+ALTER TABLE IF EXISTS user_tokens
+    ADD COLUMN IF NOT EXISTS token_hash VARCHAR(64);
+ALTER TABLE IF EXISTS user_tokens
+    ADD COLUMN IF NOT EXISTS token_prefix VARCHAR(12);
+
+CREATE INDEX IF NOT EXISTS idx_user_tokens_token ON user_tokens(token) WHERE token IS NOT NULL AND revoked_at IS NULL;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_user_tokens_token_hash ON user_tokens(token_hash) WHERE token_hash IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_user_tokens_user ON user_tokens(user_id);
 
 -- Per-user configuration (API limits, preferences, etc.)

@@ -37,7 +37,13 @@ export class ApiRouter {
    * @returns {boolean} true if a route matched (even if handler errored)
    */
   async handle(req, res, context) {
-    const url = new URL(req.url, 'http://localhost');
+    let url;
+    try {
+      url = new URL(req.url, 'http://localhost');
+    } catch {
+      sendJson(res, 400, createErrorEnvelope('invalid_url', 'Invalid request URL'));
+      return true;
+    }
     const pathname = url.pathname;
     const method = req.method.toUpperCase();
 
@@ -48,9 +54,14 @@ export class ApiRouter {
 
       // Extract path params
       const params = {};
-      route.paramNames.forEach((name, i) => {
-        params[name] = decodeURIComponent(match[i + 1]);
-      });
+      try {
+        route.paramNames.forEach((name, i) => {
+          params[name] = decodeURIComponent(match[i + 1]);
+        });
+      } catch {
+        sendJson(res, 400, createErrorEnvelope('invalid_path_param', 'Malformed percent-encoding in path parameter'));
+        return true;
+      }
 
       try {
         await route.handler(req, res, {
@@ -64,6 +75,8 @@ export class ApiRouter {
         if (!res.headersSent) {
           if (err.message === 'Request body too large') {
             sendJson(res, 413, createErrorEnvelope('body_too_large', 'Request body too large'));
+          } else if (err.message === 'Invalid JSON body') {
+            sendJson(res, 400, createErrorEnvelope('invalid_json', 'Invalid JSON body'));
           } else {
             sendJson(res, 500, createErrorEnvelope('internal_error', 'Internal server error'));
           }
@@ -133,7 +146,12 @@ export function parseCookies(req) {
   const cookies = {};
   header.split(';').forEach(pair => {
     const [name, ...rest] = pair.trim().split('=');
-    if (name) cookies[name] = decodeURIComponent(rest.join('='));
+    if (!name) return;
+    try {
+      cookies[name] = decodeURIComponent(rest.join('='));
+    } catch {
+      telemetry.incrementCounter('cookie.parse_rejected', 1, { reason: 'malformed_percent_encoding' });
+    }
   });
   return cookies;
 }
