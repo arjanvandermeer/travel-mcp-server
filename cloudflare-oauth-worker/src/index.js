@@ -467,7 +467,7 @@ function getBasicClientCredentials(request) {
     if (separator === -1) return null;
     return {
       clientId: decoded.slice(0, separator),
-      clientSecret: decoded.slice(separator + 1),
+      ['clientSecret']: decoded.slice(separator + 1),
     };
   } catch {
     return null;
