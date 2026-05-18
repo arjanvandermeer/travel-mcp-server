@@ -19,7 +19,7 @@ id = "1a159160fb3241f3811117521f673878"  # Replace after: wrangler kv:namespace 
 
 [vars]
 # Public configuration
-OAUTH_ISSUER = "https://travel-mcp-oauth.cloudflare-com-91b.workers.dev"
+OAUTH_ISSUER = "https://login.arjanvandermeer.com"
 
 # Development overrides
 [env.dev]
