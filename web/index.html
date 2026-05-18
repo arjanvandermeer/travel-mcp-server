@@ -227,15 +227,34 @@
                 <h1 x-text="$store.poi.current.name || $store.poi.current.osm_name"></h1>
                 <p x-text="$store.format.bestAddress($store.poi.current) || $store.format.placeMeta($store.poi.current)"></p>
                 <div class="hero-pills">
-                  <span class="status-pill" :class="$store.format.openStatusClass($store.poi.current)" x-text="$store.format.openStatus($store.poi.current)"></span>
+                  <div class="open-compact hero-open-status" :class="$store.format.openStatusClass($store.poi.current)">
+                    <span x-text="$store.format.openStatus($store.poi.current)"></span>
+                    <small x-show="$store.format.hoursDetail($store.poi.current)" x-text="$store.format.hoursDetail($store.poi.current)"></small>
+                  </div>
                   <span x-show="$store.format.priceLabel($store.poi.current)" class="price-pill" x-text="$store.format.priceLabel($store.poi.current)"></span>
                   <span x-show="$store.poi.current.google_rating"><strong x-text="Number($store.poi.current.google_rating).toFixed(1)"></strong> ★</span>
                   <span x-show="$store.poi.current.google_review_count" x-text="$store.poi.current.google_review_count + ' reviews'"></span>
                 </div>
               </div>
               <div class="hero-actions">
-                <button class="primary-button compact" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
-                <a class="secondary-button compact" :href="$store.poi.mapsUrl()" target="_blank">Maps</a>
+                <button
+                  type="button"
+                  class="hero-icon-button"
+                  :class="{ active: $store.poi.current.is_favorite }"
+                  :aria-label="$store.poi.current.is_favorite ? 'Remove saved place' : 'Save place'"
+                  :title="$store.poi.current.is_favorite ? 'Saved' : 'Save'"
+                  @click="$store.favorites.toggle($store.poi.current)">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.6l2.6 5.3 5.8.8-4.2 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.2-4.1 5.8-.8L12 3.6z"/></svg>
+                </button>
+                <a class="hero-icon-button" :href="$store.poi.mapsUrl()" target="_blank" rel="noopener" aria-label="Open in Maps" title="Maps">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-5.3 7-11.6A7 7 0 0 0 5 9.4C5 15.7 12 21 12 21z"/><circle cx="12" cy="9.4" r="2.4"/></svg>
+                </a>
+                <a class="hero-icon-button" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener" aria-label="Open website" title="Website">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2 2.2 3 5 3 8.5s-1 6.3-3 8.5c-2-2.2-3-5-3-8.5s1-6.3 3-8.5z"/></svg>
+                </a>
+                <a class="hero-icon-button" x-show="$store.poi.phoneUrl()" :href="$store.poi.phoneUrl()" aria-label="Call" title="Call">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5l2.6 4.7-1.8 1.4c1.1 2.3 2.9 4.1 5.2 5.2l1.4-1.8 4.7 2.6-.8 3.1c-.2.7-.8 1.1-1.5 1-7.4-.8-13.3-6.7-14.1-14.1-.1-.7.3-1.3 1-1.5L7 4.5z"/></svg>
+                </a>
               </div>
             </div>
             <div class="photo-strip" x-show="$store.format.detailPhotos($store.poi.current).length">
@@ -246,24 +265,9 @@
             <div class="dossier-grid">
               <section class="dossier-main">
                 <div class="copy-block">
-                  <p x-text="$store.poi.summary()"></p>
                   <div class="inline-loading" x-show="$store.poi.isEnriching()" aria-live="polite">
                     <span class="tiny-spinner" aria-hidden="true"></span>
                     <span>Refreshing place details</span>
-                  </div>
-                  <div class="visitor-details">
-                    <div class="open-compact" :class="$store.format.openStatusClass($store.poi.current)">
-                      <span x-text="$store.format.openStatus($store.poi.current)"></span>
-                      <small x-show="$store.format.hoursDetail($store.poi.current)" x-text="$store.format.hoursDetail($store.poi.current)"></small>
-                    </div>
-                    <div class="contact-card">
-                      <template x-for="item in $store.format.contactLinks($store.poi.current)" :key="item.kind">
-                        <a :href="item.href" :target="item.kind === 'phone' ? null : '_blank'" :class="'contact-link ' + item.kind">
-                          <span x-text="item.label"></span>
-                          <strong x-text="item.value"></strong>
-                        </a>
-                      </template>
-                    </div>
                   </div>
                 </div>
               </section>

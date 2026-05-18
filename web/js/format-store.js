@@ -83,22 +83,5 @@ export function createFormatStore() {
       };
       return labels[poi.google_price_level] || String(poi.google_price_level).replace('PRICE_LEVEL_', '').replaceAll('_', ' ').toLowerCase();
     },
-    contactLinks(poi = {}) {
-      const links = [];
-      const address = this.bestAddress(poi);
-      if (address) links.push({ label: 'Address', value: address, href: this.bestMapsUrl(poi), kind: 'map' });
-      const phone = this.bestPhone(poi);
-      if (phone) links.push({ label: 'Phone', value: phone, href: `tel:${phone}`, kind: 'phone' });
-      const website = this.bestWebsite(poi);
-      if (website) links.push({ label: 'Website', value: this.websiteLabel(website), href: website, kind: 'website' });
-      return links;
-    },
-    websiteLabel(url) {
-      try {
-        return new URL(url).hostname.replace(/^www\./, '');
-      } catch {
-        return url;
-      }
-    },
   };
 }

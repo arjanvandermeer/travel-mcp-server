@@ -996,18 +996,17 @@ Alpine.store('poi', {
       this._pollTimer = window.setTimeout(() => this.pollEnrichment(), ENRICHMENT_POLL_INTERVAL_MS);
     }
   },
-  summary() {
-    if (!this.current) return '';
-    const name = this.current.name || this.current.osm_name || 'This place';
-    const city = this.current.city ? ` in ${this.current.city}` : '';
-    const rating = this.current.google_rating ? ` It carries a ${this.current.google_rating} Google rating.` : '';
-    const type = String(this.current.google_primary_type_display || this.current.poi_type || 'a point of interest').replaceAll('_', ' ');
-    const address = Alpine.store('format').bestAddress(this.current);
-    const location = address ? ` The listed address is ${address}.` : '';
-    return `${name}${city} is listed as ${type}.${rating}${location}`;
-  },
   mapsUrl() {
     return Alpine.store('format').bestMapsUrl(this.current || {});
+  },
+  websiteUrl() {
+    return Alpine.store('format').bestWebsite(this.current || {});
+  },
+  phoneUrl() {
+    const phone = Alpine.store('format').bestPhone(this.current || {});
+    if (!phone) return '';
+    const compactPhone = phone.replace(/[^\d+]/g, '');
+    return `tel:${compactPhone || phone}`;
   },
   rawJson() {
     return JSON.stringify(this.current || {}, null, 2);

@@ -62,11 +62,13 @@ describe('frontend regressions', () => {
     assert.match(styleCss, /\.hero-credit/, 'Hero image attribution should be styled');
     assert.match(indexHtml, /Raw place data/, 'PDP should hide raw data behind a data modal');
     assert.match(dossierCss, /\.photo-strip[\s\S]*overflow-x: auto/, 'PDP photos should render as a horizontal scroller');
-    assert.match(indexHtml, /class="status-pill"[\s\S]*price-pill/, 'PDP should show compact open and price pills');
+    assert.match(indexHtml, /class="open-compact hero-open-status"[\s\S]*price-pill/, 'PDP should show the compact open status and price pills in the hero');
     assert.doesNotMatch(indexHtml, /property-facts/, 'PDP should not show duplicate rating, price, or access fact boxes under photos');
     assert.doesNotMatch(formatStoreJs, /propertyFacts\(poi = \{\}\)/, 'PDP fact-box formatter should be removed with the fact boxes');
-    assert.match(indexHtml, /visitor-details[\s\S]*open-compact[\s\S]*contact-card/, 'PDP should group compact hours with contact details');
-    assert.match(indexHtml, /contactLinks\(\$store\.poi\.current\)/, 'PDP should render address, phone, and website as combined clickable contact links');
+    assert.doesNotMatch(indexHtml, /\$store\.poi\.summary\(\)/, 'PDP should not render the generated listed-as summary sentence');
+    assert.doesNotMatch(appJs, /is listed as/, 'PDP summary copy should not keep the listed-as sentence generator');
+    assert.doesNotMatch(indexHtml, /visitor-details|contact-card|contactLinks\(\$store\.poi\.current\)/, 'PDP should remove the lower status and contact text boxes');
+    assert.match(indexHtml, /hero-actions[\s\S]*hero-icon-button[\s\S]*websiteUrl\(\)[\s\S]*phoneUrl\(\)/, 'PDP should expose save, maps, website, and call as hero icon actions');
     assert.match(indexHtml, /<img class="photo-tile"/, 'PDP photos should be image tiles in the horizontal strip');
     assert.doesNotMatch(indexHtml, /detail-list/, 'PDP should not use the old large detail-list fields');
     assert.doesNotMatch(indexHtml, /action-grid/, 'PDP should not separate phone/address into a detached action grid');
