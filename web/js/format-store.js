@@ -83,17 +83,6 @@ export function createFormatStore() {
       };
       return labels[poi.google_price_level] || String(poi.google_price_level).replace('PRICE_LEVEL_', '').replaceAll('_', ' ').toLowerCase();
     },
-    propertyFacts(poi = {}) {
-      const facts = [];
-      if (poi.google_rating) facts.push({ label: 'Rating', value: `${Number(poi.google_rating).toFixed(1)} ★` });
-      if (poi.google_price_level) facts.push({ label: 'Price', value: this.priceLabel(poi) });
-      if (poi.osm_cuisine) facts.push({ label: 'Cuisine', value: String(poi.osm_cuisine).replaceAll(';', ', ') });
-      if (poi.osm_wheelchair) facts.push({ label: 'Access', value: String(poi.osm_wheelchair).replaceAll('_', ' ') });
-      if (poi.osm_stars) facts.push({ label: 'Class', value: `${poi.osm_stars} stars` });
-      if (poi.osm_rooms) facts.push({ label: 'Rooms', value: poi.osm_rooms });
-      if (poi.osm_beds) facts.push({ label: 'Beds', value: poi.osm_beds });
-      return facts.slice(0, 6);
-    },
     contactLinks(poi = {}) {
       const links = [];
       const address = this.bestAddress(poi);

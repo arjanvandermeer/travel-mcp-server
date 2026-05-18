@@ -245,14 +245,6 @@
             </div>
             <div class="dossier-grid">
               <section class="dossier-main">
-                <div class="property-facts">
-                  <template x-for="fact in $store.format.propertyFacts($store.poi.current)" :key="fact.label">
-                    <div>
-                      <span x-text="fact.label"></span>
-                      <strong x-text="fact.value"></strong>
-                    </div>
-                  </template>
-                </div>
                 <div class="copy-block">
                   <p x-text="$store.poi.summary()"></p>
                   <div class="inline-loading" x-show="$store.poi.isEnriching()" aria-live="polite">

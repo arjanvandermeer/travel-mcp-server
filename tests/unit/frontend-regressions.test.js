@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appJs = fs.readFileSync(path.join(__dirname, '../../web/js/app.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(__dirname, '../../web/index.html'), 'utf8');
+const formatStoreJs = fs.readFileSync(path.join(__dirname, '../../web/js/format-store.js'), 'utf8');
 const styleCss = fs.readFileSync(path.join(__dirname, '../../web/css/style.css'), 'utf8');
 const dossierCss = fs.readFileSync(path.join(__dirname, '../../web/css/dossier.css'), 'utf8');
 
@@ -62,6 +63,8 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /Raw place data/, 'PDP should hide raw data behind a data modal');
     assert.match(dossierCss, /\.photo-strip[\s\S]*overflow-x: auto/, 'PDP photos should render as a horizontal scroller');
     assert.match(indexHtml, /class="status-pill"[\s\S]*price-pill/, 'PDP should show compact open and price pills');
+    assert.doesNotMatch(indexHtml, /property-facts/, 'PDP should not show duplicate rating, price, or access fact boxes under photos');
+    assert.doesNotMatch(formatStoreJs, /propertyFacts\(poi = \{\}\)/, 'PDP fact-box formatter should be removed with the fact boxes');
     assert.match(indexHtml, /visitor-details[\s\S]*open-compact[\s\S]*contact-card/, 'PDP should group compact hours with contact details');
     assert.match(indexHtml, /contactLinks\(\$store\.poi\.current\)/, 'PDP should render address, phone, and website as combined clickable contact links');
     assert.match(indexHtml, /<img class="photo-tile"/, 'PDP photos should be image tiles in the horizontal strip');

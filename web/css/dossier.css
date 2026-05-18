@@ -93,23 +93,7 @@
 }
 .dossier-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; padding: 22px; }
 .dossier-main, .composer-panel { min-width: 0; }
-.property-facts {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-}
-.property-facts div {
-  min-height: 86px;
-  display: grid;
-  align-content: center;
-  gap: 6px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: white;
-  padding: 14px;
-}
-.property-facts span, .panel-kicker { color: var(--muted); font-size: 12px; font-weight: 750; text-transform: uppercase; }
-.property-facts strong { font-size: 20px; overflow-wrap: anywhere; }
+.panel-kicker { color: var(--muted); font-size: 12px; font-weight: 750; text-transform: uppercase; }
 .tabs { display: flex; gap: 8px; margin: 18px 0; }
 .tabs button { border: 1px solid var(--line); background: white; border-radius: 8px; padding: 9px 13px; }
 .tabs button.active { background: var(--ink); color: white; border-color: var(--ink); }
@@ -268,13 +252,12 @@ textarea {
 
 @media (max-width: 980px) {
   .dossier-grid { grid-template-columns: 1fr; padding: 14px; }
-  .property-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 680px) {
   .dossier, .composer-page { padding: 16px 10px; }
   .dossier-hero { min-height: 300px; display: grid; padding: 18px; }
   .hero-actions { justify-content: flex-start; }
-  .property-facts, .nearby-grid, .composer-actions { grid-template-columns: 1fr; }
+  .nearby-grid, .composer-actions { grid-template-columns: 1fr; }
   .dossier-data-footer { padding: 0 14px 14px; }
 }
