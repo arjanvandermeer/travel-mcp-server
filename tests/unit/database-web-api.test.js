@@ -218,7 +218,7 @@ describe('getUserByToken', () => {
   });
 
   it('should return user with config for valid token', async () => {
-    const { db } = createTestDb({
+    const { db, pool } = createTestDb({
       'user_tokens': dbResult([
         {
           id: 1,
@@ -255,6 +255,10 @@ describe('getUserByToken', () => {
     assert.strictEqual(user.config.theme, 'dark');
     assert.strictEqual(user.config.language, 'en');
     assert.strictEqual(user.token_id, undefined, 'Should not expose token_id');
+
+    const calls = pool.getCalls();
+    assert.ok(calls[0].sql.includes('t.token_hash = $1'), 'Should look up the token by hash first');
+    assert.notStrictEqual(calls[0].params[0], 'valid-token', 'Hash lookup must not use the plaintext token as the primary key');
   });
 
   it('should update last_used_at for the token', async () => {
@@ -331,7 +335,7 @@ describe('upsertGoogleUser', () => {
 
 describe('createUserToken', () => {
   it('should create token and return result', async () => {
-    const { db } = createTestDb({
+    const { db, pool } = createTestDb({
       'INSERT INTO user_tokens': dbResult([{
         id: 1, token: 'generated-token', name: 'My Token',
         created_at: new Date(),
@@ -342,6 +346,11 @@ describe('createUserToken', () => {
 
     assert.strictEqual(result.name, 'My Token');
     assert.ok(result.token, 'Should have a token value');
+
+    const calls = pool.getCalls();
+    assert.ok(calls[0].sql.includes('token_hash'), 'New tokens should be stored by hash');
+    assert.strictEqual(calls[0].params.length, 4);
+    assert.notStrictEqual(calls[0].params[1], result.token, 'Plaintext token should not be inserted');
   });
 
   it('should work without token name', async () => {

@@ -74,5 +74,8 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /<img class="photo-tile"/, 'PDP photos should be image tiles in the horizontal strip');
     assert.doesNotMatch(indexHtml, /detail-list/, 'PDP should not use the old large detail-list fields');
     assert.doesNotMatch(indexHtml, /action-grid/, 'PDP should not separate phone/address into a detached action grid');
+    assert.match(formatStoreJs, /safeHttpUrl/, 'External website, map, and image URLs should be scheme-sanitized before rendering');
+    assert.match(appJs, /cssUrl\(this\.heroImageUrl\)/, 'City hero image CSS URLs should be sanitized');
+    assert.match(appJs, /return \/\^\\\+\?\\d\{3,20\}\$\/\.test\(compactPhone\)/, 'Phone links should only render dialable tel URLs');
   });
 });
