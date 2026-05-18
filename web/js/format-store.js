@@ -49,6 +49,23 @@ export function createFormatStore() {
         .filter(Boolean)
         .slice(0, 10);
     },
+    reviewCards(poi = {}) {
+      const reviews = Array.isArray(poi.google_reviews) ? poi.google_reviews : [];
+      return reviews
+        .map(review => {
+          const rating = Number(review.rating || review.google_rating || 0);
+          const safeRating = Number.isFinite(rating) ? Math.max(0, Math.min(5, Math.round(rating))) : 0;
+          return {
+            author: review.author || review.authorName || review.displayName || 'Google reviewer',
+            rating: safeRating,
+            ratingStars: `${'★'.repeat(safeRating)}${'☆'.repeat(5 - safeRating)}`,
+            text: String(review.text || review.originalText || review.comment || '').trim(),
+            relativeTime: review.relativeTime || review.relative_time_description || review.publishTime || '',
+          };
+        })
+        .filter(review => review.text)
+        .slice(0, 8);
+    },
     bestAddress(poi = {}) {
       return poi.google_short_address || poi.google_address || poi.osm_address || [poi.city, poi.country_code].filter(Boolean).join(', ');
     },

@@ -257,10 +257,19 @@
                 </a>
               </div>
             </div>
-            <div class="photo-strip" x-show="$store.format.detailPhotos($store.poi.current).length">
-              <template x-for="photo in $store.format.detailPhotos($store.poi.current)" :key="photo">
-                <img class="photo-tile" :src="photo" alt="" loading="lazy">
-              </template>
+            <div class="media-carousel" x-show="$store.format.detailPhotos($store.poi.current).length">
+              <button class="carousel-arrow left" type="button" aria-label="Previous photos" @click="$refs.poiPhotoStrip.scrollBy({ left: -320, behavior: 'smooth' })">‹</button>
+              <div class="photo-strip" x-ref="poiPhotoStrip">
+                <template x-for="photo in $store.format.detailPhotos($store.poi.current)" :key="photo">
+                  <img class="photo-tile" :src="photo" alt="" loading="lazy">
+                </template>
+              </div>
+              <button class="carousel-arrow right" type="button" aria-label="Next photos" @click="$refs.poiPhotoStrip.scrollBy({ left: 320, behavior: 'smooth' })">›</button>
+              <div class="carousel-dots" aria-hidden="true">
+                <template x-for="photo in $store.format.detailPhotos($store.poi.current)" :key="'dot-' + photo">
+                  <span></span>
+                </template>
+              </div>
             </div>
             <div class="dossier-grid">
               <section class="dossier-main">
@@ -276,10 +285,37 @@
                         <span>Phone</span>
                         <strong x-text="$store.poi.phoneNumber()"></strong>
                       </a>
-                      <a class="place-contact-row" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener">
-                        <span>Website</span>
-                        <strong x-text="$store.poi.websiteUrl()"></strong>
-                      </a>
+                    </div>
+                    <a class="place-website-box" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener">
+                      <span>Website</span>
+                      <strong x-text="$store.poi.websiteUrl()"></strong>
+                    </a>
+                  </div>
+                  <div class="review-section" x-show="$store.format.reviewCards($store.poi.current).length">
+                    <div class="section-heading">
+                      <span>Reviews</span>
+                      <strong x-text="$store.format.reviewCards($store.poi.current).length + ' shown'"></strong>
+                    </div>
+                    <div class="review-carousel-shell">
+                      <button class="carousel-arrow left" type="button" aria-label="Previous reviews" @click="$refs.poiReviewStrip.scrollBy({ left: -280, behavior: 'smooth' })">‹</button>
+                      <div class="review-strip" x-ref="poiReviewStrip">
+                        <template x-for="review in $store.format.reviewCards($store.poi.current)" :key="review.author + review.text">
+                          <article class="review-card">
+                            <div class="review-card-top">
+                              <strong x-text="review.author"></strong>
+                              <span x-text="review.ratingStars"></span>
+                            </div>
+                            <p x-text="review.text"></p>
+                            <small x-show="review.relativeTime" x-text="review.relativeTime"></small>
+                          </article>
+                        </template>
+                      </div>
+                      <button class="carousel-arrow right" type="button" aria-label="Next reviews" @click="$refs.poiReviewStrip.scrollBy({ left: 280, behavior: 'smooth' })">›</button>
+                    </div>
+                    <div class="carousel-dots" aria-hidden="true">
+                      <template x-for="review in $store.format.reviewCards($store.poi.current)" :key="'review-dot-' + review.author + review.text">
+                        <span></span>
+                      </template>
                     </div>
                   </div>
                   <div class="inline-loading" x-show="$store.poi.isEnriching()" aria-live="polite">
