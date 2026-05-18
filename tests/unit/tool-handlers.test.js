@@ -119,6 +119,19 @@ describe('executeToolHandler: search_hotels', () => {
     assert.strictEqual(capturedArgs.limit, 100);
   });
 
+  it('should cap search radius at 50 km', async () => {
+    let capturedArgs;
+    const db = createMockDb({
+      searchPOIs: async (args) => { capturedArgs = args; return []; },
+    });
+    await executeToolHandler('search_hotels', {
+      latitude: 40.7,
+      longitude: -73.9,
+      radius_km: 500,
+    }, db);
+    assert.strictEqual(capturedArgs.radius, 50);
+  });
+
   it('should filter by a single accommodation type', async () => {
     let capturedArgs;
     const db = createMockDb({
@@ -842,6 +855,15 @@ describe('executeToolHandler: search_pois', () => {
     const db = createMockDb({ searchPOIs: async () => [{ osm_id: 3 }] });
     const result = await executeToolHandler('search_pois_ui', { city_name: 'Paris', country_code: 'FR' }, db);
     assert.ok(result.structuredContent);
+  });
+
+  it('should sanitize external URLs in structured search results', async () => {
+    const db = createMockDb({
+      searchPOIs: async () => [{ osm_id: 3, photo_url: 'javascript:alert(1)', google_website: 'https://example.com' }],
+    });
+    const result = await executeToolHandler('search_pois_ui', { city_name: 'Paris', country_code: 'FR' }, db);
+    assert.strictEqual(result.structuredContent.results[0].photo_url, null);
+    assert.strictEqual(result.structuredContent.results[0].google_website, 'https://example.com/');
   });
 });
 
