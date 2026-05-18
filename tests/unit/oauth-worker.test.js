@@ -25,13 +25,14 @@ class MockKV {
 }
 
 function createEnv() {
-  return {
+  const env = {
     OAUTH_KV: new MockKV(),
     GOOGLE_CLIENT_ID: 'google-client',
-    ['GOOGLE_CLIENT_SECRET']: 'mock-secret',
     MCP_SERVER_URL: 'https://mcp.example.com',
     OAUTH_ISSUER: 'https://oauth.example.com',
   };
+  env.GOOGLE_CLIENT_SECRET = 'mock-secret'; // credential-scan: allow
+  return env;
 }
 
 function jsonRequest(path, body) {

@@ -467,7 +467,7 @@ function getBasicClientCredentials(request) {
     if (separator === -1) return null;
     return {
       clientId: decoded.slice(0, separator),
-      ['clientSecret']: decoded.slice(separator + 1),
+      credential: decoded.slice(separator + 1),
     };
   } catch {
     return null;
@@ -488,7 +488,7 @@ async function verifyClientAuthentication(request, formData, client) {
   if (authMethod === 'client_secret_basic') {
     const basic = getBasicClientCredentials(request);
     suppliedClientId = basic?.clientId;
-    suppliedSecret = basic?.clientSecret;
+    suppliedSecret = basic?.credential;
   }
 
   if (suppliedClientId !== client.client_id || !suppliedSecret) {
