@@ -10,6 +10,12 @@ const HOME_FEED_PAGE_SIZE = 12;
 const HOME_FEED_PREFERENCE_KEY = 'travel.home.feedCategories';
 const ENRICHMENT_POLL_INTERVAL_MS = 5000;
 const ENRICHMENT_POLL_MAX_MS = 5 * 60 * 1000;
+const DEFAULT_CITY_FALLBACK = Object.freeze({
+  label: 'New York City, New York',
+  cityName: 'New York City',
+  countryCode: 'US',
+  state: 'New York',
+});
 
 function debounce(fn, ms) {
   let timer;
@@ -43,6 +49,24 @@ function writeHomeFeedPreference(keys) {
   } catch {
     // Storage can be blocked in private modes; keep the in-memory preference working.
   }
+}
+
+async function findDefaultCityFallback() {
+  const searches = [
+    { q: DEFAULT_CITY_FALLBACK.cityName, country_code: DEFAULT_CITY_FALLBACK.countryCode, state: DEFAULT_CITY_FALLBACK.state, limit: 10 },
+    { q: 'New York', country_code: DEFAULT_CITY_FALLBACK.countryCode, state: DEFAULT_CITY_FALLBACK.state, limit: 10 },
+  ];
+
+  for (const params of searches) {
+    const data = await apiGet('/api/v1/search/cities', params);
+    const cities = data.results || [];
+    const preferred = cities.find(city =>
+      String(city.name || city.ascii_name || '').toLowerCase() === DEFAULT_CITY_FALLBACK.cityName.toLowerCase() &&
+      String(city.state_name || '').toLowerCase() === DEFAULT_CITY_FALLBACK.state.toLowerCase()
+    );
+    if (preferred || cities[0]) return preferred || cities[0];
+  }
+  return null;
 }
 
 Alpine.store('auth', {
@@ -292,8 +316,30 @@ Alpine.store('discovery', {
       await this.loadOverview();
       await this.loadHeroImage();
     } catch (err) {
-      this.error = err.message || 'That city is not available right now.';
-      await this.loadRandomCity({ historyMode: 'replace' });
+      console.warn('[City Pulse] City search failed; loading default city:', err);
+      await this.loadDefaultCity({ historyMode: 'replace' });
+    }
+    this.loading = false;
+  },
+  async loadDefaultCity({ historyMode = 'replace' } = {}) {
+    const loadKey = 'default-city';
+    if (this.loading && this._loadKey === loadKey) return;
+    this._loadKey = loadKey;
+    this.loading = true;
+    this.error = '';
+    this.source = 'default';
+    try {
+      const city = await findDefaultCityFallback();
+      if (!city) throw new Error(`${DEFAULT_CITY_FALLBACK.label} is not available in the loaded travel database.`);
+      this.country = { code: city.country_code, name: city.country_name || city.country_code };
+      this.city = city;
+      this.hotels = [];
+      this.overview = null;
+      await this.loadOverview();
+      await this.loadHeroImage();
+      Alpine.store('route').setLocation(this.city, historyMode);
+    } catch (err) {
+      this.error = err.message || `${DEFAULT_CITY_FALLBACK.label} is unavailable right now.`;
     }
     this.loading = false;
   },
@@ -444,6 +490,7 @@ Alpine.store('discovery', {
   eyebrow() {
     if (this.locationState === 'requesting') return 'Finding your city';
     if (this.source === 'location') return 'Location discovery';
+    if (this.source === 'default') return 'Default discovery';
     return this.source === 'local' ? 'DISCOVER' : 'Random discovery';
   },
   cityTitle() {
@@ -819,12 +866,39 @@ Alpine.store('atlas', {
   },
   async textSearch(query) {
     if (!query) return;
+    this.loading = true;
     try {
       const data = await apiGet('/api/v1/search/pois', { q: query, limit: 20 });
       this.places = this.rankPlacesByDistance(data.results || []);
-      if (this.places[0]) this.focusPoi(this.places[0]);
+      if (this.places[0]) {
+        this.focusPoi(this.places[0]);
+      } else {
+        await this.openDefaultCity();
+      }
     } catch {
       this.places = [];
+      await this.openDefaultCity();
+    }
+    this.loading = false;
+  },
+  async openDefaultCity() {
+    try {
+      const city = await findDefaultCityFallback();
+      if (!city || !city.latitude || !city.longitude) throw new Error('Default city unavailable');
+      this.city = city;
+      this.selected = null;
+      this._lastKey = '';
+      if (!this.map) this.activate();
+      if (!this.map) {
+        requestAnimationFrame(() => this.openDefaultCity());
+        return;
+      }
+      this.map.setView([city.latitude, city.longitude], 12);
+      await this.fetchMapPlaces();
+    } catch {
+      this.places = [];
+      this.cluster?.clearLayers();
+      this.markers.clear();
     }
   },
   locate() {

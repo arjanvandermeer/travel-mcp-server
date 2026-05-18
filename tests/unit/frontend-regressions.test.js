@@ -39,12 +39,15 @@ describe('frontend regressions', () => {
     assert.match(appJs, /moveend zoomend dragend/, 'Atlas should refetch map results after map viewport changes');
     assert.match(appJs, /handleViewportChange\(\)[\s\S]*this\._lastKey = ''/, 'Atlas viewport changes should force a fresh map search');
     assert.match(appJs, /rankPlacesByDistance\(places\)/, 'Atlas should rank visible map results by distance');
+    assert.match(appJs, /openDefaultCity\(\)/, 'Atlas failed or empty searches should open the default city');
     assert.match(appJs, /atlas_rank: index < 99 \? index \+ 1 : null/, 'Atlas should only number the first 99 visible map results');
     assert.match(indexHtml, /class="result-rank"[\s\S]*poi\.atlas_rank/, 'Atlas result cards should show the map marker rank');
     assert.match(appJs, /activeFeedItems\(\)/, 'Discovery store should provide category-specific feed items');
     assert.match(appJs, /toggleFeed\(key\)/, 'Discovery store should support combined category toggles');
     assert.match(appJs, /defaultHomeFeedKeys\(\)[\s\S]*return \['dining'\]/, 'Homepage should default to Eat only for new visitors');
     assert.match(appJs, /HOME_FEED_PREFERENCE_KEY/, 'Homepage category toggles should persist between sessions');
+    assert.match(appJs, /DEFAULT_CITY_FALLBACK[\s\S]*New York City, New York/, 'Frontend city-search failures should default to New York City, New York');
+    assert.match(appJs, /loadDefaultCity\(\{ historyMode: 'replace' \}\)/, 'City Pulse failed city lookups should load the default city');
     assert.match(appJs, /searchPlacesByName\(\)/, 'Discovery store should search selected categories by name');
     assert.match(indexHtml, /Open now/, 'Homepage search options should expose an open-now filter');
     assert.match(appJs, /open_now: this\.placeOpenNow/, 'Homepage search requests should pass the open-now filter');
