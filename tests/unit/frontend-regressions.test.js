@@ -80,6 +80,7 @@ describe('frontend regressions', () => {
     assert.match(appJs, /groupFavoritesByProximity\(this\.items\)/, 'Trip Composer should group saved places by proximity');
     assert.match(proximityJs, /distanceKm[\s\S]*FAVORITE_CLUSTER_RADIUS_KM/, 'Trip Composer proximity grouping should be distance-based');
     assert.match(indexHtml, /board-column-summary[\s\S]*itemMeta\(fav\)/, 'Trip Composer should explain each proximity group and item distance');
+    assert.match(indexHtml, /<template x-if="\$store\.auth\.authenticated">\s*<div class="composer-authenticated">[\s\S]*?<div class="empty-panel wide"[\s\S]*?<div class="board"/, 'Trip Composer authenticated view should have one Alpine x-if root wrapper');
     assert.match(formatStoreJs, /reviewCards\(poi = \{\}\)/, 'PDP should expose stored Google reviews to the web UI');
     assert.match(indexHtml, /review-section[\s\S]*poiReviewStrip[\s\S]*review-card[\s\S]*ratingStars/, 'PDP should render reviews as a horizontal scroller');
     assert.match(indexHtml, /<img class="photo-tile"/, 'PDP photos should be image tiles in the horizontal strip');

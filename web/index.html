@@ -377,24 +377,26 @@
           <div class="empty-panel wide"><h3>Sign in to compose a trip</h3><p>Your saved places and notes live here.</p><button class="primary-button compact" @click="$store.auth.login()">Sign in</button></div>
         </template>
         <template x-if="$store.auth.authenticated">
-          <div class="empty-panel wide" x-show="!$store.favorites.loading && $store.favorites.items.length === 0">
-            <h3>No saved places yet</h3>
-            <p>Add places from Atlas or a place detail page to compose a trip.</p>
-          </div>
-          <div class="board" x-show="$store.favorites.items.length > 0">
-            <template x-for="column in $store.favorites.columns()" :key="column.key">
-              <section class="board-column">
-                <h2 x-text="column.label"></h2>
-                <p class="board-column-summary" x-text="column.subtitle"></p>
-                <template x-for="fav in column.items" :key="fav.osm_id || fav.poi_osm_id">
-                  <article class="board-card" @click="$store.poi.open(fav.osm_id || fav.poi_osm_id)">
-                    <strong x-text="fav.name || fav.osm_name || 'Unknown place'"></strong>
-                    <small x-text="$store.favorites.itemMeta(fav)"></small>
-                    <textarea placeholder="Add a note" x-model="fav.favorite_notes" @click.stop @change.stop="$store.favorites.saveNote(fav, fav.favorite_notes)"></textarea>
-                  </article>
-                </template>
-              </section>
-            </template>
+          <div class="composer-authenticated">
+            <div class="empty-panel wide" x-show="!$store.favorites.loading && $store.favorites.items.length === 0">
+              <h3>No saved places yet</h3>
+              <p>Add places from Atlas or a place detail page to compose a trip.</p>
+            </div>
+            <div class="board" x-show="$store.favorites.items.length > 0">
+              <template x-for="column in $store.favorites.columns()" :key="column.key">
+                <section class="board-column">
+                  <h2 x-text="column.label"></h2>
+                  <p class="board-column-summary" x-text="column.subtitle"></p>
+                  <template x-for="fav in column.items" :key="fav.osm_id || fav.poi_osm_id">
+                    <article class="board-card" @click="$store.poi.open(fav.osm_id || fav.poi_osm_id)">
+                      <strong x-text="fav.name || fav.osm_name || 'Unknown place'"></strong>
+                      <small x-text="$store.favorites.itemMeta(fav)"></small>
+                      <textarea placeholder="Add a note" x-model="fav.favorite_notes" @click.stop @change.stop="$store.favorites.saveNote(fav, fav.favorite_notes)"></textarea>
+                    </article>
+                  </template>
+                </section>
+              </template>
+            </div>
           </div>
         </template>
       </section>

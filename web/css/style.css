@@ -545,6 +545,7 @@ button { cursor: pointer; }
 
 .composer-header { margin-bottom: 18px; }
 .composer-header h1 { font-size: clamp(36px, 6vw, 64px); }
+.composer-authenticated { display: grid; gap: 16px; }
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: start; }
 .board-column {
   min-height: 360px;
