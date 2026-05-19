@@ -29,4 +29,7 @@ jobs:
       - name: Maintenance review gate smoke
         run: npm run test:maintenance-gate-smoke
 
+      - name: Contract smoke tests
+        run: npm run test:smoke
+
       - run: npm test

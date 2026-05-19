@@ -13,14 +13,13 @@ import './sentry-init.js';
  * Default port: 3000
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
 import { render } from './templates/index.js';
-import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, renderPOIPreview, renderNearbyWidget, getNearbyTypes, fetchNearbyForPOI, promptsConfig, getPromptMessages } from './tools-config.js';
-import { versionInfo, getVersionString } from './version.js';
+import { renderPOIPreview, renderNearbyWidget, getNearbyTypes, fetchNearbyForPOI } from './tools-config.js';
+import { createTravelMCPServer } from './mcp-server-factory.js';
+import { versionInfo } from './version.js';
 import http from 'http';
 import crypto from 'crypto';
 import fs from 'fs';
@@ -345,81 +344,7 @@ async function getUserFromRequest(req) {
  * @param {Object} userRef - Object with 'current' property holding the user (can be updated mid-session)
  */
 function createMCPServer(userRef = { current: null }) {
-  const server = new Server(
-    {
-      name: 'travel-mcp-server',
-      version: getVersionString(),
-    },
-    {
-      capabilities: {
-        tools: {},
-        resources: {},
-        prompts: {},
-      },
-    }
-  );
-
-  // List available tools
-  server.setRequestHandler(ListToolsRequestSchema, async () => {
-    // Get widget domain from database config for UI tools' CSP (cached)
-    const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
-    return { tools: getToolsConfig(widgetDomain) };
-  });
-
-  // Handle tool calls
-  server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-
-    // Add breadcrumb for debugging
-    telemetry.addBreadcrumb(`Tool call: ${name}`, 'mcp.tool', args);
-
-    return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
-      try {
-        // Pass user context to tool handler (dynamically read from ref)
-        return await executeToolHandler(name, args, db, { user: userRef.current });
-      } catch (error) {
-        telemetry.captureException(error, { tool: name, args, userId: userRef.current?.id });
-        return {
-          content: [{ type: 'text', text: `Error: ${error.message}` }],
-          isError: true,
-        };
-      }
-    });
-  });
-
-  // List available resources (MCP Apps)
-  server.setRequestHandler(ListResourcesRequestSchema, async () => {
-    // Get widget domain from database config (full URL required per OpenAI docs) (cached)
-    const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
-    return getResourcesConfig(widgetDomain);
-  });
-
-  // Read resource content (MCP Apps)
-  server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-    const { uri } = request.params;
-    try {
-      return await handleReadResource(uri, db, render);
-    } catch (error) {
-      console.error(`ReadResource failed: ${uri}`, error.message);
-      telemetry.captureException(error, { resource: uri });
-      return {
-        contents: [{ uri, mimeType: 'text/plain', text: `Error: ${error.message}` }],
-      };
-    }
-  });
-
-  // List available prompts
-  server.setRequestHandler(ListPromptsRequestSchema, async () => {
-    return { prompts: promptsConfig };
-  });
-
-  // Get prompt content
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    return getPromptMessages(name, args);
-  });
-
-  return server;
+  return createTravelMCPServer({ db, userRef });
 }
 
 // Create HTTP server with Streamable HTTP transport (multi-session support)

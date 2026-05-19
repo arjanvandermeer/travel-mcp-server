@@ -11,6 +11,7 @@ import {
   getResourcesConfig,
   buildSearchResponse,
 } from '../../src/tools-config.js';
+import { MCP_APP_HTML_MIME_TYPE } from '../../src/resources-config.js';
 
 // =============================================================================
 // getPromptMessages
@@ -277,7 +278,7 @@ describe('getResourcesConfig', () => {
       );
 
       assert.ok(poiDetails);
-      assert.strictEqual(poiDetails.mimeType, 'text/html+skybridge');
+      assert.strictEqual(poiDetails.mimeType, MCP_APP_HTML_MIME_TYPE);
       assert.strictEqual(poiDetails._meta.ui.domain, domain);
       assert.strictEqual(poiDetails._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
@@ -297,7 +298,7 @@ describe('getResourcesConfig', () => {
       );
 
       assert.ok(searchResults);
-      assert.strictEqual(searchResults.mimeType, 'text/html+skybridge');
+      assert.strictEqual(searchResults.mimeType, MCP_APP_HTML_MIME_TYPE);
       assert.strictEqual(searchResults._meta.ui.domain, domain);
       assert.strictEqual(searchResults._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(
@@ -317,7 +318,7 @@ describe('getResourcesConfig', () => {
       );
 
       assert.ok(nearby);
-      assert.strictEqual(nearby.mimeType, 'text/html+skybridge');
+      assert.strictEqual(nearby.mimeType, MCP_APP_HTML_MIME_TYPE);
       assert.strictEqual(nearby._meta.ui.domain, domain);
       assert.strictEqual(nearby._meta['openai/widgetDomain'], domain);
     });
@@ -329,7 +330,7 @@ describe('getResourcesConfig', () => {
       );
 
       assert.ok(poiById);
-      assert.strictEqual(poiById.mimeType, 'text/html+skybridge');
+      assert.strictEqual(poiById.mimeType, MCP_APP_HTML_MIME_TYPE);
       assert.strictEqual(poiById._meta.ui.domain, domain);
       assert.strictEqual(poiById._meta['openai/widgetDomain'], domain);
       assert.deepStrictEqual(

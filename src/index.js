@@ -8,14 +8,10 @@ import './sentry-init.js';
  * Provides travel information tools using GeoNames and OSM data
  */
 
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { CallToolRequestSchema, ListToolsRequestSchema, ListResourcesRequestSchema, ReadResourceRequestSchema, ListPromptsRequestSchema, GetPromptRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
-import { render } from './templates/index.js';
-import { getToolsConfig, getResourcesConfig, executeToolHandler, handleReadResource, promptsConfig, getPromptMessages } from './tools-config.js';
-import { getVersionString } from './version.js';
+import { createTravelMCPServer } from './mcp-server-factory.js';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -65,87 +61,7 @@ try {
   process.exit(1);
 }
 
-const server = new Server(
-  {
-    name: 'travel-mcp-server',
-    version: getVersionString(),
-  },
-  {
-    capabilities: {
-      tools: {},
-      resources: {},
-      prompts: {},
-    },
-  }
-);
-
-// List available tools
-server.setRequestHandler(ListToolsRequestSchema, async () => {
-  log('INFO', 'ListTools request received');
-  // Get widget domain from database config for UI tools' CSP (cached)
-  const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
-  return { tools: getToolsConfig(widgetDomain) };
-});
-
-// Handle tool calls
-server.setRequestHandler(CallToolRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-  log('INFO', `Tool call received: ${name}`, args);
-
-  // Add breadcrumb for debugging
-  telemetry.addBreadcrumb(`Tool call: ${name}`, 'mcp.tool', args);
-
-  return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
-    try {
-      const result = await executeToolHandler(name, args, db);
-      log('INFO', `${name} completed successfully`);
-      return result;
-    } catch (error) {
-      log('ERROR', `Tool ${name} failed`, { error: error.message, stack: error.stack });
-      telemetry.captureException(error, { tool: name, args });
-      return {
-        content: [{ type: 'text', text: `Error: ${error.message}` }],
-        isError: true,
-      };
-    }
-  });
-});
-
-// List available resources (MCP Apps)
-server.setRequestHandler(ListResourcesRequestSchema, async () => {
-  log('INFO', 'ListResources request received');
-  // Get widget domain from database config (full URL required per OpenAI docs) (cached)
-  const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
-  return getResourcesConfig(widgetDomain);
-});
-
-// Read resource content (MCP Apps)
-server.setRequestHandler(ReadResourceRequestSchema, async (request) => {
-  const { uri } = request.params;
-  log('INFO', `ReadResource request received: ${uri}`);
-  try {
-    return await handleReadResource(uri, db, render);
-  } catch (error) {
-    log('ERROR', `ReadResource failed: ${uri}`, { error: error.message });
-    telemetry.captureException(error, { resource: uri });
-    return {
-      contents: [{ uri, mimeType: 'text/plain', text: `Error: ${error.message}` }],
-    };
-  }
-});
-
-// List available prompts
-server.setRequestHandler(ListPromptsRequestSchema, async () => {
-  log('INFO', 'ListPrompts request received');
-  return { prompts: promptsConfig };
-});
-
-// Get prompt content
-server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-  const { name, arguments: args } = request.params;
-  log('INFO', `GetPrompt request received: ${name}`, args);
-  return getPromptMessages(name, args);
-});
+const server = createTravelMCPServer({ db, log });
 
 // Start server
 async function main() {

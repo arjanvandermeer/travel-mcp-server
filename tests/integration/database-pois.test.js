@@ -997,7 +997,10 @@ describe('TravelDatabase POI Search Functions', () => {
       mockPool.setResponse('enriched_pois', dbResult([stalePendingPOI]));
 
       db = new TravelDatabase({ pool: mockPool });
-      db.enrichOSMPOI = async () => {};
+      const enrichmentCalls = [];
+      db.enrichOSMPOI = async (...args) => {
+        enrichmentCalls.push(args);
+      };
 
       const first = await db.getPOIDetails(12345);
       await new Promise(resolve => setImmediate(resolve));
@@ -1008,6 +1011,33 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.strictEqual(second._enrichment.status, 'pending');
       assert.ok(second._enrichment.message?.includes('in progress'));
       assert.strictEqual(mockPool.callCount('UPDATE osm_google_mappings SET mapped_at = CURRENT_TIMESTAMP'), 1);
+      assert.deepStrictEqual(enrichmentCalls, [[12345, { forcePending: true }]]);
+    });
+
+    it('should force internally queued pending enrichment to run', async () => {
+      const unenrichedPOI = {
+        ...samplePOIDetail,
+        google_place_id: null,
+        mapping_status: null,
+        mapped_at: null,
+      };
+      mockPool.setResponse('enriched_pois', dbResult([unenrichedPOI]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      db.googlePlaces = { isEnabled: () => true };
+      db.googlePlacesReady = Promise.resolve();
+      db.checkGoogleApiLimit = async () => ({ allowed: true, current: 0, limit: 500, remaining: 500 });
+      const enrichmentCalls = [];
+      db.enrichOSMPOI = async (...args) => {
+        enrichmentCalls.push(args);
+      };
+
+      const result = await db.getPOIDetails(12345);
+      await new Promise(resolve => setImmediate(resolve));
+
+      assert.strictEqual(result._enrichment.status, 'pending');
+      assert.ok(result._enrichment.message?.includes('started'));
+      assert.deepStrictEqual(enrichmentCalls, [[12345, { forcePending: true }]]);
     });
 
     it('should not restart stale pending enrichment when daily quota is exhausted', async () => {

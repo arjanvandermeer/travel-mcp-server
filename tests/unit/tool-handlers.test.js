@@ -11,6 +11,7 @@ import {
   getToolsConfig,
   handleReadResource,
 } from '../../src/tools-config.js';
+import { MCP_APP_HTML_MIME_TYPE } from '../../src/resources-config.js';
 import { render } from '../../src/templates/index.js';
 
 // Simple DB mock
@@ -1247,7 +1248,7 @@ describe('handleReadResource', () => {
   it('should handle ui://widget/poi-details.html', async () => {
     const db = createMockDb({ getServerBaseUrl: async () => 'https://mcp.example.com' });
     const result = await handleReadResource('ui://widget/poi-details.html', db, render);
-    assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
+    assert.strictEqual(result.contents[0].mimeType, MCP_APP_HTML_MIME_TYPE);
     assert.ok(result.contents[0].text.includes('<'));
     assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
@@ -1255,14 +1256,14 @@ describe('handleReadResource', () => {
   it('should handle ui://widget/search-results.html', async () => {
     const db = createMockDb({ getServerBaseUrl: async () => 'https://mcp.example.com' });
     const result = await handleReadResource('ui://widget/search-results.html', db, render);
-    assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
+    assert.strictEqual(result.contents[0].mimeType, MCP_APP_HTML_MIME_TYPE);
     assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
 
   it('should handle ui://widget/nearby-pois.html', async () => {
     const db = createMockDb({ getServerBaseUrl: async () => 'https://mcp.example.com' });
     const result = await handleReadResource('ui://widget/nearby-pois.html', db, render);
-    assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
+    assert.strictEqual(result.contents[0].mimeType, MCP_APP_HTML_MIME_TYPE);
     assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
 
@@ -1277,7 +1278,7 @@ describe('handleReadResource', () => {
       searchPOIsNearCoordinates: async () => [],
     });
     const result = await handleReadResource('ui://mcp.example.com/poi/123', db, render);
-    assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
+    assert.strictEqual(result.contents[0].mimeType, MCP_APP_HTML_MIME_TYPE);
     assert.ok(result.contents[0].text.includes('Test Hotel'));
     assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });
@@ -1288,7 +1289,7 @@ describe('handleReadResource', () => {
       getPOIDetails: async () => null,
     });
     const result = await handleReadResource('ui://mcp.example.com/poi/999', db, render);
-    assert.strictEqual(result.contents[0].mimeType, 'text/html+skybridge');
+    assert.strictEqual(result.contents[0].mimeType, MCP_APP_HTML_MIME_TYPE);
     assert.ok(result.contents[0].text.includes('Not Found') || result.contents[0].text.includes('999'));
     assert.strictEqual(result.contents[0]._meta['openai/widgetDomain'], 'https://mcp.example.com');
   });

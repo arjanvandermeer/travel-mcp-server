@@ -2613,7 +2613,7 @@ export class TravelDatabase {
           enrichment_message = `Enrichment restarted at ${newStartedAt.toISOString()}. Check back after ${checkBackAt.toISOString()}.`;
 
           const enrichmentPromise = withTimeout(
-            this.enrichOSMPOI(osmId),
+            this.enrichOSMPOI(osmId, { forcePending: true }),
             120000,
             'Enrichment timeout after 2 minutes'
           ).catch(err => {
@@ -2689,7 +2689,7 @@ export class TravelDatabase {
 
             // Fire-and-forget background enrichment with 2-minute timeout and dedup lock
             const enrichmentPromise = withTimeout(
-              this.enrichOSMPOI(osmId),
+              this.enrichOSMPOI(osmId, { forcePending: true }),
               120000,
               'Enrichment timeout after 2 minutes'
             ).catch(err => {
@@ -2938,7 +2938,7 @@ export class TravelDatabase {
    * @returns {Promise<void>} Resolves when enrichment completes or is skipped (cached/quota/not found)
    * @throws {Error} If database queries fail
    */
-  async enrichOSMPOI(osmId) {
+  async enrichOSMPOI(osmId, { forcePending = false } = {}) {
     await this.ensureGooglePlacesReady();
 
     if (!this.googlePlaces || !this.googlePlaces.isEnabled()) {
@@ -2994,7 +2994,7 @@ export class TravelDatabase {
         if (mapping.mapping_status !== 'active' && isFutureDate(mapping.next_enrichment_at)) {
           return; // Retry window has not opened yet.
         }
-        if (mapping.mapping_status === 'pending') {
+        if (mapping.mapping_status === 'pending' && !forcePending) {
           const mappedAt = mapping.mapped_at ? new Date(mapping.mapped_at).getTime() : Date.now();
           if (Date.now() - mappedAt < PENDING_ENRICHMENT_STALE_MS) {
             return; // Another request just queued or started this enrichment.

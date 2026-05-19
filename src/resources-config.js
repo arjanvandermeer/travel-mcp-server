@@ -1,6 +1,8 @@
 import { versionInfo } from './version.js';
 import { fetchNearbyForPOI, renderPOIPreview } from './poi-view-utils.js';
 
+export const MCP_APP_HTML_MIME_TYPE = 'text/html;profile=mcp-app';
+
 /**
  * Get resources configuration with dynamic widget domain.
  * @param {string} widgetDomain - Full URL from server_base_url config (e.g., "https://travel.arjanvandermeer.com")
@@ -35,28 +37,28 @@ export function getResourcesConfig(widgetDomain) {
         uriTemplate: 'ui://widget/poi-details.html',
         name: 'POI Details Widget',
         description: 'Rich interactive page for a specific POI (hotel, restaurant, etc.)',
-        mimeType: 'text/html+skybridge',
+        mimeType: MCP_APP_HTML_MIME_TYPE,
         _meta: buildWidgetMeta([]),
       },
       {
         uriTemplate: 'ui://widget/search-results.html',
         name: 'Search Results Widget',
         description: 'Interactive list of search results. Renders tool output as clickable cards.',
-        mimeType: 'text/html+skybridge',
+        mimeType: MCP_APP_HTML_MIME_TYPE,
         _meta: buildWidgetMeta([]),
       },
       {
         uriTemplate: 'ui://widget/nearby-pois.html',
         name: 'Nearby POIs Widget',
         description: 'Horizontal scrollable cards showing nearby points of interest.',
-        mimeType: 'text/html+skybridge',
+        mimeType: MCP_APP_HTML_MIME_TYPE,
         _meta: buildWidgetMeta([]),
       },
       {
         uriTemplate: 'ui://poi/{osm_id}',
         name: 'POI Detail Page (by ID)',
         description: 'POI detail page accessed by OSM ID - used when clicking search results.',
-        mimeType: 'text/html+skybridge',
+        mimeType: MCP_APP_HTML_MIME_TYPE,
         _meta: buildWidgetMeta([]),
       },
     ],
@@ -95,7 +97,7 @@ export async function handleReadResource(uri, db, render) {
   const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
   const buildHtmlContent = (html, frameDomains = []) => ({
     uri,
-    mimeType: 'text/html+skybridge',
+    mimeType: MCP_APP_HTML_MIME_TYPE,
     text: html,
     _meta: buildOpenAIWidgetMeta(widgetDomain, frameDomains),
   });
