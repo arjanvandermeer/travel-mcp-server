@@ -327,10 +327,25 @@
               <aside class="composer-panel">
                 <div class="panel-kicker">Planning</div>
                 <h2>Trip Composer</h2>
-                <p>Save private notes and keep this place handy for planning.</p>
-                <textarea placeholder="Notes for this place" x-model="$store.poi.note" @change="$store.favorites.saveNote($store.poi.current, $store.poi.note)"></textarea>
+                <p x-show="!$store.poi.current.is_favorite">Save this place to keep private notes for planning.</p>
+                <button
+                  type="button"
+                  class="favorite-date-button"
+                  x-show="$store.poi.current.is_favorite"
+                  @click="$store.poi.editNote(); $nextTick(() => $refs.tripComposerNote?.focus())">
+                  <span>Bookmarked</span>
+                  <strong x-text="$store.poi.favoriteSinceLabel() || 'Saved'"></strong>
+                </button>
+                <textarea
+                  x-ref="tripComposerNote"
+                  :class="{ readonly: $store.poi.current.is_favorite && !$store.poi.noteEditing }"
+                  :placeholder="$store.poi.notePlaceholder()"
+                  :readonly="$store.poi.current.is_favorite && !$store.poi.noteEditing"
+                  x-model="$store.poi.note"
+                  @click="$store.poi.editNote()"
+                  @blur="$store.poi.finishNoteEdit()"></textarea>
                 <div class="composer-actions">
-                  <button class="primary-button" @click="$store.favorites.toggle($store.poi.current)" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
+                  <button class="primary-button" @click="$store.poi.toggleFavorite()" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
                 </div>
               </aside>
             </div>

@@ -326,9 +326,34 @@
 }
 .composer-panel h2 { margin: 4px 0 8px; }
 .composer-panel p { color: var(--muted); margin: 0 0 14px; line-height: 1.5; }
+.favorite-date-button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #f8fafc;
+  color: var(--ink);
+  padding: 10px 12px;
+  margin: 0 0 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.favorite-date-button span {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.favorite-date-button strong {
+  font-size: 13px;
+}
 .composer-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr;
   gap: 8px;
   margin-top: 10px;
 }
@@ -340,6 +365,10 @@ textarea {
   border-radius: 8px;
   padding: 10px;
   color: var(--ink);
+}
+textarea.readonly {
+  background: #f8fafc;
+  cursor: pointer;
 }
 .data-pane {
   max-height: 480px;

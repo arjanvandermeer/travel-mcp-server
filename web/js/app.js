@@ -918,6 +918,8 @@ Alpine.store('poi', {
   enrichmentPolling: false,
   dataOpen: false,
   note: '',
+  noteSaved: '',
+  noteEditing: false,
   _loadId: null,
   _pollTimer: null,
   _pollStartedAt: 0,
@@ -932,7 +934,7 @@ Alpine.store('poi', {
     try {
       this.current = await apiGet(`/api/v1/poi/${osmId}`);
       this.dataOpen = false;
-      this.note = this.current.favorite_notes || '';
+      this.syncFavoriteNote(this.current);
       const enrichmentMessage = this.current?._enrichment?.message;
       if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
       this.startEnrichmentPollIfNeeded();
@@ -984,7 +986,7 @@ Alpine.store('poi', {
       const updated = await apiGet(`/api/v1/poi/${osmId}`);
       if (String(this._loadId) !== String(osmId)) return;
       this.current = updated;
-      this.note = updated.favorite_notes || this.note || '';
+      if (!this.noteEditing) this.syncFavoriteNote(updated);
       const enrichmentMessage = updated?._enrichment?.message;
       if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
       if (updated?._enrichment?.status === 'pending') {
@@ -1017,6 +1019,47 @@ Alpine.store('poi', {
   rawJson() {
     return JSON.stringify(this.current || {}, null, 2);
   },
+  syncFavoriteNote(poi) {
+    const savedNote = poi?.favorite_notes || '';
+    this.note = savedNote;
+    this.noteSaved = savedNote;
+    this.noteEditing = !poi?.is_favorite;
+  },
+  favoriteSinceLabel() {
+    return Alpine.store('format').favoriteDate(this.current?.favorite_since);
+  },
+  notePlaceholder() {
+    return this.current?.is_favorite ? 'Click to add private notes' : 'Save this place to keep private notes';
+  },
+  editNote() {
+    if (!Alpine.store('auth').authenticated) {
+      Alpine.store('auth').login();
+      return;
+    }
+    this.noteEditing = true;
+  },
+  async finishNoteEdit() {
+    if (!this.current || !this.noteEditing) return;
+    if (!this.note.trim() && !this.current.is_favorite) {
+      this.noteEditing = false;
+      return;
+    }
+    if (this.note !== this.noteSaved || !this.current.is_favorite) {
+      await Alpine.store('favorites').saveNote(this.current, this.note);
+      this.current.favorite_notes = this.note;
+      this.noteSaved = this.note;
+      if (!this.current.favorite_since) this.current.favorite_since = new Date().toISOString();
+    }
+    this.noteEditing = false;
+  },
+  async toggleFavorite() {
+    if (!this.current) return;
+    if (!this.current.is_favorite) {
+      this.current.favorite_notes = this.note || null;
+    }
+    await Alpine.store('favorites').toggle(this.current);
+    this.syncFavoriteNote(this.current);
+  },
 });
 
 Alpine.store('favorites', {
@@ -1038,9 +1081,12 @@ Alpine.store('favorites', {
     if (poi.is_favorite) {
       await apiDelete(`/api/v1/favorites/${poi.osm_id}`);
       poi.is_favorite = false;
+      poi.favorite_since = null;
+      poi.favorite_notes = null;
     } else {
       await apiPost('/api/v1/favorites', { osm_id: poi.osm_id, notes: poi.favorite_notes || null });
       poi.is_favorite = true;
+      poi.favorite_since = new Date().toISOString();
     }
     this.load();
   },
@@ -1050,6 +1096,8 @@ Alpine.store('favorites', {
     if (!poi.is_favorite) await apiPost('/api/v1/favorites', { osm_id: osmId, notes });
     else await apiPatch(`/api/v1/favorites/${osmId}`, { notes });
     poi.is_favorite = true;
+    poi.favorite_notes = notes;
+    if (!poi.favorite_since) poi.favorite_since = new Date().toISOString();
   },
   columns() {
     return groupFavoritesByProximity(this.items);

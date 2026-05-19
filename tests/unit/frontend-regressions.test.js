@@ -73,6 +73,10 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /place-contact-box[\s\S]*Address[\s\S]*Phone[\s\S]*place-website-box[\s\S]*Website/, 'PDP should show website in a distinct box below address and phone');
     assert.match(appJs, /phoneNumber\(\)/, 'PDP should preserve the formatted phone number for display');
     assert.match(indexHtml, /hero-actions[\s\S]*hero-icon-button[\s\S]*websiteUrl\(\)[\s\S]*phoneUrl\(\)/, 'PDP should expose save, maps, website, and call as hero icon actions');
+    assert.match(indexHtml, /favorite-date-button[\s\S]*Bookmarked[\s\S]*favoriteSinceLabel\(\)/, 'PDP Trip Composer should show when an existing favorite was bookmarked');
+    assert.match(indexHtml, /x-ref="tripComposerNote"[\s\S]*readonly[\s\S]*finishNoteEdit\(\)/, 'PDP Trip Composer notes should be click-to-edit and save on blur');
+    assert.match(appJs, /syncFavoriteNote\(this\.current\)/, 'PDP should hydrate Trip Composer notes from the favorite record');
+    assert.match(formatStoreJs, /favoriteDate\(value\)/, 'PDP should format the favorite bookmarked date');
     assert.match(appJs, /groupFavoritesByProximity\(this\.items\)/, 'Trip Composer should group saved places by proximity');
     assert.match(proximityJs, /distanceKm[\s\S]*FAVORITE_CLUSTER_RADIUS_KM/, 'Trip Composer proximity grouping should be distance-based');
     assert.match(indexHtml, /board-column-summary[\s\S]*itemMeta\(fav\)/, 'Trip Composer should explain each proximity group and item distance');

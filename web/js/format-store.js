@@ -119,5 +119,11 @@ export function createFormatStore() {
       };
       return labels[poi.google_price_level] || String(poi.google_price_level).replace('PRICE_LEVEL_', '').replaceAll('_', ' ').toLowerCase();
     },
+    favoriteDate(value) {
+      if (!value) return '';
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return '';
+      return date.toLocaleDateString([], { year: 'numeric', month: 'short', day: 'numeric' });
+    },
   };
 }
