@@ -3,6 +3,7 @@ import { apiDelete, apiGet, apiPatch, apiPost } from './api.js?v=pdp-cache-20260
 import { LAYERS } from './constants.js?v=pdp-cache-20260517';
 import { createFormatStore, cssUrl, safeHttpUrl } from './format-store.js?v=pdp-cache-20260517';
 import { markerIcon } from './map-utils.js?v=pdp-cache-20260517';
+import { groupFavoritesByProximity } from './proximity.js?v=pdp-cache-20260517';
 
 const DISCOVERY_MIN_POIS = 25;
 const LOCATION_SEARCH_RADII_KM = [50, 150, 500, 1000];
@@ -1051,18 +1052,11 @@ Alpine.store('favorites', {
     poi.is_favorite = true;
   },
   columns() {
-    const groups = [
-      { key: 'stay', label: 'Stay', match: p => ['hotel', 'guest_house', 'hostel', 'resort', 'motel', 'apartment', 'bed_and_breakfast'].includes(p.poi_type) },
-      { key: 'eat', label: 'Eat', match: p => ['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'].includes(p.poi_type) },
-      { key: 'see', label: 'See', match: p => ['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'].includes(p.poi_type) },
-      { key: 'shortlist', label: 'Shortlist', match: () => true },
-    ];
-    const used = new Set();
-    return groups.map(group => {
-      const items = this.items.filter(item => !used.has(item.osm_id || item.poi_osm_id) && group.match(item));
-      items.forEach(item => used.add(item.osm_id || item.poi_osm_id));
-      return { ...group, items };
-    });
+    return groupFavoritesByProximity(this.items);
+  },
+  itemMeta(fav) {
+    const meta = Alpine.store('format').placeMeta(fav);
+    return fav.clusterDistanceLabel ? `${fav.clusterDistanceLabel} · ${meta}` : meta;
   },
 });
 

@@ -8,6 +8,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const appJs = fs.readFileSync(path.join(__dirname, '../../web/js/app.js'), 'utf8');
 const indexHtml = fs.readFileSync(path.join(__dirname, '../../web/index.html'), 'utf8');
 const formatStoreJs = fs.readFileSync(path.join(__dirname, '../../web/js/format-store.js'), 'utf8');
+const proximityJs = fs.readFileSync(path.join(__dirname, '../../web/js/proximity.js'), 'utf8');
 const styleCss = fs.readFileSync(path.join(__dirname, '../../web/css/style.css'), 'utf8');
 const dossierCss = fs.readFileSync(path.join(__dirname, '../../web/css/dossier.css'), 'utf8');
 
@@ -72,6 +73,9 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /place-contact-box[\s\S]*Address[\s\S]*Phone[\s\S]*place-website-box[\s\S]*Website/, 'PDP should show website in a distinct box below address and phone');
     assert.match(appJs, /phoneNumber\(\)/, 'PDP should preserve the formatted phone number for display');
     assert.match(indexHtml, /hero-actions[\s\S]*hero-icon-button[\s\S]*websiteUrl\(\)[\s\S]*phoneUrl\(\)/, 'PDP should expose save, maps, website, and call as hero icon actions');
+    assert.match(appJs, /groupFavoritesByProximity\(this\.items\)/, 'Trip Composer should group saved places by proximity');
+    assert.match(proximityJs, /distanceKm[\s\S]*FAVORITE_CLUSTER_RADIUS_KM/, 'Trip Composer proximity grouping should be distance-based');
+    assert.match(indexHtml, /board-column-summary[\s\S]*itemMeta\(fav\)/, 'Trip Composer should explain each proximity group and item distance');
     assert.match(formatStoreJs, /reviewCards\(poi = \{\}\)/, 'PDP should expose stored Google reviews to the web UI');
     assert.match(indexHtml, /review-section[\s\S]*poiReviewStrip[\s\S]*review-card[\s\S]*ratingStars/, 'PDP should render reviews as a horizontal scroller');
     assert.match(indexHtml, /<img class="photo-tile"/, 'PDP photos should be image tiles in the horizontal strip');
