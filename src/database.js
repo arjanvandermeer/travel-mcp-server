@@ -590,10 +590,14 @@ export class TravelDatabase {
 
     const hasCoords = latitude !== null && longitude !== null;
     const hasQuery = query && query.trim().length > 0;
-    const params = [];
+    const normalizedQuery = hasQuery ? query.trim() : null;
+    const effectiveLimit = Math.min(limit, SEARCH_LIMIT_MAX);
 
-    // Build SELECT clause
-    let queryText = `
+    const buildQuery = ({ includeAlternateNames = false } = {}) => {
+      const params = [];
+
+      // Build SELECT clause
+      let queryText = `
       SELECT
         c.geoname_id,
         c.name,
@@ -608,17 +612,17 @@ export class TravelDatabase {
         c.timezone
     `;
 
-    // Add distance calculation if coordinates provided
-    if (hasCoords) {
-      params.push(longitude, latitude);
-      queryText += `, ST_Distance(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0 as distance_km`;
-    }
+      // Add distance calculation if coordinates provided
+      if (hasCoords) {
+        params.push(longitude, latitude);
+        queryText += `, ST_Distance(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography) / 1000.0 as distance_km`;
+      }
 
-    if (minPoiCount > 0) {
-      queryText += `, pc.poi_count`;
-    }
+      if (minPoiCount > 0) {
+        queryText += `, pc.poi_count`;
+      }
 
-    queryText += `
+      queryText += `
       FROM geonames_cities c
       ${minPoiCount > 0 ? `
       JOIN (
@@ -636,44 +640,77 @@ export class TravelDatabase {
       WHERE 1=1
     `;
 
-    if (minPoiCount > 0) {
-      params.push(minPoiCount);
+      if (minPoiCount > 0) {
+        params.push(minPoiCount);
+      }
+
+      let queryRankSql = '';
+
+      // Add query filter if provided. Primary names are searched first; alternate
+      // names are only used by the caller as a fallback when primary matches are scarce.
+      if (hasQuery) {
+        const escapedQuery = normalizedQuery.replace(/[%_\\]/g, '\\$&');
+        const exactIndex = params.length + 1;
+        const prefixIndex = params.length + 2;
+        const wordPrefixIndex = params.length + 3;
+        const containsIndex = params.length + 4;
+        params.push(normalizedQuery, `${escapedQuery}%`, `% ${escapedQuery}%`, `%${escapedQuery}%`);
+
+        const primaryMatch = `(c.name ILIKE $${containsIndex} OR c.ascii_name ILIKE $${containsIndex})`;
+        const alternateMatch = `c.alternate_names ILIKE $${containsIndex}`;
+        queryText += includeAlternateNames
+          ? ` AND (${primaryMatch} OR ${alternateMatch})`
+          : ` AND ${primaryMatch}`;
+
+        queryRankSql = `
+          CASE
+            WHEN lower(c.name) = lower($${exactIndex}) OR lower(c.ascii_name) = lower($${exactIndex}) THEN 0
+            WHEN c.name ILIKE $${prefixIndex} OR c.ascii_name ILIKE $${prefixIndex} THEN 1
+            WHEN c.name ILIKE $${wordPrefixIndex} OR c.ascii_name ILIKE $${wordPrefixIndex} THEN 2
+            ${includeAlternateNames ? `WHEN ${alternateMatch} THEN 3` : ''}
+            ELSE 4
+          END ASC,`;
+      }
+
+      // Add coordinate radius filter
+      if (hasCoords) {
+        const maxRadius = Math.min(radiusKm, 1000);
+        queryText += ` AND ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $${params.length + 1}::float8 * 1000)`;
+        params.push(maxRadius);
+      }
+
+      // Add country filter
+      if (countryCode) {
+        queryText += ` AND c.country_code = $${params.length + 1}`;
+        params.push(countryCode.toUpperCase());
+      }
+
+      // Add state filter
+      if (state) {
+        queryText += ` AND (c.admin1_code ILIKE $${params.length + 1} OR a.name ILIKE $${params.length + 1} OR a.ascii_name ILIKE $${params.length + 1})`;
+        params.push(state);
+      }
+
+      // Order by query relevance first, then distance/population.
+      if (hasCoords) {
+        queryText += ` ORDER BY ${queryRankSql} distance_km ASC, c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
+      } else {
+        queryText += ` ORDER BY ${queryRankSql} c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
+      }
+      params.push(effectiveLimit);
+
+      return { queryText, params };
+    };
+
+    const primaryQuery = buildQuery({ includeAlternateNames: false });
+    let result = await this.pool.query(primaryQuery.queryText, primaryQuery.params);
+
+    if (!hasQuery || result.rows.length >= effectiveLimit) {
+      return removeNullFields(result.rows);
     }
 
-    // Add query filter if provided
-    if (hasQuery) {
-      queryText += ` AND (c.name ILIKE $${params.length + 1} OR c.ascii_name ILIKE $${params.length + 1} OR c.alternate_names ILIKE $${params.length + 1})`;
-      params.push(`%${query.replace(/[%_\\]/g, '\\$&')}%`);
-    }
-
-    // Add coordinate radius filter
-    if (hasCoords) {
-      const maxRadius = Math.min(radiusKm, 1000);
-      queryText += ` AND ST_DWithin(c.location::geography, ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography, $${params.length + 1}::float8 * 1000)`;
-      params.push(maxRadius);
-    }
-
-    // Add country filter
-    if (countryCode) {
-      queryText += ` AND c.country_code = $${params.length + 1}`;
-      params.push(countryCode.toUpperCase());
-    }
-
-    // Add state filter
-    if (state) {
-      queryText += ` AND (c.admin1_code ILIKE $${params.length + 1} OR a.name ILIKE $${params.length + 1} OR a.ascii_name ILIKE $${params.length + 1})`;
-      params.push(state);
-    }
-
-    // Order by distance if coords provided, otherwise by population
-    if (hasCoords) {
-      queryText += ` ORDER BY distance_km ASC, c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
-    } else {
-      queryText += ` ORDER BY c.population DESC NULLS LAST LIMIT $${params.length + 1}`;
-    }
-    params.push(Math.min(limit, SEARCH_LIMIT_MAX));
-
-    const result = await this.pool.query(queryText, params);
+    const fallbackQuery = buildQuery({ includeAlternateNames: true });
+    result = await this.pool.query(fallbackQuery.queryText, fallbackQuery.params);
     return removeNullFields(result.rows);
   }
 

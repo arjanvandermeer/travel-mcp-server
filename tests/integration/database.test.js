@@ -155,6 +155,56 @@ describe('TravelDatabase with Mock Pool', () => {
       assert.ok(mockPool.wasCalled('geonames_cities'));
     });
 
+    it('should not search alternate names when primary city names fill the limit', async () => {
+      const mockCities = Array.from({ length: 10 }, (_, index) => ({
+        geoname_id: index + 1,
+        name: `New City ${index + 1}`,
+        country_code: 'US',
+        population: 100000 - index,
+      }));
+
+      mockPool.setResponse('SELECT', dbResult(mockCities));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const cities = await db.searchCities({
+        query: 'new',
+        countryCode: 'US',
+        limit: 10,
+      });
+
+      assert.strictEqual(cities.length, 10);
+      assert.strictEqual(mockPool.getCalls().length, 1);
+      assert.ok(!mockPool.getCalls()[0].sql.includes('c.alternate_names ILIKE'), 'Primary search should ignore alternate names');
+    });
+
+    it('should fall back to alternate names when primary city names are scarce', async () => {
+      let callCount = 0;
+      mockPool.setResponse('SELECT', () => {
+        callCount += 1;
+        if (callCount === 1) {
+          return dbResult([
+            { geoname_id: 1, name: 'New York City', country_code: 'US', population: 8804190 },
+          ]);
+        }
+        return dbResult([
+          { geoname_id: 1, name: 'New York City', country_code: 'US', population: 8804190 },
+          { geoname_id: 2, name: 'Sacramento', country_code: 'US', population: 524943 },
+        ]);
+      });
+
+      db = new TravelDatabase({ pool: mockPool });
+      const cities = await db.searchCities({
+        query: 'new',
+        countryCode: 'US',
+        limit: 10,
+      });
+
+      assert.strictEqual(cities.length, 2);
+      assert.strictEqual(mockPool.getCalls().length, 2);
+      assert.ok(!mockPool.getCalls()[0].sql.includes('c.alternate_names ILIKE'), 'First pass should search primary names only');
+      assert.ok(mockPool.getCalls()[1].sql.includes('c.alternate_names ILIKE'), 'Fallback should include alternate names');
+    });
+
     it('should search cities by coordinates', async () => {
       const mockCities = [
         {

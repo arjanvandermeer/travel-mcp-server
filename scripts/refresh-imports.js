@@ -62,6 +62,7 @@ Options:
   --list          Just list all import sources and their status
   --optimize      Run database optimization after imports complete
   --refresh-geonames  Re-import GeoNames countries and cities data
+  --geonames-country=XX  Limit GeoNames refresh to a 2-letter country code
   --refresh-google    Refresh stale Google Places cache entries
   --skip-osm          Skip OSM import source refresh checks
   --help, -h      Show this help message
@@ -234,15 +235,21 @@ async function runImport(keyword) {
 /**
  * Run GeoNames import
  */
-async function runGeonamesImport() {
+async function runGeonamesImport(options = {}) {
   return new Promise((resolve) => {
     const geonamesScript = path.join(__dirname, 'import-geonames.js');
+    const args = [geonamesScript];
+    if (options.geonamesCountryCode) {
+      args.push(`--country-code=${options.geonamesCountryCode}`);
+    }
 
     console.log(`\n${'='.repeat(60)}`);
-    console.log('Running GeoNames import...');
+    console.log(options.geonamesCountryCode
+      ? `Running GeoNames import for ${options.geonamesCountryCode}...`
+      : 'Running GeoNames import...');
     console.log('='.repeat(60));
 
-    const child = spawn('node', [geonamesScript], {
+    const child = spawn('node', args, {
       stdio: 'inherit',
       env: process.env,
     });
@@ -379,8 +386,9 @@ async function main() {
 
     // Run GeoNames import if requested
     if (options.refreshGeonames) {
-      const geonamesSuccess = await runGeonamesImport();
+      const geonamesSuccess = await runGeonamesImport(options);
       transaction.setData('geonames_refresh', true);
+      transaction.setData('geonames_country_code', options.geonamesCountryCode || null);
       transaction.setData('geonames_success', geonamesSuccess);
       if (geonamesSuccess) {
         console.log('\n✓ GeoNames import completed successfully');

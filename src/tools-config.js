@@ -8,9 +8,10 @@ import { render } from './templates/index.js';
 import * as telemetry from './telemetry.js';
 import { normalizeUserPreferenceInput, saveUserPreferences, userPreferencesFromConfig } from './user-preferences.js';
 import { NEARBY_RADIUS_DEFAULT_KM, NEARBY_RADIUS_MAX_KM, NEARBY_LIMIT_DEFAULT, NEARBY_LIMIT_MAX, SEARCH_RADIUS_MAX_KM } from './config.js';
-import { validateCoordinates, validateLimit, validateRadiusKm } from './validation.js';
+import { validateCoordinates, validateCountryCode, validateLimit, validateRadiusKm } from './validation.js';
 import { accommodationTypes, fetchNearbyForPOI, foodTypes, getNearbyTypes, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
 import { sanitizePoiExternalUrlsArray } from './url-utils.js';
+import { isAdminUser } from './maintenance-tasks.js';
 
 export { getPromptMessages, promptsConfig } from './prompts-config.js';
 export { getResourcesConfig, handleReadResource } from './resources-config.js';
@@ -18,6 +19,7 @@ export { accommodationTypes, attractionTypes, fetchNearbyForPOI, foodTypes, getN
 
 const hotelIntents = ['remote_work', 'family', 'romantic', 'budget', 'accessible', 'pet_friendly'];
 const restaurantOccasions = ['business_dinner', 'casual_lunch', 'date_night', 'family_meal', 'quick_bite', 'late_night'];
+export const geonamesRefreshToolNames = new Set(['refresh_geonames', 'load_geonames_country']);
 
 // Base tool definitions
 const baseToolsConfig = [
@@ -609,6 +611,33 @@ const baseToolsConfig = [
     inputSchema: {
       type: 'object',
       properties: {},
+    },
+  },
+  {
+    name: 'refresh_geonames',
+    description: 'Start an admin-only MCP task to import or refresh GeoNames countries, cities, and admin1 state/province data. Use country_code for requests like "refresh us", "refresh NL", or "load United States"; omit it only when the user asks to refresh all/global GeoNames data. Requires an authenticated user with user_config role=admin.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        country_code: {
+          type: 'string',
+          description: 'Optional 2-letter country code to refresh only one country. Omit to refresh all GeoNames data.',
+        },
+      },
+    },
+  },
+  {
+    name: 'load_geonames_country',
+    description: 'Load or refresh GeoNames data for exactly one country. Use this for conversational requests like "load us", "refresh us", "load NL", or "refresh United States"; map the country to a 2-letter ISO code such as US or NL. Requires an authenticated user with user_config role=admin.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        country_code: {
+          type: 'string',
+          description: 'Required 2-letter country code to load or refresh. Examples: US, NL, TH.',
+        },
+      },
+      required: ['country_code'],
     },
   },
   {
@@ -1451,6 +1480,53 @@ export async function executeToolHandler(name, args, db, options = {}) {
       };
     }
 
+    case 'refresh_geonames':
+    case 'load_geonames_country': {
+      const user = options.user;
+      if (!user) {
+        return taskToolError(options, 'Authentication required. Please provide a valid admin token.');
+      }
+      if (!isAdminUser(user)) {
+        return taskToolError(options, 'Admin role required to refresh GeoNames data.');
+      }
+      if (!options.taskManager?.startGeonamesRefresh) {
+        return taskToolError(options, 'Maintenance task manager is not available.');
+      }
+
+      let countryCode = null;
+      if (args.country_code !== undefined && args.country_code !== null && args.country_code !== '') {
+        countryCode = validateCountryCode(args.country_code);
+        if (!countryCode) {
+          return taskToolError(options, 'country_code must be a valid 2-letter ISO country code.');
+        }
+      }
+      if (name === 'load_geonames_country' && !countryCode) {
+        return taskToolError(options, 'country_code is required to load a single GeoNames country.');
+      }
+
+      const { task, alreadyRunning } = options.taskManager.startGeonamesRefresh({
+        countryCode,
+        ttl: options.taskMetadata?.ttl,
+        user,
+      });
+
+      if (options.createTaskResult) {
+        return { task };
+      }
+
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
+            already_running: alreadyRunning,
+            country_code: countryCode,
+            task,
+          }, null, 2),
+        }],
+      };
+    }
+
     case 'whoami': {
       const user = options.user;
       if (!user) {
@@ -1593,4 +1669,14 @@ export async function executeToolHandler(name, args, db, options = {}) {
         isError: true,
       };
   }
+}
+
+function taskToolError(options, message) {
+  if (options.createTaskResult) {
+    throw new Error(message);
+  }
+  return {
+    content: [{ type: 'text', text: JSON.stringify({ error: message }, null, 2) }],
+    isError: true,
+  };
 }

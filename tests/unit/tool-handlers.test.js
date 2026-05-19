@@ -1109,6 +1109,146 @@ describe('executeToolHandler: user preferences', () => {
 });
 
 // =============================================================================
+// maintenance tasks
+// =============================================================================
+
+describe('executeToolHandler: refresh_geonames', () => {
+  const task = {
+    taskId: 'geonames_refresh-test',
+    status: 'working',
+    statusMessage: 'GeoNames refresh started',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    lastUpdatedAt: '2026-01-01T00:00:01.000Z',
+    ttl: 86400000,
+    pollInterval: 2000,
+  };
+  const adminUser = { id: 1, email: 'admin@example.com', config: { role: 'admin' } };
+  const normalUser = { id: 2, email: 'user@example.com', config: { role: 'user' } };
+
+  function createTaskManager(overrides = {}) {
+    return {
+      startGeonamesRefresh: () => ({ task, alreadyRunning: false }),
+      ...overrides,
+    };
+  }
+
+  it('should require authentication', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('refresh_geonames', {}, db, {
+      taskManager: createTaskManager(),
+    });
+
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /Authentication required/);
+  });
+
+  it('should require admin role', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('refresh_geonames', {}, db, {
+      taskManager: createTaskManager(),
+      user: normalUser,
+    });
+
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /Admin role required/);
+  });
+
+  it('should start a GeoNames refresh task for admins', async () => {
+    const db = createMockDb();
+    let capturedCountryCode;
+    let capturedUser;
+    const result = await executeToolHandler('refresh_geonames', {}, db, {
+      taskManager: createTaskManager({
+        startGeonamesRefresh: ({ countryCode, user }) => {
+          capturedCountryCode = countryCode;
+          capturedUser = user;
+          return { task, alreadyRunning: false };
+        },
+      }),
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.strictEqual(parsed.success, true);
+    assert.strictEqual(parsed.already_running, false);
+    assert.strictEqual(parsed.task.taskId, task.taskId);
+    assert.strictEqual(parsed.country_code, null);
+    assert.strictEqual(capturedCountryCode, null);
+    assert.strictEqual(capturedUser, adminUser);
+  });
+
+  it('should pass an optional country code for scoped GeoNames refreshes', async () => {
+    const db = createMockDb();
+    let capturedCountryCode;
+    const result = await executeToolHandler('refresh_geonames', { country_code: 'nl' }, db, {
+      taskManager: createTaskManager({
+        startGeonamesRefresh: ({ countryCode }) => {
+          capturedCountryCode = countryCode;
+          return { task, alreadyRunning: false };
+        },
+      }),
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.strictEqual(parsed.country_code, 'NL');
+    assert.strictEqual(capturedCountryCode, 'NL');
+  });
+
+  it('should provide a single-country load alias for conversational requests', async () => {
+    const db = createMockDb();
+    let capturedCountryCode;
+    const result = await executeToolHandler('load_geonames_country', { country_code: 'us' }, db, {
+      taskManager: createTaskManager({
+        startGeonamesRefresh: ({ countryCode }) => {
+          capturedCountryCode = countryCode;
+          return { task, alreadyRunning: false };
+        },
+      }),
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.strictEqual(parsed.country_code, 'US');
+    assert.strictEqual(capturedCountryCode, 'US');
+  });
+
+  it('should require a country code for the single-country load alias', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('load_geonames_country', {}, db, {
+      taskManager: createTaskManager(),
+      user: adminUser,
+    });
+
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /country_code is required/);
+  });
+
+  it('should reject invalid country codes', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('refresh_geonames', { country_code: 'NLD' }, db, {
+      taskManager: createTaskManager(),
+      user: adminUser,
+    });
+
+    assert.strictEqual(result.isError, true);
+    assert.match(parseResponse(result).error, /country_code/);
+  });
+
+  it('should return CreateTaskResult for task-augmented calls', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('refresh_geonames', {}, db, {
+      createTaskResult: true,
+      taskManager: createTaskManager(),
+      taskMetadata: { ttl: 60000 },
+      user: adminUser,
+    });
+
+    assert.deepStrictEqual(result, { task });
+  });
+});
+
+// =============================================================================
 // favorites
 // =============================================================================
 

@@ -23,6 +23,7 @@ describe('parseRefreshArgs', () => {
       list: false,
       optimize: false,
       refreshGeonames: false,
+      geonamesCountryCode: null,
       refreshGoogle: false,
       skipOsm: false,
       help: false,
@@ -54,6 +55,13 @@ describe('parseRefreshArgs', () => {
     assert.strictEqual(options.skipOsm, true);
     assert.strictEqual(options.refreshGoogle, true);
     assert.strictEqual(options.refreshGeonames, true);
+  });
+
+  it('should parse --geonames-country=XX option', () => {
+    const options = parseRefreshArgs(['--refresh-geonames', '--geonames-country=nl']);
+
+    assert.strictEqual(options.refreshGeonames, true);
+    assert.strictEqual(options.geonamesCountryCode, 'NL');
   });
 
   it('should parse --optimize flag', () => {

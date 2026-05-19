@@ -19,6 +19,7 @@
  * @returns {boolean} options.list - Just list import sources
  * @returns {boolean} options.optimize - Run optimization after imports
  * @returns {boolean} options.refreshGeonames - Also refresh GeoNames data
+ * @returns {string|null} options.geonamesCountryCode - Optional country code for GeoNames refresh
  * @returns {boolean} options.refreshGoogle - Refresh stale Google Places cache entries
  * @returns {boolean} options.skipOsm - Skip OSM region refreshes
  * @returns {boolean} options.help - Help was requested (caller should show help)
@@ -40,6 +41,7 @@ export function parseRefreshArgs(args) {
     list: false,
     optimize: false,
     refreshGeonames: false,
+    geonamesCountryCode: null,
     refreshGoogle: false,
     skipOsm: false,
     help: false,
@@ -56,6 +58,8 @@ export function parseRefreshArgs(args) {
       options.optimize = true;
     } else if (arg === '--refresh-geonames') {
       options.refreshGeonames = true;
+    } else if (arg.startsWith('--geonames-country=')) {
+      options.geonamesCountryCode = arg.split('=')[1]?.trim().toUpperCase() || null;
     } else if (arg === '--refresh-google') {
       options.refreshGoogle = true;
     } else if (arg === '--skip-osm') {

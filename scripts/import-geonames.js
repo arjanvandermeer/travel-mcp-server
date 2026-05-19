@@ -34,6 +34,52 @@ const GEONAMES_URLS = {
   admin1: 'https://download.geonames.org/export/dump/admin1CodesASCII.txt',
 };
 
+function validateCountryCode(code) {
+  if (!code || typeof code !== 'string') return null;
+  const upper = code.trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(upper) ? upper : null;
+}
+
+function parseArgs(argv = process.argv.slice(2)) {
+  const options = {
+    countryCode: null,
+    help: false,
+  };
+
+  for (const arg of argv) {
+    if (arg === '--help' || arg === '-h') {
+      options.help = true;
+    } else if (arg.startsWith('--country-code=')) {
+      const rawCode = arg.split('=')[1] || '';
+      const countryCode = validateCountryCode(rawCode);
+      if (!countryCode) {
+        throw new Error('--country-code must be a valid 2-letter ISO country code');
+      }
+      options.countryCode = countryCode;
+    }
+  }
+
+  return options;
+}
+
+function printHelp() {
+  console.log(`
+Import GeoNames data directly into PostgreSQL
+
+Usage:
+  node scripts/import-geonames.js [options]
+
+Options:
+  --country-code=XX  Import only one 2-letter country code
+  --help, -h         Show this help message
+`);
+}
+
+function scopedMetadata(metadata, countryCode) {
+  if (!countryCode) return metadata ? JSON.stringify(metadata) : null;
+  return JSON.stringify({ ...(metadata || {}), country_code: countryCode });
+}
+
 async function download(url, outputPath) {
   return new Promise((resolve, reject) => {
     https.get(url, (response) => {
@@ -93,7 +139,7 @@ async function cleanupStaleImports(pool) {
   }
 }
 
-async function importCountries(pool) {
+async function importCountries(pool, options = {}) {
   console.log('\n=== Importing Countries ===');
 
   const filePath = join(DATA_DIR, 'countryInfo.txt');
@@ -105,9 +151,16 @@ async function importCountries(pool) {
   }
 
   const content = fs.readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n').filter(line => !line.startsWith('#') && line.trim());
+  const lines = content
+    .split('\n')
+    .filter(line => !line.startsWith('#') && line.trim())
+    .filter(line => !options.countryCode || line.split('\t')[0] === options.countryCode);
 
-  console.log(`Found ${lines.length} countries`);
+  if (options.countryCode && lines.length === 0) {
+    throw new Error(`No GeoNames country found for country code ${options.countryCode}`);
+  }
+
+  console.log(`Found ${lines.length} countries${options.countryCode ? ` for ${options.countryCode}` : ''}`);
   console.log('Importing into PostgreSQL...');
 
   // Start import tracking
@@ -116,7 +169,7 @@ async function importCountries(pool) {
       import_type, source_file, source_url, metadata, status
     ) VALUES ($1, $2, $3, $4, 'running')
     RETURNING id
-  `, ['geonames_countries', 'countryInfo.txt', GEONAMES_URLS.countries, null]);
+  `, ['geonames_countries', 'countryInfo.txt', GEONAMES_URLS.countries, scopedMetadata(null, options.countryCode)]);
 
   const importId = importResult.rows[0].id;
 
@@ -216,7 +269,7 @@ async function importCountries(pool) {
   }
 }
 
-async function importCities(pool) {
+async function importCities(pool, options = {}) {
   console.log('\n=== Importing Cities ===');
 
   const zipPath = join(DATA_DIR, 'cities1000.zip');
@@ -235,9 +288,16 @@ async function importCities(pool) {
   }
 
   const content = fs.readFileSync(txtPath, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = content
+    .split('\n')
+    .filter(line => line.trim())
+    .filter(line => !options.countryCode || line.split('\t')[8] === options.countryCode);
 
-  console.log(`Found ${lines.length} cities`);
+  if (options.countryCode && lines.length === 0) {
+    throw new Error(`No GeoNames cities1000 rows found for country code ${options.countryCode}`);
+  }
+
+  console.log(`Found ${lines.length} cities${options.countryCode ? ` for ${options.countryCode}` : ''}`);
   console.log('Importing into PostgreSQL (this may take a minute)...');
 
   // Start import tracking
@@ -246,7 +306,7 @@ async function importCities(pool) {
       import_type, source_file, source_url, metadata, status
     ) VALUES ($1, $2, $3, $4, 'running')
     RETURNING id
-  `, ['geonames_cities', 'cities1000.txt', GEONAMES_URLS.cities, JSON.stringify({ min_population: 1000 })]);
+  `, ['geonames_cities', 'cities1000.txt', GEONAMES_URLS.cities, scopedMetadata({ min_population: 1000 }, options.countryCode)]);
 
   const importId = importResult.rows[0].id;
 
@@ -354,7 +414,7 @@ async function importCities(pool) {
   }
 }
 
-async function importAdmin1Codes(pool) {
+async function importAdmin1Codes(pool, options = {}) {
   console.log('\n=== Importing Admin1 Codes (States/Provinces) ===');
 
   const filePath = join(DATA_DIR, 'admin1CodesASCII.txt');
@@ -366,9 +426,12 @@ async function importAdmin1Codes(pool) {
   }
 
   const content = fs.readFileSync(filePath, 'utf-8');
-  const lines = content.split('\n').filter(line => line.trim());
+  const lines = content
+    .split('\n')
+    .filter(line => line.trim())
+    .filter(line => !options.countryCode || line.startsWith(`${options.countryCode}.`));
 
-  console.log(`Found ${lines.length} admin1 codes`);
+  console.log(`Found ${lines.length} admin1 codes${options.countryCode ? ` for ${options.countryCode}` : ''}`);
   console.log('Importing into PostgreSQL...');
 
   // Start import tracking
@@ -377,7 +440,7 @@ async function importAdmin1Codes(pool) {
       import_type, source_file, source_url, metadata, status
     ) VALUES ($1, $2, $3, $4, 'running')
     RETURNING id
-  `, ['geonames_admin1', 'admin1CodesASCII.txt', GEONAMES_URLS.admin1, null]);
+  `, ['geonames_admin1', 'admin1CodesASCII.txt', GEONAMES_URLS.admin1, scopedMetadata(null, options.countryCode)]);
 
   const importId = importResult.rows[0].id;
 
@@ -386,8 +449,12 @@ async function importAdmin1Codes(pool) {
   try {
     await client.query('BEGIN');
 
-    // Clear existing data
-    await client.query('DELETE FROM geonames_admin1_codes');
+    // Clear existing data for the import scope.
+    if (options.countryCode) {
+      await client.query('DELETE FROM geonames_admin1_codes WHERE country_code = $1', [options.countryCode]);
+    } else {
+      await client.query('DELETE FROM geonames_admin1_codes');
+    }
 
     let imported = 0;
 
@@ -424,7 +491,7 @@ async function importAdmin1Codes(pool) {
     console.log(`✓ Imported ${imported} admin1 codes`);
 
     // Check if any records were imported
-    if (imported === 0) {
+    if (imported === 0 && !options.countryCode) {
       await pool.query(`
         UPDATE import_log
         SET status = 'failed',
@@ -465,6 +532,12 @@ async function importAdmin1Codes(pool) {
 }
 
 async function main() {
+  const options = parseArgs();
+  if (options.help) {
+    printHelp();
+    return;
+  }
+
   // Ensure data directory exists
   if (!fs.existsSync(DATA_DIR)) {
     fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -475,19 +548,28 @@ async function main() {
   try {
     console.log('GeoNames Import to PostgreSQL');
     console.log('==============================');
+    if (options.countryCode) {
+      console.log(`Country scope: ${options.countryCode}`);
+    }
 
     // Clean up stale import_log entries (running > 24 hours)
     await cleanupStaleImports(pool);
 
-    await importCountries(pool);
-    await importCities(pool);
-    await importAdmin1Codes(pool);
+    await importCountries(pool, options);
+    await importCities(pool, options);
+    await importAdmin1Codes(pool, options);
 
     // Show statistics
     console.log('\n=== Database Statistics ===');
-    const countriesCount = await pool.query('SELECT COUNT(*) FROM geonames_countries');
-    const citiesCount = await pool.query('SELECT COUNT(*) FROM geonames_cities');
-    const admin1Count = await pool.query('SELECT COUNT(*) FROM geonames_admin1_codes');
+    const countriesCount = options.countryCode
+      ? await pool.query('SELECT COUNT(*) FROM geonames_countries WHERE iso_alpha2 = $1', [options.countryCode])
+      : await pool.query('SELECT COUNT(*) FROM geonames_countries');
+    const citiesCount = options.countryCode
+      ? await pool.query('SELECT COUNT(*) FROM geonames_cities WHERE country_code = $1', [options.countryCode])
+      : await pool.query('SELECT COUNT(*) FROM geonames_cities');
+    const admin1Count = options.countryCode
+      ? await pool.query('SELECT COUNT(*) FROM geonames_admin1_codes WHERE country_code = $1', [options.countryCode])
+      : await pool.query('SELECT COUNT(*) FROM geonames_admin1_codes');
 
     console.log(`Countries: ${countriesCount.rows[0].count}`);
     console.log(`Cities: ${citiesCount.rows[0].count}`);
@@ -505,7 +587,10 @@ async function main() {
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
-  main();
+  main().catch(error => {
+    console.error('❌ Import failed:', error.message);
+    process.exit(1);
+  });
 }
 
 export { main as importGeoNames };

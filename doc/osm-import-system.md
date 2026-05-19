@@ -118,6 +118,7 @@ node scripts/refresh-imports.js --region=thailand --force
 | `--force` | Refresh even if not due yet |
 | `--refresh-google` | Refresh stale Google Places cache entries |
 | `--refresh-geonames` | Re-import GeoNames country/city data |
+| `--geonames-country=XX` | Limit GeoNames refresh to one 2-letter country code |
 | `--skip-osm` | Skip OSM region refresh checks for Google/GeoNames-only runs |
 
 ## NPM Scripts
