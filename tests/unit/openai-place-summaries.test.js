@@ -33,6 +33,9 @@ describe('createOpenAIPlaceSummarizer', () => {
     assert.equal(calls.length, 1);
     assert.equal(calls[0].model, 'gpt-5-mini');
     assert.equal(calls[0].store, false);
+    assert.deepEqual(calls[0].reasoning, { effort: 'minimal' });
+    assert.deepEqual(calls[0].text, { verbosity: 'low' });
+    assert.equal(calls[0].max_output_tokens, 1000);
     assert.deepEqual(calls[0].tools, []);
     assert.match(calls[0].input[0].content, /2-3 concise sentences/);
   });

@@ -2,6 +2,7 @@ import { sanitizeHttpUrl } from './url-utils.js';
 import OpenAI from 'openai';
 
 const DEFAULT_MODEL = 'gpt-5-mini';
+const DEFAULT_MAX_OUTPUT_TOKENS = 1000;
 
 function compactText(value, maxLength = 2000) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, maxLength);
@@ -35,7 +36,9 @@ export function createOpenAIPlaceSummarizer({
       input,
       tools,
       store: false,
-      max_output_tokens: 220,
+      reasoning: { effort: 'minimal' },
+      text: { verbosity: 'low' },
+      max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
     });
     return extractResponseText(response);
   }
