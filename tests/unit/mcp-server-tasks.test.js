@@ -32,6 +32,14 @@ function createTaskManager(overrides = {}) {
     getTaskPayload: () => payload,
     listTasks: () => [task],
     startGeonamesRefresh: () => ({ task, alreadyRunning: false }),
+    startGooglePlacesEnrichment: () => ({
+      task: { ...task, taskId: 'google_places_enrichment-test' },
+      alreadyRunning: false,
+    }),
+    startAiPlaceSummary: () => ({
+      task: { ...task, taskId: 'ai_place_summary-test' },
+      alreadyRunning: false,
+    }),
     ...overrides,
   };
 }
@@ -124,6 +132,38 @@ describe('MCP maintenance task handlers', () => {
       }, CreateTaskResultSchema);
 
       assert.equal(result.task.taskId, task.taskId);
+    });
+  });
+
+  it('supports MCP task-augmented start_enrichment_task calls for admins', async () => {
+    const admin = { id: 1, email: 'admin@example.com', config: { role: 'admin' } };
+    await withClient({ user: admin, taskManager: createTaskManager() }, async (client) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'start_enrichment_task',
+          arguments: { osm_ids: [101] },
+          task: { ttl: 60000 },
+        },
+      }, CreateTaskResultSchema);
+
+      assert.equal(result.task.taskId, 'google_places_enrichment-test');
+    });
+  });
+
+  it('supports MCP task-augmented start_ai_place_summary_task calls for admins', async () => {
+    const admin = { id: 1, email: 'admin@example.com', config: { role: 'admin' } };
+    await withClient({ user: admin, taskManager: createTaskManager() }, async (client) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'start_ai_place_summary_task',
+          arguments: { osm_ids: [101] },
+          task: { ttl: 60000 },
+        },
+      }, CreateTaskResultSchema);
+
+      assert.equal(result.task.taskId, 'ai_place_summary-test');
     });
   });
 });

@@ -20,6 +20,7 @@ export { accommodationTypes, attractionTypes, fetchNearbyForPOI, foodTypes, getN
 const hotelIntents = ['remote_work', 'family', 'romantic', 'budget', 'accessible', 'pet_friendly'];
 const restaurantOccasions = ['business_dinner', 'casual_lunch', 'date_night', 'family_meal', 'quick_bite', 'late_night'];
 export const geonamesRefreshToolNames = new Set(['refresh_geonames', 'load_geonames_country']);
+export const maintenanceTaskToolNames = new Set([...geonamesRefreshToolNames, 'start_enrichment_task', 'start_ai_place_summary_task']);
 
 // Base tool definitions
 const baseToolsConfig = [
@@ -638,6 +639,75 @@ const baseToolsConfig = [
         },
       },
       required: ['country_code'],
+    },
+  },
+  {
+    name: 'list_enrichment_tasks',
+    description: 'Admin-only: list Google Places enrichment tasks started through MCP plus any currently active in-process POI enrichment locks.',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'start_enrichment_task',
+    description: 'Admin-only: start a Google Places enrichment task. Provide osm_ids to enrich specific POIs, or omit osm_ids to refresh stale Google Places cache entries up to limit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_ids: {
+          type: 'array',
+          items: {
+            oneOf: [{ type: 'number' }, { type: 'string' }],
+          },
+          description: 'Optional OSM IDs to enrich. If omitted, the task refreshes stale Google Places entries.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum stale entries to refresh when osm_ids is omitted (default: 100, max: 500).',
+          default: 100,
+        },
+      },
+    },
+  },
+  {
+    name: 'stop_enrichment_task',
+    description: 'Admin-only: cancel a running Google Places enrichment task by task_id. Cancellation stops before the next POI; a current in-flight Google request may still finish.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        task_id: {
+          type: 'string',
+          description: 'The taskId returned by start_enrichment_task, tasks/list, or list_enrichment_tasks.',
+        },
+      },
+      required: ['task_id'],
+    },
+  },
+  {
+    name: 'start_ai_place_summary_task',
+    description: 'Admin-only: start an AI enrichment task that summarizes Google review text and official property homepages with OpenAI. Provide osm_ids for specific POIs, or omit osm_ids to process due enriched POIs up to limit. Skips automatically when openai_api_key is missing, review_summary_enabled is 0, or homepage_summary_enabled is 0.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_ids: {
+          type: 'array',
+          items: {
+            oneOf: [{ type: 'number' }, { type: 'string' }],
+          },
+          description: 'Optional OSM IDs to summarize. If omitted, the task processes enriched POIs with missing AI summaries.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum due entries to process when osm_ids is omitted (default: 25, max: 100).',
+          default: 25,
+        },
+        force: {
+          type: 'boolean',
+          description: 'If true, regenerate existing summaries for the selected POIs.',
+          default: false,
+        },
+      },
     },
   },
   {
@@ -1521,6 +1591,153 @@ export async function executeToolHandler(name, args, db, options = {}) {
             success: true,
             already_running: alreadyRunning,
             country_code: countryCode,
+            task,
+          }, null, 2),
+        }],
+      };
+    }
+
+    case 'list_enrichment_tasks': {
+      const user = options.user;
+      if (!user) {
+        return taskToolError(options, 'Authentication required. Please provide a valid admin token.');
+      }
+      if (!isAdminUser(user)) {
+        return taskToolError(options, 'Admin role required to inspect enrichment tasks.');
+      }
+      if (!options.taskManager?.listTasks) {
+        return taskToolError(options, 'Maintenance task manager is not available.');
+      }
+
+      const tasks = options.taskManager.listTasks({ kind: 'google_places_enrichment' });
+      const aiSummaryTasks = options.taskManager.listTasks({ kind: 'ai_place_summary' });
+      const activeOperations = typeof db.getActiveEnrichmentOperations === 'function'
+        ? db.getActiveEnrichmentOperations()
+        : [];
+      const databaseTasks = typeof db.listEnrichmentTaskRows === 'function'
+        ? await db.listEnrichmentTaskRows({ limit: 50 })
+        : [];
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            tasks,
+            ai_summary_tasks: aiSummaryTasks,
+            active_operations: activeOperations,
+            database_tasks: databaseTasks,
+          }, null, 2),
+        }],
+      };
+    }
+
+    case 'start_enrichment_task': {
+      const user = options.user;
+      if (!user) {
+        return taskToolError(options, 'Authentication required. Please provide a valid admin token.');
+      }
+      if (!isAdminUser(user)) {
+        return taskToolError(options, 'Admin role required to start enrichment tasks.');
+      }
+      if (!options.taskManager?.startGooglePlacesEnrichment) {
+        return taskToolError(options, 'Maintenance task manager is not available.');
+      }
+
+      try {
+        const { task, alreadyRunning } = options.taskManager.startGooglePlacesEnrichment({
+          db,
+          osmIds: args.osm_ids,
+          limit: validateLimit(args.limit, 100, 500),
+          ttl: options.taskMetadata?.ttl,
+          user,
+        });
+
+        if (options.createTaskResult) {
+          return { task };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              already_running: alreadyRunning,
+              task,
+            }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return taskToolError(options, error.message);
+      }
+    }
+
+    case 'start_ai_place_summary_task': {
+      const user = options.user;
+      if (!user) {
+        return taskToolError(options, 'Authentication required. Please provide a valid admin token.');
+      }
+      if (!isAdminUser(user)) {
+        return taskToolError(options, 'Admin role required to start AI place summary tasks.');
+      }
+      if (!options.taskManager?.startAiPlaceSummary) {
+        return taskToolError(options, 'Maintenance task manager is not available.');
+      }
+
+      try {
+        const { task, alreadyRunning } = options.taskManager.startAiPlaceSummary({
+          db,
+          osmIds: args.osm_ids,
+          limit: validateLimit(args.limit, 25, 100),
+          force: args.force === true,
+          ttl: options.taskMetadata?.ttl,
+          user,
+        });
+
+        if (options.createTaskResult) {
+          return { task };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              already_running: alreadyRunning,
+              task,
+            }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return taskToolError(options, error.message);
+      }
+    }
+
+    case 'stop_enrichment_task': {
+      const user = options.user;
+      if (!user) {
+        return taskToolError(options, 'Authentication required. Please provide a valid admin token.');
+      }
+      if (!isAdminUser(user)) {
+        return taskToolError(options, 'Admin role required to stop enrichment tasks.');
+      }
+      if (!options.taskManager?.cancelTask || !options.taskManager?.getTaskKind) {
+        return taskToolError(options, 'Maintenance task manager is not available.');
+      }
+      const taskId = String(args.task_id || '').trim();
+      if (!taskId) {
+        return taskToolError(options, 'task_id is required to stop an enrichment task.');
+      }
+      if (!['google_places_enrichment', 'ai_place_summary'].includes(options.taskManager.getTaskKind(taskId))) {
+        return taskToolError(options, `Enrichment task not found: ${taskId}`);
+      }
+      const task = options.taskManager.cancelTask(taskId);
+      if (!task) {
+        return taskToolError(options, `Enrichment task not found: ${taskId}`);
+      }
+      return {
+        content: [{
+          type: 'text',
+          text: JSON.stringify({
+            success: true,
             task,
           }, null, 2),
         }],

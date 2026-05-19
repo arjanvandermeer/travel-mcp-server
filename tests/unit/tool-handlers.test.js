@@ -1248,6 +1248,116 @@ describe('executeToolHandler: refresh_geonames', () => {
   });
 });
 
+describe('executeToolHandler: enrichment tasks', () => {
+  const task = {
+    taskId: 'google_places_enrichment-test',
+    status: 'working',
+    statusMessage: 'Google Places enrichment started',
+    createdAt: '2026-01-01T00:00:00.000Z',
+    lastUpdatedAt: '2026-01-01T00:00:01.000Z',
+    ttl: 86400000,
+    pollInterval: 2000,
+  };
+  const adminUser = { id: 1, email: 'admin@example.com', config: { role: 'admin' } };
+
+  it('should start a Google Places enrichment task for admins', async () => {
+    const db = createMockDb();
+    let captured;
+    const result = await executeToolHandler('start_enrichment_task', { osm_ids: [101, '202'], limit: 999 }, db, {
+      taskManager: {
+        startGooglePlacesEnrichment: (args) => {
+          captured = args;
+          return { task, alreadyRunning: false };
+        },
+      },
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.strictEqual(parsed.success, true);
+    assert.strictEqual(parsed.task.taskId, task.taskId);
+    assert.deepStrictEqual(captured.osmIds, [101, '202']);
+    assert.strictEqual(captured.limit, 500);
+    assert.strictEqual(captured.user, adminUser);
+    assert.strictEqual(captured.db, db);
+  });
+
+  it('should return CreateTaskResult for task-augmented enrichment calls', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('start_enrichment_task', { osm_ids: [101] }, db, {
+      createTaskResult: true,
+      taskManager: {
+        startGooglePlacesEnrichment: () => ({ task, alreadyRunning: false }),
+      },
+      taskMetadata: { ttl: 60000 },
+      user: adminUser,
+    });
+
+    assert.deepStrictEqual(result, { task });
+  });
+
+  it('should list enrichment tasks and active POI operations', async () => {
+    const db = createMockDb({
+      getActiveEnrichmentOperations: () => [{ osmId: '101', startedAt: '2026-01-01T00:00:00.000Z', ageMs: 10 }],
+      listEnrichmentTaskRows: async () => [{ task_id: 'ai_place_summary-db', kind: 'ai_place_summary' }],
+    });
+    const result = await executeToolHandler('list_enrichment_tasks', {}, db, {
+      taskManager: {
+        listTasks: ({ kind }) => {
+          if (kind === 'google_places_enrichment') return [task];
+          if (kind === 'ai_place_summary') return [{ ...task, taskId: 'ai_place_summary-test' }];
+          return [];
+        },
+      },
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.deepStrictEqual(parsed.tasks, [task]);
+    assert.strictEqual(parsed.ai_summary_tasks[0].taskId, 'ai_place_summary-test');
+    assert.strictEqual(parsed.database_tasks[0].task_id, 'ai_place_summary-db');
+    assert.deepStrictEqual(parsed.active_operations, [{ osmId: '101', startedAt: '2026-01-01T00:00:00.000Z', ageMs: 10 }]);
+  });
+
+  it('should start an AI place summary task for admins', async () => {
+    const db = createMockDb();
+    let captured;
+    const aiTask = { ...task, taskId: 'ai_place_summary-test' };
+    const result = await executeToolHandler('start_ai_place_summary_task', { osm_ids: [101], limit: 999, force: true }, db, {
+      taskManager: {
+        startAiPlaceSummary: (args) => {
+          captured = args;
+          return { task: aiTask, alreadyRunning: false };
+        },
+      },
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.strictEqual(parsed.success, true);
+    assert.strictEqual(parsed.task.taskId, aiTask.taskId);
+    assert.deepStrictEqual(captured.osmIds, [101]);
+    assert.strictEqual(captured.limit, 100);
+    assert.strictEqual(captured.force, true);
+    assert.strictEqual(captured.db, db);
+  });
+
+  it('should stop an enrichment task', async () => {
+    const db = createMockDb();
+    const result = await executeToolHandler('stop_enrichment_task', { task_id: task.taskId }, db, {
+      taskManager: {
+        getTaskKind: () => 'google_places_enrichment',
+        cancelTask: (taskId) => ({ ...task, taskId, status: 'cancelled' }),
+      },
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.strictEqual(parsed.success, true);
+    assert.strictEqual(parsed.task.status, 'cancelled');
+  });
+});
+
 // =============================================================================
 // favorites
 // =============================================================================

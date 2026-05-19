@@ -12,6 +12,10 @@ const DEFAULT_TASK_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_POLL_INTERVAL_MS = 2000;
 const DEFAULT_MAX_OUTPUT_CHARS = 20000;
 const RESULT_OUTPUT_CHARS = 5000;
+const DEFAULT_GOOGLE_ENRICHMENT_LIMIT = 100;
+const MAX_GOOGLE_ENRICHMENT_LIMIT = 500;
+const DEFAULT_AI_SUMMARY_LIMIT = 25;
+const MAX_AI_SUMMARY_LIMIT = 100;
 const ACTIVE_STATUSES = new Set(['working', 'input_required']);
 
 export function isAdminUser(user) {
@@ -32,6 +36,49 @@ function getLastNonEmptyLine(text) {
 
 function describeGeoNamesScope(countryCode) {
   return countryCode ? `GeoNames refresh for ${countryCode}` : 'GeoNames refresh';
+}
+
+function normalizePositiveInteger(value, defaultValue, maxValue) {
+  if (value === undefined || value === null || value === '') return defaultValue;
+  const parsed = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return defaultValue;
+  return Math.min(parsed, maxValue);
+}
+
+function normalizeOsmIds(osmIds) {
+  if (osmIds === undefined || osmIds === null || osmIds === '') return [];
+  const values = Array.isArray(osmIds) ? osmIds : [osmIds];
+  const normalized = [];
+  const seen = new Set();
+
+  for (const value of values) {
+    const osmId = String(value).trim();
+    if (!/^[1-9]\d*$/.test(osmId)) {
+      throw new Error('osm_ids must contain only positive OSM numeric ids');
+    }
+    if (!seen.has(osmId)) {
+      seen.add(osmId);
+      normalized.push(osmId);
+    }
+  }
+
+  return normalized;
+}
+
+function describeGoogleEnrichmentScope(record) {
+  const total = record.stats?.total || record.osmIds?.length || 0;
+  if (record.requestedOsmIds?.length > 0) {
+    return total === 1 ? `Google Places enrichment for OSM ${record.requestedOsmIds[0]}` : `Google Places enrichment for ${total} requested POIs`;
+  }
+  return `Google Places stale cache enrichment${total ? ` for ${total} POIs` : ''}`;
+}
+
+function describeAiSummaryScope(record) {
+  const total = record.stats?.total || record.osmIds?.length || 0;
+  if (record.requestedOsmIds?.length > 0) {
+    return total === 1 ? `AI place summary for OSM ${record.requestedOsmIds[0]}` : `AI place summaries for ${total} requested POIs`;
+  }
+  return `AI place summaries${total ? ` for ${total} POIs` : ''}`;
 }
 
 export class MaintenanceTaskManager {
@@ -87,9 +134,128 @@ export class MaintenanceTaskManager {
     return { task: this.toPublicTask(record), alreadyRunning: false };
   }
 
-  listTasks() {
+  startGooglePlacesEnrichment({ db, osmIds, limit, user, ttl } = {}) {
+    this.pruneExpiredTasks();
+    if (!db || typeof db.enrichOSMPOI !== 'function') {
+      throw new Error('Google Places enrichment requires a database with enrichOSMPOI');
+    }
+
+    const requestedOsmIds = normalizeOsmIds(osmIds);
+    const normalizedLimit = normalizePositiveInteger(
+      limit,
+      DEFAULT_GOOGLE_ENRICHMENT_LIMIT,
+      MAX_GOOGLE_ENRICHMENT_LIMIT,
+    );
+    if (requestedOsmIds.length === 0 && typeof db.getStaleGooglePlacesEntries !== 'function') {
+      throw new Error('Google Places stale enrichment requires getStaleGooglePlacesEntries');
+    }
+
+    const existing = this.findActiveTask('google_places_enrichment');
+    if (existing) {
+      return { task: this.toPublicTask(existing), alreadyRunning: true };
+    }
+
+    const task = this.createTask({
+      kind: 'google_places_enrichment',
+      statusMessage: requestedOsmIds.length > 0
+        ? `Google Places enrichment queued for ${requestedOsmIds.length} requested POIs`
+        : `Google Places stale cache enrichment queued (limit ${normalizedLimit})`,
+      ttl,
+    });
+    const record = {
+      kind: 'google_places_enrichment',
+      task,
+      db,
+      requestedOsmIds,
+      osmIds: [...requestedOsmIds],
+      limit: normalizedLimit,
+      output: '',
+      result: null,
+      cancelRequested: false,
+      currentOsmId: null,
+      stats: {
+        total: requestedOsmIds.length,
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+      },
+      requestedBy: user ? { id: user.id, email: user.email } : null,
+      cancel: () => {
+        record.cancelRequested = true;
+      },
+    };
+
+    this.tasks.set(task.taskId, record);
+    this.runGooglePlacesEnrichment(record).catch(error => {
+      if (!ACTIVE_STATUSES.has(record.task.status)) return;
+      this.finishTask(record, 'failed', `Google Places enrichment failed: ${error.message}`, { error });
+    });
+
+    return { task: this.toPublicTask(record), alreadyRunning: false };
+  }
+
+  startAiPlaceSummary({ db, osmIds, limit, force = false, user, ttl } = {}) {
+    this.pruneExpiredTasks();
+    if (!db || typeof db.summarizeEnrichedPOI !== 'function') {
+      throw new Error('AI place summary requires a database with summarizeEnrichedPOI');
+    }
+
+    const requestedOsmIds = normalizeOsmIds(osmIds);
+    const normalizedLimit = normalizePositiveInteger(limit, DEFAULT_AI_SUMMARY_LIMIT, MAX_AI_SUMMARY_LIMIT);
+    if (requestedOsmIds.length === 0 && typeof db.getDueAiSummaryEntries !== 'function') {
+      throw new Error('AI place summary requires getDueAiSummaryEntries when osm_ids are omitted');
+    }
+
+    const existing = this.findActiveTask('ai_place_summary');
+    if (existing) {
+      return { task: this.toPublicTask(existing), alreadyRunning: true };
+    }
+
+    const task = this.createTask({
+      kind: 'ai_place_summary',
+      statusMessage: requestedOsmIds.length > 0
+        ? `AI place summaries queued for ${requestedOsmIds.length} requested POIs`
+        : `AI place summaries queued (limit ${normalizedLimit})`,
+      ttl,
+    });
+    const record = {
+      kind: 'ai_place_summary',
+      task,
+      db,
+      requestedOsmIds,
+      osmIds: [...requestedOsmIds],
+      limit: normalizedLimit,
+      force: force === true,
+      output: '',
+      result: null,
+      cancelRequested: false,
+      currentOsmId: null,
+      stats: {
+        total: requestedOsmIds.length,
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+        skipped: 0,
+      },
+      requestedBy: user ? { id: user.id, email: user.email } : null,
+      cancel: () => {
+        record.cancelRequested = true;
+      },
+    };
+
+    this.tasks.set(task.taskId, record);
+    this.runAiPlaceSummary(record).catch(error => {
+      if (!ACTIVE_STATUSES.has(record.task.status)) return;
+      this.finishTask(record, 'failed', `AI place summaries failed: ${error.message}`, { error });
+    });
+
+    return { task: this.toPublicTask(record), alreadyRunning: false };
+  }
+
+  listTasks({ kind } = {}) {
     this.pruneExpiredTasks();
     return Array.from(this.tasks.values())
+      .filter(record => !kind || record.kind === kind)
       .sort((a, b) => String(b.task.createdAt).localeCompare(String(a.task.createdAt)))
       .map(record => this.toPublicTask(record));
   }
@@ -107,6 +273,11 @@ export class MaintenanceTaskManager {
     return record.result;
   }
 
+  getTaskKind(taskId) {
+    this.pruneExpiredTasks();
+    return this.tasks.get(taskId)?.kind || null;
+  }
+
   cancelTask(taskId) {
     this.pruneExpiredTasks();
     const record = this.tasks.get(taskId);
@@ -116,11 +287,22 @@ export class MaintenanceTaskManager {
       return this.toPublicTask(record);
     }
 
-    if (record.child?.kill) {
-      record.child.kill('SIGTERM');
+    if (typeof record.cancel === 'function') {
+      record.cancel();
     }
-    this.finishTask(record, 'cancelled', `${describeGeoNamesScope(record.countryCode)} cancelled by admin`, {
-      signal: 'SIGTERM',
+    let signal = null;
+    if (record.child?.kill) {
+      signal = 'SIGTERM';
+      record.child.kill(signal);
+    }
+    let message = `${describeGeoNamesScope(record.countryCode)} cancelled by admin`;
+    if (record.kind === 'google_places_enrichment') {
+      message = `${describeGoogleEnrichmentScope(record)} cancelled by admin. Current in-flight Google request may still finish.`;
+    } else if (record.kind === 'ai_place_summary') {
+      message = `${describeAiSummaryScope(record)} cancelled by admin. Current OpenAI request may still finish.`;
+    }
+    this.finishTask(record, 'cancelled', message, {
+      signal,
     });
 
     return this.toPublicTask(record);
@@ -180,6 +362,106 @@ export class MaintenanceTaskManager {
     });
   }
 
+  async runGooglePlacesEnrichment(record) {
+    this.updateTask(record, 'working', 'Google Places enrichment started');
+
+    if (record.osmIds.length === 0) {
+      this.updateTask(record, 'working', `Finding stale Google Places entries (limit ${record.limit})`);
+      const staleEntries = await record.db.getStaleGooglePlacesEntries(record.limit);
+      record.osmIds = normalizeOsmIds(staleEntries.map(entry => entry.osm_id));
+      record.stats.total = record.osmIds.length;
+    }
+
+    if (record.osmIds.length === 0) {
+      this.finishTask(record, 'completed', 'No due Google Places enrichment entries found');
+      return;
+    }
+
+    for (const [index, osmId] of record.osmIds.entries()) {
+      if (record.cancelRequested || !ACTIVE_STATUSES.has(record.task.status)) {
+        if (ACTIVE_STATUSES.has(record.task.status)) {
+          this.finishTask(record, 'cancelled', `${describeGoogleEnrichmentScope(record)} cancelled by admin`);
+        }
+        return;
+      }
+
+      record.currentOsmId = osmId;
+      this.updateTask(record, 'working', `Enriching OSM ${osmId} (${index + 1}/${record.osmIds.length})`);
+
+      try {
+        await record.db.enrichOSMPOI(osmId, { taskId: record.task.taskId });
+        record.stats.succeeded += 1;
+      } catch (error) {
+        record.stats.failed += 1;
+        this.appendOutput(record, `OSM ${osmId}: ${error.message}\n`);
+      } finally {
+        record.stats.processed += 1;
+      }
+    }
+
+    const status = record.stats.failed > 0 ? 'failed' : 'completed';
+    const message = record.stats.failed > 0
+      ? `${describeGoogleEnrichmentScope(record)} completed with ${record.stats.failed} errors`
+      : `${describeGoogleEnrichmentScope(record)} completed successfully`;
+    this.finishTask(record, status, message);
+  }
+
+  async runAiPlaceSummary(record) {
+    this.updateTask(record, 'working', 'AI place summaries started');
+
+    if (typeof record.db.recordEnrichmentTask === 'function') {
+      await record.db.recordEnrichmentTask(this.toTaskRow(record)).catch(() => {});
+    }
+
+    if (record.osmIds.length === 0) {
+      this.updateTask(record, 'working', `Finding due AI summary entries (limit ${record.limit})`);
+      const entries = await record.db.getDueAiSummaryEntries(record.limit);
+      record.osmIds = normalizeOsmIds(entries.map(entry => entry.osm_id));
+      record.stats.total = record.osmIds.length;
+    }
+
+    if (record.osmIds.length === 0) {
+      this.finishTask(record, 'completed', 'No due AI summary entries found');
+      return;
+    }
+
+    for (const [index, osmId] of record.osmIds.entries()) {
+      if (record.cancelRequested || !ACTIVE_STATUSES.has(record.task.status)) {
+        if (ACTIVE_STATUSES.has(record.task.status)) {
+          this.finishTask(record, 'cancelled', `${describeAiSummaryScope(record)} cancelled by admin`);
+        }
+        return;
+      }
+
+      record.currentOsmId = osmId;
+      this.updateTask(record, 'working', `Summarizing OSM ${osmId} (${index + 1}/${record.osmIds.length})`);
+      if (typeof record.db.recordEnrichmentTask === 'function') {
+        await record.db.recordEnrichmentTask(this.toTaskRow(record)).catch(() => {});
+      }
+
+      try {
+        const result = await record.db.summarizeEnrichedPOI(osmId, { force: record.force });
+        if (result?.skipped) {
+          record.stats.skipped += 1;
+          this.appendOutput(record, `OSM ${osmId}: skipped - ${result.reason}\n`);
+        } else {
+          record.stats.succeeded += 1;
+        }
+      } catch (error) {
+        record.stats.failed += 1;
+        this.appendOutput(record, `OSM ${osmId}: ${error.message}\n`);
+      } finally {
+        record.stats.processed += 1;
+      }
+    }
+
+    const status = record.stats.failed > 0 ? 'failed' : 'completed';
+    const message = record.stats.failed > 0
+      ? `${describeAiSummaryScope(record)} completed with ${record.stats.failed} errors`
+      : `${describeAiSummaryScope(record)} completed successfully`;
+    this.finishTask(record, status, message);
+  }
+
   appendOutput(record, chunk) {
     const text = String(chunk);
     record.output = `${record.output}${text}`.slice(-this.maxOutputChars);
@@ -193,22 +475,46 @@ export class MaintenanceTaskManager {
   finishTask(record, status, statusMessage, { code = null, signal = null, error = null } = {}) {
     this.updateTask(record, status, statusMessage);
     record.child = null;
+    const payload = {
+      taskId: record.task.taskId,
+      kind: record.kind,
+      countryCode: record.countryCode,
+      status,
+      statusMessage,
+      success: status === 'completed',
+      exitCode: code,
+      signal,
+      requestedBy: record.requestedBy,
+      error: error?.message,
+      outputTail: record.output.slice(-RESULT_OUTPUT_CHARS),
+    };
+
+    if (record.kind === 'google_places_enrichment') {
+      Object.assign(payload, {
+        limit: record.limit,
+        osmIdCount: record.osmIds.length,
+        osmIds: record.osmIds.slice(0, 100),
+        currentOsmId: record.currentOsmId,
+        cancelRequested: record.cancelRequested,
+        stats: { ...record.stats },
+      });
+    }
+    if (record.kind === 'ai_place_summary') {
+      Object.assign(payload, {
+        limit: record.limit,
+        force: record.force,
+        osmIdCount: record.osmIds.length,
+        osmIds: record.osmIds.slice(0, 100),
+        currentOsmId: record.currentOsmId,
+        cancelRequested: record.cancelRequested,
+        stats: { ...record.stats },
+      });
+    }
+
     record.result = {
       content: [{
         type: 'text',
-        text: JSON.stringify({
-          taskId: record.task.taskId,
-          kind: record.kind,
-          countryCode: record.countryCode,
-          status,
-          statusMessage,
-          success: status === 'completed',
-          exitCode: code,
-          signal,
-          requestedBy: record.requestedBy,
-          error: error?.message,
-          outputTail: record.output.slice(-RESULT_OUTPUT_CHARS),
-        }, null, 2),
+        text: JSON.stringify(payload, null, 2),
       }],
     };
 
@@ -221,6 +527,10 @@ export class MaintenanceTaskManager {
       code,
       signal,
     });
+
+    if (typeof record.db?.recordEnrichmentTask === 'function') {
+      record.db.recordEnrichmentTask(this.toTaskRow(record, payload)).catch(() => {});
+    }
   }
 
   updateTask(record, status, statusMessage) {
@@ -249,6 +559,28 @@ export class MaintenanceTaskManager {
 
   toPublicTask(record) {
     return { ...record.task };
+  }
+
+  toTaskRow(record, result = null) {
+    return {
+      taskId: record.task.taskId,
+      kind: record.kind,
+      status: record.task.status,
+      statusMessage: record.task.statusMessage,
+      currentItem: record.currentOsmId || null,
+      processed: record.stats?.processed || 0,
+      succeeded: record.stats?.succeeded || 0,
+      failed: record.stats?.failed || 0,
+      total: record.stats?.total || record.osmIds?.length || 0,
+      requestedBy: record.requestedBy,
+      payload: {
+        osmIds: record.osmIds,
+        requestedOsmIds: record.requestedOsmIds,
+        limit: record.limit,
+        force: record.force,
+      },
+      result,
+    };
   }
 }
 

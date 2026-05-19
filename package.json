@@ -58,6 +58,7 @@
     "@sentry/node": "^10.36.0",
     "dotenv": "^16.4.5",
     "handlebars": "^4.7.8",
+    "openai": "^6.38.0",
     "osm-pbf-parser": "^2.3.0",
     "pg": "^8.16.3",
     "thai-transliterate": "github:arjanvandermeer/thai-transliterate-js",

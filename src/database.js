@@ -8,6 +8,7 @@ import { databaseUserMethods } from './database-user-methods.js';
 import { databaseImportMethods } from './database-import-methods.js';
 import { coerceOpenAt, isPoiOpenAt } from './lib/opening-hours.js';
 import { sanitizeHttpUrl, sanitizePoiExternalUrlsArray } from './url-utils.js';
+import { createOpenAIPlaceSummarizer } from './openai-place-summaries.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
@@ -28,6 +29,10 @@ function clampNonNegativeInteger(value, defaultValue) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed < 0) return defaultValue;
   return Math.floor(parsed);
+}
+
+function getEnrichmentLockKey(osmId) {
+  return String(osmId);
 }
 
 function clampSearchRadiusKm(value, defaultValue = SEARCH_RADIUS_DEFAULT_KM) {
@@ -256,11 +261,13 @@ export class TravelDatabase {
 
     // Enrichment dedup lock: Map<osmId, Promise> - prevents duplicate API calls for same POI
     this._enrichmentLock = new Map();
+    this._enrichmentLockInfo = new Map();
 
     // Restart cooldown: Map<osmId, timestamp> - prevents polling from repeatedly
     // re-triggering stale pending enrichments when a background attempt exits quickly.
     this._enrichmentRestartedAt = new Map();
     this._googleMappingScheduleColumnReady = false;
+    this._aiSummaryColumnsReady = false;
   }
 
   /**
@@ -368,6 +375,61 @@ export class TravelDatabase {
     this._googleMappingScheduleColumnReady = true;
   }
 
+  async ensureAiSummaryColumns() {
+    if (this._aiSummaryColumnsReady) return;
+    await this.pool.query(`
+      ALTER TABLE IF EXISTS google_places
+      ADD COLUMN IF NOT EXISTS ai_review_summary TEXT,
+      ADD COLUMN IF NOT EXISTS ai_review_summary_model VARCHAR(100),
+      ADD COLUMN IF NOT EXISTS ai_review_summary_status VARCHAR(20),
+      ADD COLUMN IF NOT EXISTS ai_review_summary_error TEXT,
+      ADD COLUMN IF NOT EXISTS ai_review_summarized_at TIMESTAMP
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS poi_homepage_summaries (
+        id BIGSERIAL PRIMARY KEY,
+        osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
+        original_url VARCHAR(500) NOT NULL,
+        summary TEXT,
+        summary_model VARCHAR(100),
+        summary_status VARCHAR(20),
+        summary_error TEXT,
+        summarized_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (osm_id, original_url)
+      )
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_poi_homepage_summaries_osm_id
+      ON poi_homepage_summaries(osm_id)
+    `);
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS enrichment_tasks (
+        task_id VARCHAR(120) PRIMARY KEY,
+        kind VARCHAR(80) NOT NULL,
+        status VARCHAR(30) NOT NULL,
+        status_message TEXT,
+        current_item VARCHAR(200),
+        processed INTEGER DEFAULT 0,
+        succeeded INTEGER DEFAULT 0,
+        failed INTEGER DEFAULT 0,
+        total INTEGER DEFAULT 0,
+        requested_by TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        completed_at TIMESTAMP,
+        payload JSONB,
+        result JSONB
+      )
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_enrichment_tasks_kind_status
+      ON enrichment_tasks(kind, status, updated_at DESC)
+    `);
+    this._aiSummaryColumnsReady = true;
+  }
+
   async markGoogleQuotaExceeded(osmId, quota, detail = null) {
     const message = getGoogleQuotaExceededMessage(quota);
     await this.createMapping(osmId, null, {
@@ -376,7 +438,7 @@ export class TravelDatabase {
       next_enrichment_at: nextUtcDayWithBuffer(),
       preserve_mapped_at: true,
     });
-    this._enrichmentRestartedAt.delete(osmId);
+    this._enrichmentRestartedAt.delete(getEnrichmentLockKey(osmId));
     return message;
   }
 
@@ -2599,6 +2661,7 @@ export class TravelDatabase {
 
     // Get the osm_id for enrichment logic (needed below)
     osmId = poi.osm_id;
+    const enrichmentKey = getEnrichmentLockKey(osmId);
     if (poi.mapping_status && poi.next_enrichment_at === undefined) {
       try {
         await this.ensureGoogleMappingScheduleColumn();
@@ -2619,16 +2682,16 @@ export class TravelDatabase {
     // Check mapping status to determine if enrichment is needed
     if (poi.mapping_status === 'active' && poi.google_place_id) {
       // Already enriched - complete
-      this._enrichmentRestartedAt.delete(osmId);
+      this._enrichmentRestartedAt.delete(enrichmentKey);
       enrichment_status = 'complete';
     } else if (poi.mapping_status === 'pending') {
       const startedAt = poi.mapped_at ? new Date(poi.mapped_at) : new Date();
       const ageMs = Date.now() - startedAt.getTime();
-      const lastRestartedAt = this._enrichmentRestartedAt.get(osmId) || 0;
+      const lastRestartedAt = this._enrichmentRestartedAt.get(enrichmentKey) || 0;
       const restartedRecently = Date.now() - lastRestartedAt < PENDING_ENRICHMENT_RESTART_COOLDOWN_MS;
       const retryDeferred = isFutureDate(poi.next_enrichment_at);
       const isStale = ageMs > PENDING_ENRICHMENT_STALE_MS &&
-        !this._enrichmentLock.has(osmId) &&
+        !this._enrichmentLock.has(enrichmentKey) &&
         !restartedRecently &&
         !retryDeferred;
       if (isStale) {
@@ -2644,7 +2707,7 @@ export class TravelDatabase {
           ).catch(() => {});
 
           const newStartedAt = new Date();
-          this._enrichmentRestartedAt.set(osmId, newStartedAt.getTime());
+          this._enrichmentRestartedAt.set(enrichmentKey, newStartedAt.getTime());
           const checkBackAt  = new Date(newStartedAt.getTime() + 60000);
           enrichment_status  = 'pending';
           enrichment_message = `Enrichment restarted at ${newStartedAt.toISOString()}. Check back after ${checkBackAt.toISOString()}.`;
@@ -2658,8 +2721,8 @@ export class TravelDatabase {
               `UPDATE osm_google_mappings SET mapping_status = 'error', mapping_notes = $1, next_enrichment_at = $2 WHERE osm_id = $3`,
               [err.message, retryAtFromNow(GOOGLE_ERROR_RETRY_MS), osmId]
             ).catch(() => {});
-          }).finally(() => { this._enrichmentLock.delete(osmId); });
-          this._enrichmentLock.set(osmId, enrichmentPromise);
+          }).finally(() => { this._enrichmentLock.delete(enrichmentKey); });
+          this._enrichmentLock.set(enrichmentKey, enrichmentPromise);
         }
       } else {
         enrichment_status = 'pending';
@@ -2673,12 +2736,12 @@ export class TravelDatabase {
         }
       }
     } else if (poi.mapping_status === 'not_found') {
-      this._enrichmentRestartedAt.delete(osmId);
+      this._enrichmentRestartedAt.delete(enrichmentKey);
       enrichment_status = 'failed';
       const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
       enrichment_message = `Google Places enrichment attempted but no matching location was found. Only OpenStreetMap data is available.${attemptedAt ? ` (last attempted: ${attemptedAt})` : ''}`;
     } else if (poi.mapping_status === 'error') {
-      this._enrichmentRestartedAt.delete(osmId);
+      this._enrichmentRestartedAt.delete(enrichmentKey);
       enrichment_status = 'failed';
       const attemptedAt = poi.mapped_at ? new Date(poi.mapped_at).toLocaleString('en-GB', { dateStyle: 'medium', timeStyle: 'short', timeZone: 'UTC' }) + ' UTC' : null;
       if (poi.mapping_notes?.includes('daily API limit')) {
@@ -2698,7 +2761,7 @@ export class TravelDatabase {
       await this.ensureGooglePlacesReady();
       if (this.googlePlaces && this.googlePlaces.isEnabled()) {
         // Check if enrichment is already in-flight for this POI (dedup concurrent requests)
-        if (this._enrichmentLock.has(osmId)) {
+        if (this._enrichmentLock.has(enrichmentKey)) {
           enrichment_status = 'pending';
           enrichment_message = 'Google Places enrichment already in progress. Check back shortly for complete information.';
         } else {
@@ -2739,9 +2802,9 @@ export class TravelDatabase {
                 WHERE osm_id = $3
               `, [err.message, retryAtFromNow(GOOGLE_ERROR_RETRY_MS), osmId]).catch(() => {});
             }).finally(() => {
-              this._enrichmentLock.delete(osmId);
+              this._enrichmentLock.delete(enrichmentKey);
             });
-            this._enrichmentLock.set(osmId, enrichmentPromise);
+            this._enrichmentLock.set(enrichmentKey, enrichmentPromise);
           }
         }
       } else {
@@ -2975,7 +3038,28 @@ export class TravelDatabase {
    * @returns {Promise<void>} Resolves when enrichment completes or is skipped (cached/quota/not found)
    * @throws {Error} If database queries fail
    */
-  async enrichOSMPOI(osmId, { forcePending = false } = {}) {
+  async enrichOSMPOI(osmId, options = {}) {
+    const enrichmentKey = getEnrichmentLockKey(osmId);
+    const existing = this._enrichmentLock.get(enrichmentKey);
+    if (existing) {
+      return existing;
+    }
+
+    const promise = this.enrichOSMPOIUnlocked(osmId, options).finally(() => {
+      this._enrichmentLock.delete(enrichmentKey);
+      this._enrichmentLockInfo.delete(enrichmentKey);
+    });
+    this._enrichmentLock.set(enrichmentKey, promise);
+    this._enrichmentLockInfo.set(enrichmentKey, {
+      osmId: enrichmentKey,
+      taskId: options.taskId || null,
+      forcePending: options.forcePending === true,
+      startedAt: new Date().toISOString(),
+    });
+    return promise;
+  }
+
+  async enrichOSMPOIUnlocked(osmId, { forcePending = false } = {}) {
     await this.ensureGooglePlacesReady();
 
     if (!this.googlePlaces || !this.googlePlaces.isEnabled()) {
@@ -3303,6 +3387,297 @@ export class TravelDatabase {
     ]);
   }
 
+  async getOpenAIPlaceSummaryConfig() {
+    const apiKey = await this.getConfigCached('openai_api_key', process.env.OPENAI_API_KEY || null);
+    const model = await this.getConfigCached('openai_place_summary_model', 'gpt-5-mini');
+    const reviewSummaryEnabled = String(await this.getConfigCached('review_summary_enabled', '1')) !== '0';
+    const homepageSummaryEnabled = String(await this.getConfigCached('homepage_summary_enabled', '1')) !== '0';
+
+    return {
+      apiKey,
+      model: model || 'gpt-5-mini',
+      reviewSummaryEnabled: !!apiKey && reviewSummaryEnabled,
+      homepageSummaryEnabled: !!apiKey && homepageSummaryEnabled,
+    };
+  }
+
+  async getPlaceForAiSummary(osmId) {
+    await this.ensureAiSummaryColumns();
+    const result = await this.pool.query(`
+      SELECT
+        p.osm_id,
+        p.poi_type,
+        p.website AS osm_website,
+        c.name AS city,
+        g.google_place_id,
+        g.name,
+        g.primary_type,
+        g.formatted_address,
+        g.website_uri,
+        g.rating,
+        g.user_rating_count,
+        g.reviews,
+        g.ai_review_summary,
+        h.summary AS ai_homepage_summary,
+        h.original_url AS ai_homepage_url,
+        h.summary_status AS ai_homepage_summary_status
+      FROM osm_google_mappings m
+      JOIN osm_pois p ON p.osm_id = m.osm_id
+      LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
+      JOIN google_places g ON g.google_place_id = m.google_place_id
+      LEFT JOIN LATERAL (
+        SELECT summary, original_url, summary_status
+        FROM poi_homepage_summaries
+        WHERE osm_id = p.osm_id
+        ORDER BY summarized_at DESC NULLS LAST, updated_at DESC
+        LIMIT 1
+      ) h ON true
+      WHERE m.osm_id = $1
+        AND m.mapping_status = 'active'
+        AND m.google_place_id IS NOT NULL
+    `, [osmId]);
+    return result.rows[0] || null;
+  }
+
+  async summarizeEnrichedPOI(osmId, { force = false, summarizer = null } = {}) {
+    const config = await this.getOpenAIPlaceSummaryConfig();
+    if (!config.reviewSummaryEnabled && !config.homepageSummaryEnabled) {
+      return { skipped: true, reason: 'OpenAI summaries are disabled or no OpenAI API key is configured' };
+    }
+
+    const place = await this.getPlaceForAiSummary(osmId);
+    if (!place) {
+      return { skipped: true, reason: `No active Google Places enrichment found for OSM ${osmId}` };
+    }
+
+    const reviewDue = config.reviewSummaryEnabled &&
+      (force || !place.ai_review_summary) &&
+      Array.isArray(place.reviews) &&
+      place.reviews.length > 0;
+    const homepageUrl = sanitizeHttpUrl(place.website_uri) || sanitizeHttpUrl(place.osm_website);
+    const homepageDue = config.homepageSummaryEnabled &&
+      homepageUrl &&
+      (force || !place.ai_homepage_summary || place.ai_homepage_url !== homepageUrl);
+
+    if (!reviewDue && !homepageDue) {
+      return { skipped: true, reason: `No AI summary work due for OSM ${osmId}` };
+    }
+
+    const client = summarizer || createOpenAIPlaceSummarizer({ apiKey: config.apiKey, model: config.model });
+    const updates = {
+      reviewSummary: null,
+      homepageSummary: null,
+      homepageUrl: null,
+      status: 'completed',
+      error: null,
+    };
+
+    try {
+      if (reviewDue) {
+        updates.reviewSummary = await client.summarizeReviews(place);
+      }
+      if (homepageDue) {
+        const homepageResult = await client.summarizeHomepage(place);
+        updates.homepageSummary = homepageResult?.summary || null;
+        updates.homepageUrl = homepageResult?.url || homepageUrl;
+      }
+
+      if (updates.reviewSummary) {
+        await this.saveAiReviewSummary(place.google_place_id, {
+          summary: updates.reviewSummary,
+          status: updates.status,
+          error: updates.error,
+          model: client.model || config.model,
+        });
+      }
+      if (updates.homepageSummary) {
+        await this.savePoiHomepageSummary(place.osm_id, {
+          originalUrl: updates.homepageUrl,
+          summary: updates.homepageSummary,
+          status: updates.status,
+          error: updates.error,
+          model: client.model || config.model,
+        });
+      }
+      return {
+        skipped: false,
+        googlePlaceId: place.google_place_id,
+        reviewSummary: updates.reviewSummary,
+        homepageSummary: updates.homepageSummary,
+        homepageUrl: updates.homepageUrl,
+      };
+    } catch (error) {
+      if (reviewDue) {
+        await this.saveAiReviewSummary(place.google_place_id, {
+          status: 'error',
+          error: error.message,
+          model: client.model || config.model,
+        }).catch(() => {});
+      }
+      if (homepageDue) {
+        await this.savePoiHomepageSummary(place.osm_id, {
+          originalUrl: homepageUrl,
+          status: 'error',
+          error: error.message,
+          model: client.model || config.model,
+        }).catch(() => {});
+      }
+      throw error;
+    }
+  }
+
+  async saveAiReviewSummary(googlePlaceId, {
+    summary = null,
+    status = 'completed',
+    error = null,
+    model = null,
+  } = {}) {
+    await this.ensureAiSummaryColumns();
+    await this.pool.query(`
+      UPDATE google_places
+      SET
+        ai_review_summary = COALESCE($2, ai_review_summary),
+        ai_review_summary_model = COALESCE($3, ai_review_summary_model),
+        ai_review_summary_status = $4,
+        ai_review_summary_error = $5,
+        ai_review_summarized_at = CURRENT_TIMESTAMP
+      WHERE google_place_id = $1
+    `, [googlePlaceId, summary, model, status, error]);
+  }
+
+  async savePoiHomepageSummary(osmId, {
+    originalUrl,
+    summary = null,
+    status = 'completed',
+    error = null,
+    model = null,
+  } = {}) {
+    await this.ensureAiSummaryColumns();
+    await this.pool.query(`
+      INSERT INTO poi_homepage_summaries (
+        osm_id,
+        original_url,
+        summary,
+        summary_model,
+        summary_status,
+        summary_error,
+        summarized_at,
+        updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT (osm_id, original_url) DO UPDATE SET
+        summary = COALESCE(EXCLUDED.summary, poi_homepage_summaries.summary),
+        summary_model = COALESCE(EXCLUDED.summary_model, poi_homepage_summaries.summary_model),
+        summary_status = EXCLUDED.summary_status,
+        summary_error = EXCLUDED.summary_error,
+        summarized_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+    `, [osmId, originalUrl, summary, model, status, error]);
+  }
+
+  async getDueAiSummaryEntries(limit = 100) {
+    await this.ensureAiSummaryColumns();
+    const result = await this.pool.query(`
+      SELECT m.osm_id
+      FROM osm_google_mappings m
+      JOIN osm_pois p ON p.osm_id = m.osm_id
+      JOIN google_places g ON g.google_place_id = m.google_place_id
+      WHERE m.mapping_status = 'active'
+        AND m.google_place_id IS NOT NULL
+        AND (
+          (g.reviews IS NOT NULL AND jsonb_array_length(g.reviews) > 0 AND g.ai_review_summary IS NULL)
+          OR (
+            COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, '')) IS NOT NULL
+            AND NOT EXISTS (
+              SELECT 1
+              FROM poi_homepage_summaries h
+              WHERE h.osm_id = m.osm_id
+                AND h.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
+                AND h.summary IS NOT NULL
+            )
+          )
+        )
+      ORDER BY g.enriched_at DESC NULLS LAST
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
+  }
+
+  async recordEnrichmentTask(task) {
+    await this.ensureAiSummaryColumns();
+    await this.pool.query(`
+      INSERT INTO enrichment_tasks (
+        task_id,
+        kind,
+        status,
+        status_message,
+        current_item,
+        processed,
+        succeeded,
+        failed,
+        total,
+        requested_by,
+        payload,
+        result,
+        updated_at,
+        completed_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP,
+        CASE WHEN $3 IN ('completed', 'failed', 'cancelled') THEN CURRENT_TIMESTAMP ELSE NULL END
+      )
+      ON CONFLICT (task_id) DO UPDATE SET
+        status = EXCLUDED.status,
+        status_message = EXCLUDED.status_message,
+        current_item = EXCLUDED.current_item,
+        processed = EXCLUDED.processed,
+        succeeded = EXCLUDED.succeeded,
+        failed = EXCLUDED.failed,
+        total = EXCLUDED.total,
+        requested_by = COALESCE(EXCLUDED.requested_by, enrichment_tasks.requested_by),
+        payload = EXCLUDED.payload,
+        result = EXCLUDED.result,
+        updated_at = CURRENT_TIMESTAMP,
+        completed_at = CASE
+          WHEN EXCLUDED.status IN ('completed', 'failed', 'cancelled') THEN CURRENT_TIMESTAMP
+          ELSE enrichment_tasks.completed_at
+        END
+    `, [
+      task.taskId,
+      task.kind,
+      task.status,
+      task.statusMessage,
+      task.currentItem,
+      task.processed,
+      task.succeeded,
+      task.failed,
+      task.total,
+      task.requestedBy ? JSON.stringify(task.requestedBy) : null,
+      JSON.stringify(task.payload || {}),
+      task.result ? JSON.stringify(task.result) : null,
+    ]);
+  }
+
+  async listEnrichmentTaskRows({ kind = null, limit = 50 } = {}) {
+    await this.ensureAiSummaryColumns();
+    const boundedLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 50, 1), 200);
+    const params = [];
+    let where = '';
+    if (kind) {
+      params.push(kind);
+      where = 'WHERE kind = $1';
+    }
+    params.push(boundedLimit);
+    const result = await this.pool.query(`
+      SELECT *
+      FROM enrichment_tasks
+      ${where}
+      ORDER BY updated_at DESC
+      LIMIT $${params.length}
+    `, params);
+    return result.rows;
+  }
+
   /**
    * Create or update mapping between OSM POI and Google Place
    */
@@ -3404,7 +3779,7 @@ export class TravelDatabase {
 
     // Skip any POI already being enriched (lock held by getPOIDetails stale handler or null handler).
     // enrichOSMPOI itself enforces skip-if-active and daily quota limits.
-    const uniqueIds = [...new Set(osmIds)].filter(id => !this._enrichmentLock.has(id));
+    const uniqueIds = [...new Set(osmIds)].filter(id => !this._enrichmentLock.has(getEnrichmentLockKey(id)));
     if (uniqueIds.length === 0) return;
 
     const dueResult = await this.pool.query(`
@@ -3425,6 +3800,13 @@ export class TravelDatabase {
         telemetry.captureException(err, { context: 'batch_enrichment', osmId: osm_id });
       });
     }
+  }
+
+  getActiveEnrichmentOperations() {
+    return Array.from(this._enrichmentLockInfo.values()).map(info => ({
+      ...info,
+      ageMs: Math.max(0, Date.now() - new Date(info.startedAt).getTime()),
+    }));
   }
 
   /**

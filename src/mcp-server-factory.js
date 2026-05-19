@@ -17,11 +17,11 @@ import { defaultMaintenanceTaskManager, isAdminUser } from './maintenance-tasks.
 import { render } from './templates/index.js';
 import {
   executeToolHandler,
-  geonamesRefreshToolNames,
   getPromptMessages,
   getResourcesConfig,
   getToolsConfig,
   handleReadResource,
+  maintenanceTaskToolNames,
   promptsConfig,
 } from './tools-config.js';
 import { getVersionString } from './version.js';
@@ -71,7 +71,7 @@ export function createTravelMCPServer({
 
     return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
       try {
-        if (isTaskRequest && !geonamesRefreshToolNames.has(name)) {
+        if (isTaskRequest && !maintenanceTaskToolNames.has(name)) {
           throw new Error(`Task creation is not supported for tool: ${name}`);
         }
 

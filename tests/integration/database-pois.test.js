@@ -1581,6 +1581,28 @@ describe('TravelDatabase POI Search Functions', () => {
   });
 
   describe('batchEnrichPOIs', () => {
+    it('should deduplicate concurrent enrichment for the same POI', async () => {
+      db = new TravelDatabase({ pool: mockPool });
+      let calls = 0;
+      let release;
+      db.enrichOSMPOIUnlocked = async () => {
+        calls += 1;
+        await new Promise(resolve => { release = resolve; });
+      };
+
+      const first = db.enrichOSMPOI(12345, { forcePending: true });
+      const second = db.enrichOSMPOI('12345');
+
+      assert.strictEqual(calls, 1);
+      assert.strictEqual(db.getActiveEnrichmentOperations().length, 1);
+
+      release();
+      await Promise.all([first, second]);
+
+      assert.strictEqual(calls, 1);
+      assert.strictEqual(db.getActiveEnrichmentOperations().length, 0);
+    });
+
     it('should enrich due POIs serially in database-scheduled order', async () => {
       mockPool.setResponse('FROM unnest', dbResult([
         { osm_id: 300 },

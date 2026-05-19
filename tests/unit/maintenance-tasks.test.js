@@ -25,6 +25,15 @@ function createClock() {
   };
 }
 
+async function waitForTaskStatus(manager, taskId, expectedStatus) {
+  for (let i = 0; i < 20; i += 1) {
+    const task = manager.getTask(taskId);
+    if (task?.status === expectedStatus) return task;
+    await new Promise(resolve => setImmediate(resolve));
+  }
+  assert.fail(`Task ${taskId} did not reach status ${expectedStatus}`);
+}
+
 describe('MaintenanceTaskManager', () => {
   it('detects admin users from user_config role', () => {
     assert.equal(isAdminUser({ config: { role: 'admin' } }), true);
@@ -130,5 +139,107 @@ describe('MaintenanceTaskManager', () => {
     assert.equal(child.killedSignal, 'SIGTERM');
     assert.equal(cancelled.status, 'cancelled');
     assert.equal(manager.getTaskPayload(task.taskId).isError, true);
+  });
+
+  it('starts a Google Places enrichment task for stale entries', async () => {
+    const calls = [];
+    const db = {
+      getStaleGooglePlacesEntries: async (limit) => {
+        assert.equal(limit, 2);
+        return [{ osm_id: 300 }, { osm_id: '100' }];
+      },
+      enrichOSMPOI: async (osmId, options) => {
+        calls.push({ osmId, options });
+      },
+    };
+    const manager = new MaintenanceTaskManager({ now: createClock() });
+
+    const { task, alreadyRunning } = manager.startGooglePlacesEnrichment({
+      db,
+      limit: 2,
+      user: { id: 7, email: 'admin@example.com' },
+    });
+
+    assert.equal(alreadyRunning, false);
+    assert.match(task.taskId, /^google_places_enrichment-/);
+
+    const completed = await waitForTaskStatus(manager, task.taskId, 'completed');
+    assert.equal(completed.statusMessage, 'Google Places stale cache enrichment for 2 POIs completed successfully');
+    assert.deepEqual(calls, [
+      { osmId: '300', options: { taskId: task.taskId } },
+      { osmId: '100', options: { taskId: task.taskId } },
+    ]);
+
+    const parsed = JSON.parse(manager.getTaskPayload(task.taskId).content[0].text);
+    assert.equal(parsed.kind, 'google_places_enrichment');
+    assert.deepEqual(parsed.stats, { total: 2, processed: 2, succeeded: 2, failed: 0 });
+  });
+
+  it('cancels a Google Places enrichment task before the next POI', async () => {
+    let releaseCurrent;
+    const calls = [];
+    const db = {
+      enrichOSMPOI: async (osmId) => {
+        calls.push(osmId);
+        await new Promise(resolve => { releaseCurrent = resolve; });
+      },
+    };
+    const manager = new MaintenanceTaskManager({ now: createClock() });
+
+    const { task } = manager.startGooglePlacesEnrichment({
+      db,
+      osmIds: [101, 202],
+      user: { id: 7, email: 'admin@example.com' },
+    });
+
+    for (let i = 0; i < 20 && calls.length === 0; i += 1) {
+      await new Promise(resolve => setImmediate(resolve));
+    }
+    assert.deepEqual(calls, ['101']);
+
+    const cancelled = manager.cancelTask(task.taskId);
+    assert.equal(cancelled.status, 'cancelled');
+
+    releaseCurrent();
+    await new Promise(resolve => setImmediate(resolve));
+    assert.deepEqual(calls, ['101']);
+  });
+
+  it('starts an AI place summary task and records db-visible task rows', async () => {
+    const calls = [];
+    const taskRows = [];
+    const db = {
+      getDueAiSummaryEntries: async (limit) => {
+        assert.equal(limit, 2);
+        return [{ osm_id: 101 }, { osm_id: 202 }];
+      },
+      summarizeEnrichedPOI: async (osmId, options) => {
+        calls.push({ osmId, options });
+        return osmId === '202' ? { skipped: true, reason: 'No reviews' } : { skipped: false };
+      },
+      recordEnrichmentTask: async (row) => {
+        taskRows.push(row);
+      },
+    };
+    const manager = new MaintenanceTaskManager({ now: createClock() });
+
+    const { task } = manager.startAiPlaceSummary({
+      db,
+      limit: 2,
+      force: true,
+      user: { id: 7, email: 'admin@example.com' },
+    });
+
+    const completed = await waitForTaskStatus(manager, task.taskId, 'completed');
+    assert.equal(completed.statusMessage, 'AI place summaries for 2 POIs completed successfully');
+    assert.deepEqual(calls, [
+      { osmId: '101', options: { force: true } },
+      { osmId: '202', options: { force: true } },
+    ]);
+
+    const parsed = JSON.parse(manager.getTaskPayload(task.taskId).content[0].text);
+    assert.equal(parsed.kind, 'ai_place_summary');
+    assert.deepEqual(parsed.stats, { total: 2, processed: 2, succeeded: 1, failed: 0, skipped: 1 });
+    assert.ok(taskRows.some(row => row.kind === 'ai_place_summary' && row.status === 'completed'));
   });
 });

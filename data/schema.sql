@@ -67,6 +67,10 @@ INSERT INTO app_config (key, value, encrypted, description) VALUES
     ('google_places_cache_hours', '168', FALSE, 'Hours to cache Google Places data (default: 7 days)'),
     ('google_analytics_measurement_id', NULL, FALSE, 'Google Analytics measurement ID for optional gtag.js web analytics'),
     ('google_api_daily_limit', '100', FALSE, 'Daily limit for Google Places API calls (default: 100)'),
+    ('openai_api_key', NULL, TRUE, 'OpenAI API key for AI enrichment jobs'),
+    ('openai_place_summary_model', 'gpt-5-mini', FALSE, 'OpenAI model for place review and homepage summaries'),
+    ('review_summary_enabled', '1', FALSE, 'Enable AI summaries from Google review text (1 enabled, 0 disabled)'),
+    ('homepage_summary_enabled', '1', FALSE, 'Enable AI summaries from official property homepages (1 enabled, 0 disabled)'),
     ('sentry_dsn', NULL, TRUE, 'Sentry DSN for error tracking and performance monitoring'),
     ('telemetry_enabled', 'true', FALSE, 'Enable/disable telemetry (errors + performance)'),
     ('telemetry_sample_rate', '1.0', FALSE, 'Trace sample rate 0.0-1.0'),
@@ -244,6 +248,11 @@ CREATE TABLE IF NOT EXISTS google_places (
     plus_code JSONB,
     viewport JSONB,
     address_components JSONB,
+    ai_review_summary TEXT,
+    ai_review_summary_model VARCHAR(100),
+    ai_review_summary_status VARCHAR(20),
+    ai_review_summary_error TEXT,
+    ai_review_summarized_at TIMESTAMP,
 
     -- Metadata
     enriched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -255,6 +264,26 @@ CREATE INDEX IF NOT EXISTS idx_google_places_location ON google_places USING GIS
 CREATE INDEX IF NOT EXISTS idx_google_places_name ON google_places(name);
 CREATE INDEX IF NOT EXISTS idx_google_places_rating ON google_places(rating DESC) WHERE rating IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_google_places_types ON google_places USING GIN(types);
+
+CREATE TABLE IF NOT EXISTS enrichment_tasks (
+    task_id VARCHAR(120) PRIMARY KEY,
+    kind VARCHAR(80) NOT NULL,
+    status VARCHAR(30) NOT NULL,
+    status_message TEXT,
+    current_item VARCHAR(200),
+    processed INTEGER DEFAULT 0,
+    succeeded INTEGER DEFAULT 0,
+    failed INTEGER DEFAULT 0,
+    total INTEGER DEFAULT 0,
+    requested_by TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    completed_at TIMESTAMP,
+    payload JSONB,
+    result JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_enrichment_tasks_kind_status ON enrichment_tasks(kind, status, updated_at DESC);
 
 -- ============================================================================
 -- OSM to Google Places Mapping
@@ -356,6 +385,22 @@ CREATE INDEX IF NOT EXISTS idx_osm_pois_nearest_city_id ON osm_pois(nearest_city
 CREATE INDEX IF NOT EXISTS idx_osm_pois_name_trgm ON osm_pois USING GIN(name gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_osm_pois_name_en_trgm ON osm_pois USING GIN(name_en gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_osm_pois_tags_gin ON osm_pois USING GIN(tags);
+
+CREATE TABLE IF NOT EXISTS poi_homepage_summaries (
+    id BIGSERIAL PRIMARY KEY,
+    osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
+    original_url VARCHAR(500) NOT NULL,
+    summary TEXT,
+    summary_model VARCHAR(100),
+    summary_status VARCHAR(20),
+    summary_error TEXT,
+    summarized_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (osm_id, original_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_poi_homepage_summaries_osm_id ON poi_homepage_summaries(osm_id);
 
 -- ============================================================================
 -- Hotel Chain / Brand Reference Data
@@ -483,6 +528,17 @@ SELECT
     g.amenities as google_amenities,
     g.plus_code as google_plus_code,
     g.address_components as google_address_components,
+    g.ai_review_summary,
+    g.ai_review_summary_model,
+    g.ai_review_summary_status,
+    g.ai_review_summary_error,
+    g.ai_review_summarized_at,
+    h.summary as ai_homepage_summary,
+    h.original_url as ai_homepage_url,
+    h.summary_model as ai_homepage_summary_model,
+    h.summary_status as ai_homepage_summary_status,
+    h.summary_error as ai_homepage_summary_error,
+    h.summarized_at as ai_homepage_summarized_at,
     g.enriched_at as google_enriched_at,
     g.cache_expires_at as google_cache_expires_at,
 
@@ -499,7 +555,14 @@ SELECT
 FROM osm_pois p
 LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id
 LEFT JOIN osm_google_mappings m ON p.osm_id = m.osm_id
-LEFT JOIN google_places g ON m.google_place_id = g.google_place_id AND m.mapping_status = 'active';
+LEFT JOIN google_places g ON m.google_place_id = g.google_place_id AND m.mapping_status = 'active'
+LEFT JOIN LATERAL (
+    SELECT summary, original_url, summary_model, summary_status, summary_error, summarized_at
+    FROM poi_homepage_summaries
+    WHERE osm_id = p.osm_id
+    ORDER BY summarized_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+) h ON true;
 
 -- ============================================================================
 -- Helper Functions
