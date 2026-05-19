@@ -390,18 +390,26 @@
               <h3>No saved places yet</h3>
               <p>Add places from Atlas or a place detail page to compose a trip.</p>
             </div>
-            <div class="board" x-show="$store.favorites.items.length > 0">
-              <template x-for="column in $store.favorites.columns()" :key="column.key">
-                <section class="board-column">
-                  <h2 x-text="column.label"></h2>
-                  <p class="board-column-summary" x-text="column.subtitle"></p>
-                  <template x-for="fav in column.items" :key="fav.osm_id || fav.poi_osm_id">
-                    <article class="board-card" @click="$store.poi.open(fav.osm_id || fav.poi_osm_id)">
-                      <strong x-text="fav.name || fav.osm_name || 'Unknown place'"></strong>
-                      <small x-text="$store.favorites.itemMeta(fav)"></small>
-                      <textarea placeholder="Add a note" x-model="fav.favorite_notes" @click.stop @change.stop="$store.favorites.saveNote(fav, fav.favorite_notes)"></textarea>
-                    </article>
-                  </template>
+            <div class="trip-areas" x-show="$store.favorites.items.length > 0">
+              <template x-for="area in $store.favorites.areas()" :key="area.key">
+                <section class="trip-area" :style="$store.favorites.areaStyle(area)">
+                  <div class="trip-area-header">
+                    <div>
+                      <div class="eyebrow" x-text="area.backgroundKind === 'streetmap' ? 'Street map cluster' : 'Saved area'"></div>
+                      <h2 x-text="area.label"></h2>
+                      <p x-text="area.subtitle"></p>
+                    </div>
+                    <span class="trip-area-source" x-show="area.backgroundCredit" x-text="area.backgroundCredit"></span>
+                  </div>
+                  <div class="trip-area-places">
+                    <template x-for="fav in area.items" :key="fav.osm_id || fav.poi_osm_id">
+                      <article class="trip-area-card" @click="$store.poi.open(fav.osm_id || fav.poi_osm_id)">
+                        <strong x-text="fav.name || fav.osm_name || 'Unknown place'"></strong>
+                        <small x-text="$store.favorites.itemMeta(fav)"></small>
+                        <textarea placeholder="Add a note" x-model="fav.favorite_notes" @click.stop @change.stop="$store.favorites.saveNote(fav, fav.favorite_notes)"></textarea>
+                      </article>
+                    </template>
+                  </div>
                 </section>
               </template>
             </div>

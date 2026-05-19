@@ -546,6 +546,66 @@ button { cursor: pointer; }
 .composer-header { margin-bottom: 18px; }
 .composer-header h1 { font-size: clamp(36px, 6vw, 64px); }
 .composer-authenticated { display: grid; gap: 16px; }
+.trip-areas { display: grid; gap: 18px; }
+.trip-area {
+  min-height: 250px;
+  padding: 18px;
+  color: white;
+  background-position: center;
+  background-size: cover;
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+  display: grid;
+  align-content: space-between;
+  gap: 18px;
+}
+.trip-area-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+.trip-area-header h2 {
+  margin: 4px 0 6px;
+  font-size: clamp(28px, 4vw, 46px);
+  line-height: .95;
+  max-width: 760px;
+}
+.trip-area-header p {
+  margin: 0;
+  color: rgba(255,255,255,.86);
+  font-size: 14px;
+}
+.trip-area-source {
+  flex: 0 0 auto;
+  padding: 7px 9px;
+  border: 1px solid rgba(255,255,255,.28);
+  border-radius: 999px;
+  background: rgba(15,23,42,.48);
+  color: rgba(255,255,255,.88);
+  font-size: 12px;
+}
+.trip-area-places {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.trip-area-card {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid rgba(255,255,255,.38);
+  border-radius: 8px;
+  background: rgba(255,255,255,.92);
+  color: var(--ink);
+  cursor: pointer;
+}
+.trip-area-card small { color: var(--muted); }
+.trip-area-card textarea {
+  min-height: 70px;
+  font-size: 13px;
+  resize: vertical;
+}
 .board { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; align-items: start; }
 .board-column {
   min-height: 360px;
@@ -625,6 +685,10 @@ button { cursor: pointer; }
   .home-place-card .place-body p { font-size: 13px; margin-bottom: 10px; }
   .home-place-card .place-actions button { width: 34px; height: 34px; font-size: 16px; }
   .signal-grid, .data-status-grid { grid-template-columns: 1fr; }
+  .trip-area { padding: 14px; }
+  .trip-area-header { display: grid; }
+  .trip-area-header h2 { font-size: 32px; }
+  .trip-area-places { grid-template-columns: 1fr; }
   .atlas { min-height: calc(100vh - 48px); }
   .atlas-rail { min-height: 45vh; }
 }

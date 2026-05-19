@@ -1123,8 +1123,18 @@ Alpine.store('favorites', {
     poi.favorite_notes = null;
     this.load();
   },
-  columns() {
+  areas() {
     return groupFavoritesByProximity(this.items);
+  },
+  columns() {
+    return this.areas();
+  },
+  areaStyle(area = {}) {
+    const url = cssUrl(area.backgroundUrl);
+    if (url) {
+      return `background-image: linear-gradient(90deg, rgba(15,23,42,.88), rgba(15,23,42,.56) 50%, rgba(15,23,42,.18)), url("${url}")`;
+    }
+    return 'background-image: linear-gradient(135deg, #172033, #0f766e 58%, #b45309)';
   },
   itemMeta(fav) {
     const meta = Alpine.store('format').placeMeta(fav);
