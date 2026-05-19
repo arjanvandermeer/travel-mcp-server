@@ -353,9 +353,28 @@
 }
 .composer-actions {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr auto;
   gap: 8px;
   margin-top: 10px;
+}
+.unfavorite-button {
+  min-width: 48px;
+  position: relative;
+  color: #991b1b;
+}
+.unfavorite-button span {
+  display: inline-block;
+  font-size: 20px;
+  line-height: 1;
+}
+.unfavorite-button span::after {
+  content: '';
+  position: absolute;
+  left: 14px;
+  right: 14px;
+  top: 50%;
+  border-top: 2px solid currentColor;
+  transform: rotate(-28deg);
 }
 textarea {
   width: 100%;

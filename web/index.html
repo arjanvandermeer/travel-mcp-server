@@ -345,7 +345,15 @@
                   @click="$store.poi.editNote()"
                   @blur="$store.poi.finishNoteEdit()"></textarea>
                 <div class="composer-actions">
-                  <button class="primary-button" @click="$store.poi.toggleFavorite()" x-text="$store.poi.current.is_favorite ? 'Saved' : 'Save'"></button>
+                  <button class="primary-button" @click="$store.poi.saveComposer()">Save</button>
+                  <button
+                    class="secondary-button unfavorite-button"
+                    x-show="$store.poi.current.is_favorite"
+                    @click="$store.poi.removeFavorite()"
+                    aria-label="Remove this place from saved places"
+                    title="Remove from saved places">
+                    <span aria-hidden="true">♡</span>
+                  </button>
                 </div>
               </aside>
             </div>

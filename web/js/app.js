@@ -1060,6 +1060,21 @@ Alpine.store('poi', {
     await Alpine.store('favorites').toggle(this.current);
     this.syncFavoriteNote(this.current);
   },
+  async saveComposer() {
+    if (!this.current) return;
+    if (!Alpine.store('auth').authenticated) {
+      Alpine.store('auth').login();
+      return;
+    }
+    await Alpine.store('favorites').saveNote(this.current, this.note);
+    this.noteSaved = this.note;
+    this.noteEditing = false;
+  },
+  async removeFavorite() {
+    if (!this.current?.is_favorite) return;
+    await Alpine.store('favorites').remove(this.current);
+    this.syncFavoriteNote(this.current);
+  },
 });
 
 Alpine.store('favorites', {
@@ -1098,6 +1113,15 @@ Alpine.store('favorites', {
     poi.is_favorite = true;
     poi.favorite_notes = notes;
     if (!poi.favorite_since) poi.favorite_since = new Date().toISOString();
+  },
+  async remove(poi) {
+    if (!poi || !Alpine.store('auth').authenticated) return;
+    const osmId = poi.osm_id || poi.poi_osm_id;
+    await apiDelete(`/api/v1/favorites/${osmId}`);
+    poi.is_favorite = false;
+    poi.favorite_since = null;
+    poi.favorite_notes = null;
+    this.load();
   },
   columns() {
     return groupFavoritesByProximity(this.items);

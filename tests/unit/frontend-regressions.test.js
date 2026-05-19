@@ -75,7 +75,9 @@ describe('frontend regressions', () => {
     assert.match(indexHtml, /hero-actions[\s\S]*hero-icon-button[\s\S]*websiteUrl\(\)[\s\S]*phoneUrl\(\)/, 'PDP should expose save, maps, website, and call as hero icon actions');
     assert.match(indexHtml, /favorite-date-button[\s\S]*Bookmarked[\s\S]*favoriteSinceLabel\(\)/, 'PDP Trip Composer should show when an existing favorite was bookmarked');
     assert.match(indexHtml, /x-ref="tripComposerNote"[\s\S]*readonly[\s\S]*finishNoteEdit\(\)/, 'PDP Trip Composer notes should be click-to-edit and save on blur');
+    assert.match(indexHtml, /saveComposer\(\)[\s\S]*unfavorite-button[\s\S]*removeFavorite\(\)/, 'PDP Trip Composer should separate saving notes from removing a favorite');
     assert.match(appJs, /syncFavoriteNote\(this\.current\)/, 'PDP should hydrate Trip Composer notes from the favorite record');
+    assert.match(appJs, /saveComposer\(\)[\s\S]*saveNote\(this\.current, this\.note\)/, 'PDP Trip Composer save should upsert notes without toggling favorite state');
     assert.match(formatStoreJs, /favoriteDate\(value\)/, 'PDP should format the favorite bookmarked date');
     assert.match(appJs, /groupFavoritesByProximity\(this\.items\)/, 'Trip Composer should group saved places by proximity');
     assert.match(proximityJs, /distanceKm[\s\S]*FAVORITE_CLUSTER_RADIUS_KM/, 'Trip Composer proximity grouping should be distance-based');
