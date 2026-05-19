@@ -93,7 +93,10 @@ export class ApiRouter {
  * Send a JSON response
  */
 export function sendJson(res, status, data) {
-  res.writeHead(status, { 'Content-Type': 'application/json' });
+  res.writeHead(status, {
+    'Content-Type': 'application/json',
+    'Cache-Control': 'no-store, max-age=0',
+  });
   res.end(JSON.stringify(data));
 }
 

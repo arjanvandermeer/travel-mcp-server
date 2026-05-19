@@ -46,6 +46,7 @@ describe('ApiRouter', () => {
     assert.strictEqual(handled, true);
     assert.strictEqual(called, true);
     assert.strictEqual(res.statusCode, 200);
+    assert.strictEqual(res.headers['Cache-Control'], 'no-store, max-age=0');
     assert.deepStrictEqual(JSON.parse(res.body), { ok: true });
   });
 

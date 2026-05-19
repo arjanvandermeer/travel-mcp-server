@@ -10,7 +10,7 @@ export async function apiGet(path, params = {}) {
     if (v != null && v !== '') url.searchParams.set(k, v);
   });
 
-  const res = await fetch(url, { credentials: 'same-origin' });
+  const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new Error(body.message || body.error || `HTTP ${res.status}`);
