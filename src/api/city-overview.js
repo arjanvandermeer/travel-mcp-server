@@ -5,6 +5,15 @@
 import { createErrorEnvelope, sendJson } from '../api-router.js';
 import { accommodationTypes, attractionTypes, foodTypes } from '../tools-config.js';
 
+function collectOverviewOsmIds(...groups) {
+  return [...new Set(
+    groups
+      .flat()
+      .map(poi => poi?.osm_id)
+      .filter(Boolean)
+  )];
+}
+
 export function registerCityOverviewRoutes(router) {
   router.get('/api/v1/cities/:country_code/:city_name/overview', async (req, res, { db, params, user }) => {
     const countryCode = params.country_code?.toUpperCase();
@@ -51,5 +60,11 @@ export function registerCityOverviewRoutes(router) {
         zoom: city.population > 1000000 ? 12 : 13,
       },
     });
+
+    // Fire-and-forget enrichment for the cards the homepage just put on screen.
+    if (typeof db.batchEnrichPOIs === 'function') {
+      const osmIds = collectOverviewOsmIds(hotels, restaurants, attractions);
+      if (osmIds.length > 0) db.batchEnrichPOIs(osmIds).catch(() => {});
+    }
   });
 }

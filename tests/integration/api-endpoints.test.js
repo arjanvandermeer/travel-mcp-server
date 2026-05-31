@@ -582,6 +582,29 @@ describe('GET /api/v1/cities/:country_code/:city_name/overview', () => {
     assert.strictEqual(data.city.name, 'Bangkok');
     assert.strictEqual(data.top.stays.length, 1);
   });
+
+  it('should queue enrichment for visible city overview cards', async () => {
+    const router = new ApiRouter();
+    registerCityOverviewRoutes(router);
+    const enrichmentCalls = [];
+    const db = createApiMockDb({
+      searchPOIsNearCoordinates: async (_lat, _lon, _radius, types) => {
+        if (types.includes('hotel')) return [{ osm_id: 101, name: 'Hotel', poi_type: 'hotel' }];
+        if (types.includes('restaurant')) return [{ osm_id: 202, name: 'Restaurant', poi_type: 'restaurant' }];
+        return [{ osm_id: 303, name: 'Museum', poi_type: 'museum' }];
+      },
+      batchEnrichPOIs: async (osmIds) => {
+        enrichmentCalls.push(osmIds);
+      },
+    });
+
+    const req = fakeReq('GET', '/api/v1/cities/TH/Bangkok/overview');
+    const res = fakeRes();
+    await router.handle(req, res, { db, user: null });
+
+    assert.strictEqual(res.statusCode, 200);
+    assert.deepStrictEqual(enrichmentCalls, [[101, 202, 303]]);
+  });
 });
 
 describe('Search API edge cases', () => {
