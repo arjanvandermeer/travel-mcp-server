@@ -20,7 +20,18 @@ describe('http static utils', () => {
 
   it('only renders analytics for valid measurement IDs', () => {
     assert.strictEqual(renderGoogleAnalyticsTag('not-valid'), '');
-    assert.ok(renderGoogleAnalyticsTag('G-ABC123').includes('G-ABC123'));
+    assert.strictEqual(renderGoogleAnalyticsTag('GTM-ABC123DEF').includes('googletagmanager.com/gtag/js'), false);
+    assert.ok(renderGoogleAnalyticsTag('G-ABC123DEF4').includes('G-ABC123DEF4'));
+  });
+
+  it('renders route-aware analytics that suppresses PDP tracking', () => {
+    const html = renderGoogleAnalyticsTag('G-ABC123DEF4');
+
+    assert.ok(html.includes('window.__travelAnalytics'));
+    assert.ok(html.includes("indexOf('/poi/') === 0"));
+    assert.ok(html.includes('send_page_view: false'));
+    assert.ok(html.includes("window.gtag('event', 'page_view'"));
+    assert.ok(!html.includes('<script async src="https://www.googletagmanager.com/gtag/js'));
   });
 
   it('adds asset versions and optional analytics to the web index', () => {
@@ -30,7 +41,7 @@ describe('http static utils', () => {
 
     const html = renderWebIndex(filePath, {
       versionInfo: { gitCommitShort: 'abc123', buildTime: '2026-05-17T00:00:00Z' },
-      measurementId: 'G-ABC123',
+      measurementId: 'G-ABC123DEF4',
     });
 
     assert.ok(html.includes('/css/style.css?v=abc123-2026-05-17T00%3A00%3A00Z'));
@@ -39,6 +50,6 @@ describe('http static utils', () => {
     assert.ok(html.includes('href="/favicon.ico"'));
     assert.ok(html.includes('href="/favicon.png"'));
     assert.ok(html.includes('<span>abc123</span>'));
-    assert.ok(html.includes('G-ABC123'));
+    assert.ok(html.includes('G-ABC123DEF4'));
   });
 });

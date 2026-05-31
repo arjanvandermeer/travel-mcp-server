@@ -1,6 +1,6 @@
 import fs from 'fs';
 
-const GOOGLE_ANALYTICS_ID_PATTERN = /^(G|GT|GTM)-[A-Z0-9-]+$/i;
+const GOOGLE_ANALYTICS_ID_PATTERN = /^G-[A-Z0-9]{10}$/i;
 
 /**
  * Obfuscate email for logging and telemetry.
@@ -15,17 +15,55 @@ export function obfuscateEmail(email) {
 }
 
 export function renderGoogleAnalyticsTag(measurementId) {
-  const id = String(measurementId || '').trim();
+  const id = String(measurementId || '').trim().toUpperCase();
   if (!id || !GOOGLE_ANALYTICS_ID_PATTERN.test(id)) return '';
 
   return `
   <!-- Google tag (gtag.js) -->
-  <script async src="https://www.googletagmanager.com/gtag/js?id=${id}"></script>
   <script>
-    window.dataLayer = window.dataLayer || [];
-    function gtag(){dataLayer.push(arguments);}
-    gtag('js', new Date());
-    gtag('config', '${id}');
+    (function () {
+      var id = '${id}';
+      var scriptLoaded = false;
+
+      function isSuppressedPath(pathname) {
+        return String(pathname || '').indexOf('/poi/') === 0;
+      }
+
+      function setDisabled(disabled) {
+        window['ga-disable-' + id] = disabled;
+      }
+
+      function ensureGtag() {
+        if (scriptLoaded) return;
+        scriptLoaded = true;
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = window.gtag || function () { window.dataLayer.push(arguments); };
+        window.gtag('js', new Date());
+        window.gtag('config', id, { send_page_view: false });
+        var script = document.createElement('script');
+        script.async = true;
+        script.src = 'https://www.googletagmanager.com/gtag/js?id=' + encodeURIComponent(id);
+        document.head.appendChild(script);
+      }
+
+      window.__travelAnalytics = {
+        update: function (pathname) {
+          var path = pathname || window.location.pathname;
+          var disabled = isSuppressedPath(path);
+          setDisabled(disabled);
+          if (disabled) return;
+          ensureGtag();
+          window.gtag('event', 'page_view', {
+            send_to: id,
+            page_title: document.title,
+            page_location: window.location.href,
+            page_path: path
+          });
+        }
+      };
+
+      window.__travelAnalytics.update(window.location.pathname);
+    }());
   </script>`;
 }
 

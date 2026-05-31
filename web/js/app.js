@@ -149,6 +149,7 @@ Alpine.store('route', {
     const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
     if (pathname === this._lastPath) return;
     this._lastPath = pathname;
+    window.__travelAnalytics?.update?.(pathname);
     const poiMatch = pathname.match(/^\/poi\/([^/]+)$/);
     const locationMatch = pathname.match(/^\/location\/([^/]+)\/([^/]+)$/);
     if (poiMatch) {
