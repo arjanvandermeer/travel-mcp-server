@@ -67,6 +67,12 @@ const FILLER_WORDS = new Set([
 
 const LEADING_ARTICLES = new Set(['the', 'a', 'an']);
 
+const WEAK_IDENTITY_TOKENS = new Set([
+  'airport', 'central', 'center', 'centre', 'city', 'downtown', 'east', 'grand',
+  'historic', 'main', 'new', 'north', 'old', 'palace', 'park', 'plaza', 'royal',
+  'south', 'station', 'west', 'york',
+]);
+
 const TOKEN_ALIASES = new Map([
   ['intl', 'international'],
   ['int', 'international'],
@@ -77,6 +83,48 @@ const TOKEN_ALIASES = new Map([
   ['blvd', 'boulevard'],
   ['ctr', 'center'],
   ['centre', 'center'],
+]);
+
+const STREET_TOKEN_ALIASES = new Map([
+  ['aly', 'alley'],
+  ['ave', 'avenue'],
+  ['av', 'avenue'],
+  ['blvd', 'boulevard'],
+  ['ctr', 'center'],
+  ['ct', 'court'],
+  ['dr', 'drive'],
+  ['e', 'east'],
+  ['hwy', 'highway'],
+  ['ln', 'lane'],
+  ['n', 'north'],
+  ['pkwy', 'parkway'],
+  ['pl', 'place'],
+  ['rd', 'road'],
+  ['s', 'south'],
+  ['sq', 'square'],
+  ['st', 'street'],
+  ['ter', 'terrace'],
+  ['w', 'west'],
+]);
+
+const ORDINAL_WORD_ALIASES = new Map([
+  ['first', '1'],
+  ['second', '2'],
+  ['third', '3'],
+  ['fourth', '4'],
+  ['fifth', '5'],
+  ['sixth', '6'],
+  ['seventh', '7'],
+  ['eighth', '8'],
+  ['ninth', '9'],
+  ['tenth', '10'],
+  ['eleventh', '11'],
+  ['twelfth', '12'],
+]);
+
+const STREET_PHRASE_ALIASES = new Map([
+  ['avenue of the americas', '6 avenue'],
+  ['sixth avenue', '6 avenue'],
 ]);
 
 function normalizeName(str) {
@@ -96,6 +144,11 @@ function canonicalToken(token) {
     return normalized.slice(0, -1);
   }
   return normalized;
+}
+
+function canonicalStreetToken(token) {
+  const ordinal = token.replace(/^(\d+)(st|nd|rd|th)$/u, '$1');
+  return ORDINAL_WORD_ALIASES.get(ordinal) || STREET_TOKEN_ALIASES.get(ordinal) || ordinal;
 }
 
 function getComparableTokens(str) {
@@ -119,6 +172,12 @@ function hasComparableIdentity(tokens) {
 
 function isPhrasePrefix(longer, shorter) {
   return longer === shorter || longer.startsWith(`${shorter} `);
+}
+
+function hasDistinctiveTokenOverlap(name1, name2) {
+  const tokens1 = getComparableTokens(name1).filter(token => !WEAK_IDENTITY_TOKENS.has(token));
+  const tokens2 = getComparableTokens(name2).filter(token => !WEAK_IDENTITY_TOKENS.has(token));
+  return tokens1.some(token => tokens2.some(other => tokensMatch(token, other)));
 }
 
 function tokensMatch(token1, token2) {
@@ -303,6 +362,245 @@ export function findBestNameMatchMulti(names, results, minConfidence = GOOGLE_PL
   return null;
 }
 
+function getDisplayName(place) {
+  return place?.displayName?.text || place?.displayName || place?.name || '';
+}
+
+function parseAddressLine(address) {
+  if (!address || typeof address !== 'string') return {};
+  const firstLine = address.split(',')[0]?.trim();
+  if (!firstLine) return {};
+
+  const match = firstLine.match(/^([A-Za-z]?\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?)\s+(.+)$/u);
+  if (!match) return {};
+  return {
+    houseNumber: match[1],
+    street: match[2],
+  };
+}
+
+function componentValue(component) {
+  return component?.longText || component?.shortText || component?.long_name || component?.short_name || null;
+}
+
+function findAddressComponent(components, type) {
+  if (!Array.isArray(components)) return null;
+  const component = components.find(item => Array.isArray(item?.types) && item.types.includes(type));
+  return componentValue(component);
+}
+
+function extractPOIAddressParts(poi) {
+  const tags = poi?.tags || poi?.osm_tags || {};
+  const parsed = parseAddressLine(poi?.address || poi?.osm_address);
+  return {
+    houseNumber: tags['addr:housenumber'] || parsed.houseNumber || null,
+    street: tags['addr:street'] || parsed.street || null,
+  };
+}
+
+function extractPlaceAddressParts(place) {
+  const components = place?.addressComponents || place?.address_components;
+  const parsed = parseAddressLine(
+    place?.formattedAddress ||
+    place?.formatted_address ||
+    place?.shortFormattedAddress ||
+    place?.short_formatted_address,
+  );
+  return {
+    houseNumber: findAddressComponent(components, 'street_number') || parsed.houseNumber || null,
+    street: findAddressComponent(components, 'route') || parsed.street || null,
+  };
+}
+
+function normalizeHouseNumber(value) {
+  return String(value || '').normalize('NFKD').toLowerCase().replace(/[\s.]/g, '').trim();
+}
+
+export function normalizeStreetName(value) {
+  if (typeof value !== 'string') return '';
+  const normalized = normalizeName(value);
+  if (!normalized) return '';
+  const directAlias = STREET_PHRASE_ALIASES.get(normalized);
+  if (directAlias) return directAlias;
+
+  const tokens = normalized
+    .split(' ')
+    .map(canonicalStreetToken)
+    .filter(Boolean);
+  const phrase = tokens.join(' ');
+  return STREET_PHRASE_ALIASES.get(phrase) || phrase;
+}
+
+export function comparePlaceAddress(poi, place) {
+  const osm = extractPOIAddressParts(poi);
+  const google = extractPlaceAddressParts(place);
+  const osmHouse = normalizeHouseNumber(osm.houseNumber);
+  const googleHouse = normalizeHouseNumber(google.houseNumber);
+  const osmStreet = normalizeStreetName(osm.street);
+  const googleStreet = normalizeStreetName(google.street);
+
+  const hasHouseNumberEvidence = Boolean(osmHouse && googleHouse);
+  const hasStreetEvidence = Boolean(osmStreet && googleStreet);
+  const houseNumberMatch = hasHouseNumberEvidence && osmHouse === googleHouse;
+  const streetMatch = hasStreetEvidence && osmStreet === googleStreet;
+
+  return {
+    osmHouseNumber: osm.houseNumber || null,
+    googleHouseNumber: google.houseNumber || null,
+    osmStreet: osm.street || null,
+    googleStreet: google.street || null,
+    normalizedOsmStreet: osmStreet || null,
+    normalizedGoogleStreet: googleStreet || null,
+    hasHouseNumberEvidence,
+    hasStreetEvidence,
+    houseNumberMatch,
+    houseNumberMismatch: hasHouseNumberEvidence && !houseNumberMatch,
+    streetMatch,
+    streetMismatch: hasStreetEvidence && !streetMatch,
+  };
+}
+
+export function distanceMetersBetween(lat1, lon1, lat2, lon2) {
+  const fromLat = Number(lat1);
+  const fromLon = Number(lon1);
+  const toLat = Number(lat2);
+  const toLon = Number(lon2);
+  if (![fromLat, fromLon, toLat, toLon].every(Number.isFinite)) return null;
+
+  const earthRadiusMeters = 6371000;
+  const dLat = (toLat - fromLat) * Math.PI / 180;
+  const dLon = (toLon - fromLon) * Math.PI / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(fromLat * Math.PI / 180) * Math.cos(toLat * Math.PI / 180) *
+    Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMeters * c;
+}
+
+function distanceScore(distanceMeters) {
+  if (distanceMeters === null) return 0;
+  if (distanceMeters <= 30) return 1;
+  if (distanceMeters <= 75) return 0.85;
+  if (distanceMeters <= 150) return 0.6;
+  if (distanceMeters <= 500) return 0.2;
+  return 0;
+}
+
+export function scorePlaceCandidate(poi, names, place, minConfidence = GOOGLE_PLACES_MIN_CONFIDENCE) {
+  const matchNames = Array.isArray(names) ? names.filter(Boolean) : [names].filter(Boolean);
+  const placeName = getDisplayName(place);
+  let nameScore = 0;
+  let bestName = null;
+  let hasDistinctiveNameEvidence = false;
+
+  for (const name of matchNames) {
+    const score = calculateNameSimilarity(name, placeName);
+    if (score > nameScore) {
+      nameScore = score;
+      bestName = name;
+    }
+    if (hasDistinctiveTokenOverlap(name, placeName)) {
+      hasDistinctiveNameEvidence = true;
+    }
+  }
+
+  const typeCompatible = isTypeCompatible(poi?.poi_type, place?.types);
+  const distanceMeters = distanceMetersBetween(
+    poi?.latitude ?? poi?.osm_latitude,
+    poi?.longitude ?? poi?.osm_longitude,
+    place?.location?.latitude ?? place?.latitude ?? place?.google_latitude,
+    place?.location?.longitude ?? place?.longitude ?? place?.google_longitude,
+  );
+  const address = comparePlaceAddress(poi, place);
+  const closeDistance = distanceMeters !== null && distanceMeters <= 50;
+  const strongAddressEvidence = address.houseNumberMatch && address.streetMatch;
+  const closeHouseNumberEvidence =
+    address.houseNumberMatch &&
+    closeDistance &&
+    !address.streetMismatch &&
+    distanceMeters !== null &&
+    distanceMeters <= 25;
+
+  const directNameMatch = nameScore >= minConfidence;
+  const addressRescue =
+    nameScore >= 0.45 &&
+    hasDistinctiveNameEvidence &&
+    closeDistance &&
+    (strongAddressEvidence || closeHouseNumberEvidence);
+  const accepted = typeCompatible && (directNameMatch || addressRescue);
+
+  const evidenceScore = Math.min(
+    0.95,
+    nameScore +
+      (distanceScore(distanceMeters) * 0.12) +
+      (address.houseNumberMatch ? 0.08 : 0) +
+      (address.streetMatch ? 0.10 : 0),
+  );
+  const confidence = directNameMatch
+    ? nameScore
+    : addressRescue
+      ? Math.max(minConfidence, evidenceScore)
+      : nameScore;
+
+  return {
+    accepted,
+    confidence,
+    nameScore,
+    bestName,
+    placeName,
+    typeCompatible,
+    hasDistinctiveNameEvidence,
+    distanceMeters,
+    address,
+    directNameMatch,
+    addressRescue,
+  };
+}
+
+export function findBestPlaceMatch(poi, names, results, minConfidence = GOOGLE_PLACES_MIN_CONFIDENCE) {
+  if (!results || results.length === 0) {
+    return null;
+  }
+
+  let bestMatch = null;
+  let bestEvidence = null;
+
+  for (const result of results) {
+    const evidence = scorePlaceCandidate(poi, names, result, minConfidence);
+
+    if (process.env.DEBUG_MATCHING) {
+      const dist = evidence.distanceMeters === null ? 'n/a' : `${Math.round(evidence.distanceMeters)}m`;
+      const addressBits = [
+        evidence.address.houseNumberMatch ? 'house' : null,
+        evidence.address.streetMatch ? 'street' : null,
+        evidence.address.streetMismatch ? 'street_mismatch' : null,
+      ].filter(Boolean).join(',');
+      console.error(
+        `  Candidate score: "${evidence.bestName}" vs "${evidence.placeName}" ` +
+        `name=${evidence.nameScore.toFixed(3)} confidence=${evidence.confidence.toFixed(3)} ` +
+        `distance=${dist} address=${addressBits || 'none'} accepted=${evidence.accepted}`,
+      );
+    }
+
+    if (evidence.accepted && (!bestEvidence || evidence.confidence > bestEvidence.confidence)) {
+      bestMatch = result;
+      bestEvidence = evidence;
+    }
+  }
+
+  if (bestMatch && process.env.DEBUG_MATCHING) {
+    const matchName = getDisplayName(bestMatch);
+    console.error(`  Best evidence match: "${matchName}" with confidence ${bestEvidence.confidence.toFixed(3)}`);
+  }
+
+  if (!bestMatch && process.env.DEBUG_MATCHING) {
+    console.error(`  No confident evidence match found (< ${minConfidence})`);
+  }
+
+  return bestMatch;
+}
+
 export function getOSMNameVariants(poi) {
   return [
     poi?.name,
@@ -320,5 +618,5 @@ export function isPlaceDetailsNameCompatible(poi, placeDetails, minConfidence = 
   }
 
   const names = getOSMNameVariants(poi);
-  return names.some(name => calculateNameSimilarity(name, googleName) >= minConfidence);
+  return scorePlaceCandidate(poi, names, placeDetails, minConfidence).accepted;
 }

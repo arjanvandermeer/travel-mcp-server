@@ -13,6 +13,7 @@ import {
   calculateNameSimilarity,
   findBestNameMatch,
   findBestNameMatchMulti,
+  findBestPlaceMatch,
   getOSMNameVariants,
   isPlaceDetailsNameCompatible,
   isTypeCompatible,
@@ -266,7 +267,7 @@ export class GooglePlacesClient {
       },
     };
 
-    const fieldMask = 'places.id,places.displayName,places.rating,places.userRatingCount,places.types,places.location';
+    const fieldMask = 'places.id,places.displayName,places.formattedAddress,places.shortFormattedAddress,places.rating,places.userRatingCount,places.types,places.location';
 
     try {
       const result = await this.makeRequest(url, body, fieldMask);
@@ -305,7 +306,7 @@ export class GooglePlacesClient {
       };
     }
 
-    const fieldMask = 'places.id,places.displayName,places.rating,places.userRatingCount,places.types,places.location';
+    const fieldMask = 'places.id,places.displayName,places.formattedAddress,places.shortFormattedAddress,places.rating,places.userRatingCount,places.types,places.location';
 
     try {
       const result = await this.makeRequest(url, body, fieldMask);
@@ -457,8 +458,8 @@ export class GooglePlacesClient {
     const nearbyResults = await this.searchNearby(latitude, longitude, name, googleType, GOOGLE_PLACES_MATCH_SEARCH_RADIUS);
 
     if (nearbyResults.length > 0) {
-      // Find best match based on name similarity (try all name variants)
-      const bestMatch = this.findBestNameMatchMulti(matchNames, nearbyResults);
+      // Find best match based on name/type/distance/address evidence (try all name variants).
+      const bestMatch = this.findBestPlaceMatch(poi, matchNames, nearbyResults);
       if (bestMatch && this.isTypeCompatible(poi_type, bestMatch.types)) {
         return {
           place_id: bestMatch.id,
@@ -482,8 +483,8 @@ export class GooglePlacesClient {
     const textResults = await this.searchText(searchName, latitude, longitude, googleType);
 
     if (textResults.length > 0) {
-      // Also validate text search results with name matching
-      const textMatch = this.findBestNameMatchMulti(matchNames, textResults);
+      // Also validate text search results with evidence-backed matching.
+      const textMatch = this.findBestPlaceMatch(poi, matchNames, textResults);
       if (textMatch && this.isTypeCompatible(poi_type, textMatch.types)) {
         return {
           place_id: textMatch.id,
@@ -544,6 +545,14 @@ export class GooglePlacesClient {
    */
   findBestNameMatchMulti(names, results) {
     return findBestNameMatchMulti(names, results);
+  }
+
+  /**
+   * Try matching with name/type/distance/address evidence.
+   * Returns the best match across all candidates.
+   */
+  findBestPlaceMatch(poi, names, results) {
+    return findBestPlaceMatch(poi, names, results);
   }
 
   getOSMNameVariants(poi) {

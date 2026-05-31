@@ -7,6 +7,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert';
 import { GooglePlacesClient } from '../../src/google-places.js';
+import { normalizeStreetName, scorePlaceCandidate } from '../../src/google-places-matching.js';
 
 describe('GooglePlacesClient', () => {
   // Suppress console.warn/error during tests
@@ -220,6 +221,72 @@ describe('GooglePlacesClient', () => {
     });
   });
 
+  describe('place evidence scoring', () => {
+    it('should normalize known civic street aliases', () => {
+      assert.strictEqual(normalizeStreetName('Avenue of the Americas'), '6 avenue');
+      assert.strictEqual(normalizeStreetName('6th Ave'), '6 avenue');
+      assert.strictEqual(normalizeStreetName('Sixth Avenue'), '6 avenue');
+    });
+
+    it('should rescue a borderline name with close address and street-alias evidence', () => {
+      const evidence = scorePlaceCandidate(
+        {
+          name: 'Roxy Hotel',
+          poi_type: 'hotel',
+          latitude: 40.71920152727273,
+          longitude: -74.00489699090907,
+          tags: {
+            'addr:housenumber': '2',
+            'addr:street': 'Avenue of the Americas',
+          },
+        },
+        ['Roxy Hotel'],
+        {
+          id: 'roxy-google',
+          displayName: { text: 'Roxy NYC' },
+          formattedAddress: '2 6th Ave, New York, NY 10013, USA',
+          location: { latitude: 40.719404, longitude: -74.004902 },
+          types: ['hotel', 'lodging'],
+        },
+      );
+
+      assert.ok(evidence.nameScore < 0.7, 'test fixture should stay below direct name threshold');
+      assert.strictEqual(evidence.address.houseNumberMatch, true);
+      assert.strictEqual(evidence.address.streetMatch, true);
+      assert.strictEqual(evidence.addressRescue, true);
+      assert.strictEqual(evidence.accepted, true);
+    });
+
+    it('should not rescue generic name overlap with address evidence alone', () => {
+      const evidence = scorePlaceCandidate(
+        {
+          name: 'Grand Hotel',
+          poi_type: 'hotel',
+          latitude: 40.7192,
+          longitude: -74.0049,
+          tags: {
+            'addr:housenumber': '2',
+            'addr:street': 'Main Street',
+          },
+        },
+        ['Grand Hotel'],
+        {
+          id: 'grand-resort',
+          displayName: { text: 'Grand Resort' },
+          formattedAddress: '2 Main St, New York, NY 10013, USA',
+          location: { latitude: 40.71921, longitude: -74.00491 },
+          types: ['hotel', 'lodging'],
+        },
+      );
+
+      assert.ok(evidence.nameScore < 0.7, 'test fixture should stay below direct name threshold');
+      assert.strictEqual(evidence.address.houseNumberMatch, true);
+      assert.strictEqual(evidence.address.streetMatch, true);
+      assert.strictEqual(evidence.hasDistinctiveNameEvidence, false);
+      assert.strictEqual(evidence.accepted, false);
+    });
+  });
+
   // =========================================================================
   // findBestNameMatch
   // =========================================================================
@@ -302,6 +369,30 @@ describe('GooglePlacesClient', () => {
       const result = client.isPlaceDetailsNameCompatible(
         { name: 'วัดอรุณ', name_en: null, tags: {} },
         { displayName: { text: 'Wat Arun', languageCode: 'en' } },
+      );
+
+      assert.strictEqual(result, true);
+    });
+
+    it('should accept final place details with strong address evidence for a borderline name', () => {
+      const result = client.isPlaceDetailsNameCompatible(
+        {
+          name: 'Roxy Hotel',
+          name_en: null,
+          poi_type: 'hotel',
+          latitude: 40.71920152727273,
+          longitude: -74.00489699090907,
+          tags: {
+            'addr:housenumber': '2',
+            'addr:street': 'Avenue of the Americas',
+          },
+        },
+        {
+          displayName: { text: 'Roxy NYC', languageCode: 'en' },
+          formattedAddress: '2 6th Ave, New York, NY 10013, USA',
+          location: { latitude: 40.719404, longitude: -74.004902 },
+          types: ['hotel', 'lodging'],
+        },
       );
 
       assert.strictEqual(result, true);
@@ -571,6 +662,37 @@ describe('GooglePlacesClient', () => {
       assert.ok(result);
       assert.strictEqual(result.place_id, 'place1');
       assert.strictEqual(result.rating, 4.5);
+    });
+
+    it('should find a nearby match using address evidence when the name is borderline', async () => {
+      const client = new GooglePlacesClient('key', true);
+      client.searchNearby = async () => [
+        {
+          id: 'roxy-google',
+          displayName: { text: 'Roxy NYC' },
+          formattedAddress: '2 6th Ave, New York, NY 10013, USA',
+          location: { latitude: 40.719404, longitude: -74.004902 },
+          rating: 4.4,
+          userRatingCount: 2612,
+          types: ['hotel', 'lodging'],
+        },
+      ];
+      client.searchText = async () => [];
+
+      const result = await client.findMatchingPlace({
+        name: 'Roxy Hotel',
+        latitude: 40.71920152727273,
+        longitude: -74.00489699090907,
+        poi_type: 'hotel',
+        tags: {
+          'addr:housenumber': '2',
+          'addr:street': 'Avenue of the Americas',
+        },
+      });
+
+      assert.ok(result);
+      assert.strictEqual(result.place_id, 'roxy-google');
+      assert.strictEqual(result.rating, 4.4);
     });
 
     it('should fallback to text search when nearby finds no match', async () => {
