@@ -236,6 +236,8 @@ describe('GooglePlacesClient', () => {
     it('should normalize European street prefixes and trailing house numbers', () => {
       assert.strictEqual(normalizeStreetName('Plaza de la Puerta del Sol'), 'puerta del sol');
       assert.strictEqual(normalizeStreetName('Prta del Sol'), 'puerta del sol');
+      assert.strictEqual(normalizeStreetName('C. de Espoz y Mina'), 'espoz y mina');
+      assert.strictEqual(normalizeStreetName('Calle de Espoz y Mina'), 'espoz y mina');
     });
 
     it('should rescue a borderline name with close address and street-alias evidence', () => {

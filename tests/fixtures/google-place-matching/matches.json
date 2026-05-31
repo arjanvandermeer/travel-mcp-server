@@ -1,0 +1,296 @@
+{
+  "version": 1,
+  "description": "Deterministic Google Places matching regression cases. These fixtures are intentionally database-free and network-free.",
+  "cases": [
+    {
+      "id": "roxy-address-alias-rescue",
+      "description": "A borderline Roxy name should match when house number, distance, type, and 6th Ave / Avenue of the Americas evidence line up.",
+      "poi": {
+        "osm_id": 250052719,
+        "poi_type": "hotel",
+        "name": "Roxy Hotel",
+        "latitude": 40.71920152727273,
+        "longitude": -74.00489699090907,
+        "tags": {
+          "addr:housenumber": "2",
+          "addr:street": "Avenue of the Americas"
+        }
+      },
+      "candidates": [
+        {
+          "id": "roxy-google",
+          "displayName": { "text": "Roxy NYC" },
+          "formattedAddress": "2 6th Ave, New York, NY 10013, USA",
+          "location": { "latitude": 40.719404, "longitude": -74.004902 },
+          "types": ["hotel", "lodging"]
+        },
+        {
+          "id": "nearby-loft",
+          "displayName": { "text": "The Artist's Loft" },
+          "formattedAddress": "8 6th Ave, New York, NY 10013, USA",
+          "location": { "latitude": 40.71995, "longitude": -74.00494 },
+          "types": ["lodging"]
+        }
+      ],
+      "expected": {
+        "selectedId": "roxy-google",
+        "selected": {
+          "accepted": true,
+          "directNameMatch": false,
+          "addressRescue": true,
+          "houseNumberMatch": true,
+          "streetMatch": true,
+          "maxNameScore": 0.69,
+          "minConfidence": 0.7
+        }
+      }
+    },
+    {
+      "id": "roxy-article-city-suffix-direct",
+      "description": "Leading articles and trailing city suffixes should not lower an otherwise exact place identity.",
+      "poi": {
+        "osm_id": 250052719,
+        "poi_type": "hotel",
+        "name": "Roxy Hotel",
+        "latitude": 40.71920152727273,
+        "longitude": -74.00489699090907
+      },
+      "candidates": [
+        {
+          "id": "roxy-full-name",
+          "displayName": { "text": "The Roxy Hotel New York" },
+          "formattedAddress": "2 6th Ave, New York, NY 10013, USA",
+          "location": { "latitude": 40.719404, "longitude": -74.004902 },
+          "types": ["hotel", "inn", "lodging"]
+        }
+      ],
+      "expected": {
+        "selectedId": "roxy-full-name",
+        "selected": {
+          "accepted": true,
+          "directNameMatch": true,
+          "minNameScore": 1,
+          "minConfidence": 1
+        }
+      }
+    },
+    {
+      "id": "generic-grand-not-rescued",
+      "description": "Generic one-token identity overlap should not be rescued by matching address evidence alone.",
+      "poi": {
+        "osm_id": 1001,
+        "poi_type": "hotel",
+        "name": "Grand Hotel",
+        "latitude": 40.7192,
+        "longitude": -74.0049,
+        "tags": {
+          "addr:housenumber": "2",
+          "addr:street": "Main Street"
+        }
+      },
+      "candidates": [
+        {
+          "id": "grand-resort",
+          "displayName": { "text": "Grand Resort" },
+          "formattedAddress": "2 Main St, New York, NY 10013, USA",
+          "location": { "latitude": 40.71921, "longitude": -74.00491 },
+          "types": ["hotel", "lodging"]
+        }
+      ],
+      "expected": {
+        "selectedId": null,
+        "candidates": {
+          "grand-resort": {
+            "accepted": false,
+            "addressRescue": false,
+            "hasDistinctiveNameEvidence": false,
+            "houseNumberMatch": true,
+            "streetMatch": true
+          }
+        }
+      }
+    },
+    {
+      "id": "coco-compact-name",
+      "description": "Joined letters and numbers should compare as the same identity as spaced letters and numbers.",
+      "poi": {
+        "osm_id": 2528330186,
+        "poi_type": "restaurant",
+        "name": "coco 51",
+        "latitude": 13.737576,
+        "longitude": 100.56141
+      },
+      "candidates": [
+        {
+          "id": "coco51",
+          "displayName": { "text": "Coco51 Restaurant & Bar" },
+          "formattedAddress": "Soi Damrong Rat, Bangkok, Thailand",
+          "location": { "latitude": 13.73762, "longitude": 100.5614 },
+          "types": ["restaurant", "food", "bar"]
+        }
+      ],
+      "expected": {
+        "selectedId": "coco51",
+        "selected": {
+          "accepted": true,
+          "directNameMatch": true,
+          "minNameScore": 0.9
+        }
+      }
+    },
+    {
+      "id": "sol-apartments-street-first-address-rescue",
+      "description": "European street-first addresses should provide house and street evidence for borderline translated names.",
+      "poi": {
+        "osm_id": 3512921646,
+        "poi_type": "hotel",
+        "name": "Apartamentos del Sol",
+        "latitude": 40.4166232,
+        "longitude": -3.7025309,
+        "tags": {
+          "addr:housenumber": "3",
+          "addr:street": "Plaza de la Puerta del Sol"
+        }
+      },
+      "candidates": [
+        {
+          "id": "sol-apartments",
+          "displayName": { "text": "Sol Apartments" },
+          "formattedAddress": "Prta del Sol, 3, Centro, 28013 Madrid, Spain",
+          "location": { "latitude": 40.4166443, "longitude": -3.7025212 },
+          "types": ["lodging", "point_of_interest", "establishment"]
+        }
+      ],
+      "expected": {
+        "selectedId": "sol-apartments",
+        "selected": {
+          "accepted": true,
+          "directNameMatch": false,
+          "addressRescue": true,
+          "houseNumberMatch": true,
+          "streetMatch": true,
+          "maxNameScore": 0.69,
+          "minConfidence": 0.7
+        }
+      }
+    },
+    {
+      "id": "hostal-ana-belen-select-correct-over-stale",
+      "description": "The corrected Hostal Ana Belen place should beat a nearby stale lodging candidate with address mismatch.",
+      "poi": {
+        "osm_id": 3403973652,
+        "poi_type": "guest_house",
+        "name": "Hostal Ana Belen",
+        "latitude": 40.4165306,
+        "longitude": -3.7024508,
+        "tags": {
+          "addr:housenumber": "2",
+          "addr:street": "Calle de Espoz y Mina"
+        }
+      },
+      "candidates": [
+        {
+          "id": "hostal-el-pilar-stale",
+          "displayName": { "text": "Hostal El Pilar" },
+          "formattedAddress": "Calle de Carretas, 13, Centro, 28012 Madrid, Spain",
+          "location": { "latitude": 40.41698, "longitude": -3.70168 },
+          "types": ["hotel", "guest_house", "lodging"]
+        },
+        {
+          "id": "hostal-ana-belen",
+          "displayName": { "text": "Hostal Ana Belen" },
+          "formattedAddress": "C. de Espoz y Mina, 2, Centro, 28012 Madrid, Spain",
+          "location": { "latitude": 40.4165266, "longitude": -3.7023708 },
+          "types": ["hotel", "guest_house", "lodging"]
+        }
+      ],
+      "expected": {
+        "selectedId": "hostal-ana-belen",
+        "selected": {
+          "accepted": true,
+          "directNameMatch": true,
+          "houseNumberMatch": true,
+          "streetMatch": true,
+          "minNameScore": 1
+        },
+        "candidates": {
+          "hostal-el-pilar-stale": {
+            "accepted": false,
+            "houseNumberMismatch": true,
+            "streetMismatch": true
+          }
+        }
+      }
+    },
+    {
+      "id": "apartamentos-del-sol-reject-stale-hostal",
+      "description": "The old Veracruz mapping should remain rejected despite sharing weak Puerta del Sol tokens.",
+      "poi": {
+        "osm_id": 3512921646,
+        "poi_type": "hotel",
+        "name": "Apartamentos del Sol",
+        "latitude": 40.4166232,
+        "longitude": -3.7025309,
+        "tags": {
+          "addr:housenumber": "3",
+          "addr:street": "Plaza de la Puerta del Sol"
+        }
+      },
+      "candidates": [
+        {
+          "id": "hostal-veracruz-stale",
+          "displayName": { "text": "Hostal Veracruz- Puerta del Sol-" },
+          "formattedAddress": "Calle de la Victoria, 1, Centro, 28012 Madrid, Spain",
+          "location": { "latitude": 40.4162, "longitude": -3.7017 },
+          "types": ["hotel", "lodging"]
+        }
+      ],
+      "expected": {
+        "selectedId": null,
+        "candidates": {
+          "hostal-veracruz-stale": {
+            "accepted": false,
+            "houseNumberMismatch": true,
+            "streetMismatch": true
+          }
+        }
+      }
+    },
+    {
+      "id": "restaurant-should-not-match-lodging-type",
+      "description": "A restaurant POI should not match a lodging result even with strong name and address evidence.",
+      "poi": {
+        "osm_id": 2001,
+        "poi_type": "restaurant",
+        "name": "Riverside Kitchen",
+        "latitude": 51.5,
+        "longitude": -0.12,
+        "tags": {
+          "addr:housenumber": "10",
+          "addr:street": "River Street"
+        }
+      },
+      "candidates": [
+        {
+          "id": "riverside-kitchen-hotel",
+          "displayName": { "text": "Riverside Kitchen" },
+          "formattedAddress": "10 River St, London, UK",
+          "location": { "latitude": 51.50001, "longitude": -0.12001 },
+          "types": ["hotel", "lodging"]
+        }
+      ],
+      "expected": {
+        "selectedId": null,
+        "candidates": {
+          "riverside-kitchen-hotel": {
+            "accepted": false,
+            "typeCompatible": false,
+            "directNameMatch": true,
+            "houseNumberMatch": true,
+            "streetMatch": true
+          }
+        }
+      }
+    }
+  ]
+}

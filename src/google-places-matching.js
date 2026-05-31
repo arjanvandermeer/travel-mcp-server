@@ -90,6 +90,7 @@ const STREET_TOKEN_ALIASES = new Map([
   ['ave', 'avenue'],
   ['av', 'avenue'],
   ['blvd', 'boulevard'],
+  ['c', 'calle'],
   ['ctr', 'center'],
   ['ct', 'court'],
   ['dr', 'drive'],
