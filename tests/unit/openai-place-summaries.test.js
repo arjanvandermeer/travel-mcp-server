@@ -7,7 +7,10 @@ function createClient(calls) {
     responses: {
       create: async (payload) => {
         calls.push(payload);
-        return { output_text: 'Guests praise the warm service and central location. Rooms are described as comfortable, with occasional noise concerns.' };
+        return {
+          output_text: 'Guests praise the warm service and central location. Rooms are described as comfortable, with occasional noise concerns.',
+          usage: { input_tokens: 20, output_tokens: 18, total_tokens: 38 },
+        };
       },
     },
   };
@@ -68,5 +71,25 @@ describe('createOpenAIPlaceSummarizer', () => {
     assert.equal(await summarizer.summarizeReviews({ reviews: [] }), null);
     assert.equal(await summarizer.summarizeHomepage({ website_uri: 'javascript:alert(1)' }), null);
     assert.equal(calls.length, 0);
+  });
+
+  it('propagates OpenAI request errors after telemetry capture', async () => {
+    const summarizer = createOpenAIPlaceSummarizer({
+      client: {
+        responses: {
+          create: async () => {
+            throw new Error('OpenAI unavailable');
+          },
+        },
+      },
+      model: 'gpt-5-mini',
+    });
+
+    await assert.rejects(
+      () => summarizer.summarizeReviews({
+        reviews: [{ rating: 4, text: 'Helpful staff.' }],
+      }),
+      /OpenAI unavailable/,
+    );
   });
 });

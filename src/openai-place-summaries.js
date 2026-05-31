@@ -1,5 +1,6 @@
 import { sanitizeHttpUrl } from './url-utils.js';
 import OpenAI from 'openai';
+import * as telemetry from './telemetry.js';
 
 const DEFAULT_MODEL = 'gpt-5-mini';
 const DEFAULT_MAX_OUTPUT_TOKENS = 1000;
@@ -19,6 +20,38 @@ function extractResponseText(response) {
   return '';
 }
 
+function toolNames(tools = []) {
+  return tools.map(tool => tool?.type).filter(Boolean).join(',') || 'none';
+}
+
+function recordOpenAIRequest({ operation, model, tools, status, durationMs, usage = null, error = null }) {
+  const tags = {
+    provider: 'openai',
+    source: 'ai_place_summary',
+    operation,
+    model,
+    tools: toolNames(tools),
+    status,
+  };
+  telemetry.incrementCounter('openai.api_requests', 1, tags);
+  telemetry.captureMetricEvent('openai.api_requests', 1, tags, {
+    durationMs,
+    usage,
+    error: error?.message,
+  });
+
+  if (status === 'error') {
+    telemetry.incrementCounter('openai.api_errors', 1, { ...tags, error_name: error?.name || 'Error' });
+    telemetry.captureMetricEvent('openai.api_errors', 1, {
+      ...tags,
+      error_name: error?.name || 'Error',
+    }, {
+      durationMs,
+      error: error?.message,
+    });
+  }
+}
+
 export function createOpenAIPlaceSummarizer({
   apiKey,
   client,
@@ -30,17 +63,38 @@ export function createOpenAIPlaceSummarizer({
 
   const openai = client || new OpenAI({ apiKey });
 
-  async function createResponse({ input, tools = [] }) {
-    const response = await openai.responses.create({
-      model,
-      input,
-      tools,
-      store: false,
-      reasoning: { effort: 'minimal' },
-      text: { verbosity: 'low' },
-      max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
-    });
-    return extractResponseText(response);
+  async function createResponse({ operation, input, tools = [] }) {
+    const startedAt = Date.now();
+    try {
+      const response = await openai.responses.create({
+        model,
+        input,
+        tools,
+        store: false,
+        reasoning: { effort: 'minimal' },
+        text: { verbosity: 'low' },
+        max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
+      });
+      recordOpenAIRequest({
+        operation,
+        model,
+        tools,
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        usage: response?.usage || null,
+      });
+      return extractResponseText(response);
+    } catch (error) {
+      recordOpenAIRequest({
+        operation,
+        model,
+        tools,
+        status: 'error',
+        durationMs: Date.now() - startedAt,
+        error,
+      });
+      throw error;
+    }
   }
 
   return {
@@ -58,6 +112,7 @@ export function createOpenAIPlaceSummarizer({
       if (reviewText.length === 0) return null;
 
       return createResponse({
+        operation: 'review_summary',
         input: [
           {
             role: 'system',
@@ -85,6 +140,7 @@ export function createOpenAIPlaceSummarizer({
       if (!homepageUrl) return null;
 
       const summary = await createResponse({
+        operation: 'homepage_summary',
         tools: [{ type: 'web_search' }],
         input: [
           {
