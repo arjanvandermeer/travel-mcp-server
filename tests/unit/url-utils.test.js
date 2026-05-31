@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
   displayHostname,
+  preferHttpsForSameHost,
   sanitizeEmailHref,
   sanitizeHttpUrl,
   sanitizeHttpUrlList,
@@ -41,6 +42,20 @@ describe('url utilities', () => {
     assert.strictEqual(poi.google_website, 'https://venue.example/');
     assert.strictEqual(poi.google_maps_url, null);
     assert.deepStrictEqual(poi.google_photos, [{ url: 'https://images.example/a.jpg' }]);
+  });
+
+  it('prefers HTTPS when Google and OSM websites use the same host', () => {
+    assert.strictEqual(
+      preferHttpsForSameHost('http://www.roxyhotelnyc.com/', 'https://www.roxyhotelnyc.com/'),
+      'https://www.roxyhotelnyc.com/',
+    );
+
+    const poi = sanitizePoiExternalUrls({
+      google_website: 'http://www.roxyhotelnyc.com/',
+      osm_website: 'https://www.roxyhotelnyc.com/',
+    });
+    assert.strictEqual(poi.google_website, 'https://www.roxyhotelnyc.com/');
+    assert.strictEqual(poi.osm_website, 'https://www.roxyhotelnyc.com/');
   });
 
   it('builds safe contact hrefs', () => {

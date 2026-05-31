@@ -15,6 +15,40 @@ export function cssUrl(value) {
   return url ? url.replace(/["\\\n\r\f]/g, char => encodeURIComponent(char)) : '';
 }
 
+function comparableHostname(value) {
+  const url = safeHttpUrl(value);
+  if (!url) return '';
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+export function preferHttpsForSameHost(primaryValue, fallbackValue) {
+  const primary = safeHttpUrl(primaryValue);
+  const fallback = safeHttpUrl(fallbackValue);
+  if (!primary) return fallback;
+  if (!fallback) return primary;
+
+  try {
+    const primaryUrl = new URL(primary);
+    const fallbackUrl = new URL(fallback);
+    if (
+      primaryUrl.protocol === 'http:' &&
+      fallbackUrl.protocol === 'https:' &&
+      comparableHostname(primary) === comparableHostname(fallback)
+    ) {
+      primaryUrl.protocol = 'https:';
+      return primaryUrl.href;
+    }
+  } catch {
+    return primary;
+  }
+
+  return primary;
+}
+
 export function createFormatStore() {
   return {
     placeMeta(poi = {}) {
@@ -91,7 +125,9 @@ export function createFormatStore() {
       return poi.google_phone || poi.google_international_phone || poi.osm_phone || poi.phone || '';
     },
     bestWebsite(poi = {}) {
-      return safeHttpUrl(poi.google_website) || safeHttpUrl(poi.osm_website) || safeHttpUrl(poi.website) || '';
+      const osmWebsite = safeHttpUrl(poi.osm_website);
+      const fallbackWebsite = osmWebsite || safeHttpUrl(poi.website);
+      return preferHttpsForSameHost(poi.google_website, fallbackWebsite) || fallbackWebsite || '';
     },
     websiteLabel(poi = {}) {
       const href = this.bestWebsite(poi);

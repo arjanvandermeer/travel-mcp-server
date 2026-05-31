@@ -215,7 +215,23 @@ describe('extractPOIData', () => {
     };
 
     const poi = extractPOIData(item, 'hotel', 'thailand');
-    assert.strictEqual(poi.address, '123, Main Street, Bangkok, 10110');
+    assert.strictEqual(poi.address, '123 Main Street, Bangkok, 10110');
+  });
+
+  it('should not split house number and street with a comma', () => {
+    const item = {
+      ...baseItem,
+      tags: {
+        ...baseItem.tags,
+        'addr:housenumber': '2',
+        'addr:street': 'Avenue of the Americas',
+        'addr:city': 'New York',
+        'addr:postcode': '10013',
+      },
+    };
+
+    const poi = extractPOIData(item, 'hotel', 'new-york-latest');
+    assert.strictEqual(poi.address, '2 Avenue of the Americas, New York, 10013');
   });
 
   it('should extract phone number', () => {

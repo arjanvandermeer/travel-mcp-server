@@ -13,6 +13,41 @@ export function sanitizeHttpUrl(value) {
   }
 }
 
+function comparableHostname(value) {
+  const url = sanitizeHttpUrl(value);
+  if (!url) return null;
+
+  try {
+    return new URL(url).hostname.replace(/^www\./, '').toLowerCase();
+  } catch {
+    return null;
+  }
+}
+
+export function preferHttpsForSameHost(primaryValue, fallbackValue) {
+  const primary = sanitizeHttpUrl(primaryValue);
+  const fallback = sanitizeHttpUrl(fallbackValue);
+  if (!primary) return fallback;
+  if (!fallback) return primary;
+
+  try {
+    const primaryUrl = new URL(primary);
+    const fallbackUrl = new URL(fallback);
+    if (
+      primaryUrl.protocol === 'http:' &&
+      fallbackUrl.protocol === 'https:' &&
+      comparableHostname(primary) === comparableHostname(fallback)
+    ) {
+      primaryUrl.protocol = 'https:';
+      return primaryUrl.href;
+    }
+  } catch {
+    return primary;
+  }
+
+  return primary;
+}
+
 export function sanitizeHttpUrlList(values) {
   if (!Array.isArray(values)) return [];
   const seen = new Set();
@@ -62,6 +97,13 @@ export function sanitizePoiExternalUrls(poi) {
     if (field in sanitized) {
       sanitized[field] = sanitizeHttpUrl(sanitized[field]);
     }
+  }
+
+  if ('google_website' in sanitized) {
+    sanitized.google_website = preferHttpsForSameHost(
+      sanitized.google_website,
+      sanitized.osm_website || sanitized.website,
+    );
   }
 
   if (Array.isArray(sanitized.photo_urls)) {

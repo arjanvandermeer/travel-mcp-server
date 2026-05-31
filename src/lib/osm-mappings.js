@@ -225,8 +225,10 @@ function parseCount(value, maxValue = 100000) {
  */
 function buildAddress(tags) {
   const parts = [];
-  if (tags['addr:housenumber']) parts.push(tags['addr:housenumber']);
-  if (tags['addr:street']) parts.push(tags['addr:street']);
+  const streetLine = [tags['addr:housenumber'], tags['addr:street']]
+    .filter(Boolean)
+    .join(' ');
+  if (streetLine) parts.push(streetLine);
   if (tags['addr:city']) parts.push(tags['addr:city']);
   if (tags['addr:postcode']) parts.push(tags['addr:postcode']);
   if (tags['addr:country']) parts.push(tags['addr:country']);
