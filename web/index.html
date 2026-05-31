@@ -291,6 +291,23 @@
                       <strong x-text="$store.poi.websiteUrl()"></strong>
                     </a>
                   </div>
+                  <div class="ai-summary-section" x-show="$store.poi.current.ai_homepage_summary || $store.poi.current.ai_review_summary">
+                    <div class="section-heading">
+                      <span>AI summary</span>
+                      <strong x-show="$store.poi.current.ai_homepage_summary && $store.poi.current.ai_review_summary">Website + reviews</strong>
+                    </div>
+                    <div class="ai-summary-grid">
+                      <article class="ai-summary-card" x-show="$store.poi.current.ai_homepage_summary">
+                        <span>Homepage</span>
+                        <p x-text="$store.poi.current.ai_homepage_summary"></p>
+                        <a x-show="$store.poi.current.ai_homepage_url" :href="$store.poi.current.ai_homepage_url" target="_blank" rel="noopener">Source website</a>
+                      </article>
+                      <article class="ai-summary-card" x-show="$store.poi.current.ai_review_summary">
+                        <span>Reviews</span>
+                        <p x-text="$store.poi.current.ai_review_summary"></p>
+                      </article>
+                    </div>
+                  </div>
                   <div class="review-section" x-show="$store.format.reviewCards($store.poi.current).length">
                     <div class="section-heading">
                       <span>Reviews</span>

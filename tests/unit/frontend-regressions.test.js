@@ -77,6 +77,8 @@ describe('frontend regressions', () => {
     assert.doesNotMatch(appJs, /is listed as/, 'PDP summary copy should not keep the listed-as sentence generator');
     assert.doesNotMatch(indexHtml, /visitor-details|contact-card|contactLinks\(\$store\.poi\.current\)/, 'PDP should remove the old lower status and separate contact text boxes');
     assert.match(indexHtml, /place-contact-box[\s\S]*Address[\s\S]*Phone[\s\S]*place-website-box[\s\S]*Website/, 'PDP should show website in a distinct box below address and phone');
+    assert.match(indexHtml, /ai-summary-section[\s\S]*ai_homepage_summary[\s\S]*ai_review_summary/, 'PDP should render AI homepage and review summaries when available');
+    assert.match(dossierCss, /\.ai-summary-section[\s\S]*\.ai-summary-card/, 'PDP AI summaries should have dedicated card styling');
     assert.match(appJs, /phoneNumber\(\)/, 'PDP should preserve the formatted phone number for display');
     assert.match(indexHtml, /hero-actions[\s\S]*hero-icon-button[\s\S]*websiteUrl\(\)[\s\S]*phoneUrl\(\)/, 'PDP should expose save, maps, website, and call as hero icon actions');
     assert.match(indexHtml, /favorite-date-button[\s\S]*Bookmarked[\s\S]*favoriteSinceLabel\(\)/, 'PDP Trip Composer should show when an existing favorite was bookmarked');
