@@ -99,6 +99,8 @@ const STREET_TOKEN_ALIASES = new Map([
   ['n', 'north'],
   ['pkwy', 'parkway'],
   ['pl', 'place'],
+  ['prta', 'puerta'],
+  ['pta', 'puerta'],
   ['rd', 'road'],
   ['s', 'south'],
   ['sq', 'square'],
@@ -127,12 +129,23 @@ const STREET_PHRASE_ALIASES = new Map([
   ['sixth avenue', '6 avenue'],
 ]);
 
+const STREET_PREFIX_TOKENS = new Set([
+  'avenida', 'calle', 'place', 'plaza', 'piazza', 'rue', 'strada', 'street',
+]);
+
+const STREET_PREFIX_ARTICLES = new Set([
+  'da', 'de', 'del', 'della', 'der', 'des', 'di', 'do', 'dos', 'du', 'el',
+  'la', 'las', 'le', 'les', 'los', 'the',
+]);
+
 function normalizeName(str) {
   return str
     .normalize('NFKD')
     .replace(/[\u0300-\u036f]/g, '')
     .toLowerCase()
     .replace(/&/g, ' and ')
+    .replace(/(\p{L})(\p{N})/gu, '$1 $2')
+    .replace(/(\p{N})(?!(?:st|nd|rd|th)\b)(\p{L})/gu, '$1 $2')
     .replace(/[^\p{L}\p{N}\s]/gu, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -149,6 +162,20 @@ function canonicalToken(token) {
 function canonicalStreetToken(token) {
   const ordinal = token.replace(/^(\d+)(st|nd|rd|th)$/u, '$1');
   return ORDINAL_WORD_ALIASES.get(ordinal) || STREET_TOKEN_ALIASES.get(ordinal) || ordinal;
+}
+
+function stripLeadingStreetPrefix(tokens) {
+  const stripped = [...tokens];
+  if (!STREET_PREFIX_TOKENS.has(stripped[0])) {
+    return stripped;
+  }
+
+  stripped.shift();
+  while (stripped.length > 0 && STREET_PREFIX_ARTICLES.has(stripped[0])) {
+    stripped.shift();
+  }
+
+  return stripped.length > 0 ? stripped : tokens;
 }
 
 function getComparableTokens(str) {
@@ -368,15 +395,27 @@ function getDisplayName(place) {
 
 function parseAddressLine(address) {
   if (!address || typeof address !== 'string') return {};
-  const firstLine = address.split(',')[0]?.trim();
+  const parts = address.split(',').map(part => part.trim()).filter(Boolean);
+  const firstLine = parts[0];
   if (!firstLine) return {};
 
   const match = firstLine.match(/^([A-Za-z]?\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?)\s+(.+)$/u);
-  if (!match) return {};
-  return {
-    houseNumber: match[1],
-    street: match[2],
-  };
+  if (match) {
+    return {
+      houseNumber: match[1],
+      street: match[2],
+    };
+  }
+
+  const trailingHouseNumber = parts[1]?.match(/^([A-Za-z]?\d+[A-Za-z]?(?:[-/]\d+[A-Za-z]?)?)$/u);
+  if (trailingHouseNumber && /\p{L}/u.test(firstLine)) {
+    return {
+      houseNumber: trailingHouseNumber[1],
+      street: firstLine,
+    };
+  }
+
+  return {};
 }
 
 function componentValue(component) {
@@ -428,7 +467,11 @@ export function normalizeStreetName(value) {
     .map(canonicalStreetToken)
     .filter(Boolean);
   const phrase = tokens.join(' ');
-  return STREET_PHRASE_ALIASES.get(phrase) || phrase;
+  const alias = STREET_PHRASE_ALIASES.get(phrase);
+  if (alias) return alias;
+
+  const strippedPhrase = stripLeadingStreetPrefix(tokens).join(' ');
+  return STREET_PHRASE_ALIASES.get(strippedPhrase) || strippedPhrase || phrase;
 }
 
 export function comparePlaceAddress(poi, place) {

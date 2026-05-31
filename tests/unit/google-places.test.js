@@ -215,6 +215,11 @@ describe('GooglePlacesClient', () => {
       assert.ok(score >= 0.9);
     });
 
+    it('should split joined letters and numbers before comparing names', () => {
+      const score = client.calculateNameSimilarity('coco 51', 'Coco51 Restaurant & Bar');
+      assert.ok(score >= 0.9);
+    });
+
     it('should still reject one-token false positives', () => {
       const score = client.calculateNameSimilarity('Wat Arun', 'Wat Pho');
       assert.ok(score < 0.7);
@@ -226,6 +231,11 @@ describe('GooglePlacesClient', () => {
       assert.strictEqual(normalizeStreetName('Avenue of the Americas'), '6 avenue');
       assert.strictEqual(normalizeStreetName('6th Ave'), '6 avenue');
       assert.strictEqual(normalizeStreetName('Sixth Avenue'), '6 avenue');
+    });
+
+    it('should normalize European street prefixes and trailing house numbers', () => {
+      assert.strictEqual(normalizeStreetName('Plaza de la Puerta del Sol'), 'puerta del sol');
+      assert.strictEqual(normalizeStreetName('Prta del Sol'), 'puerta del sol');
     });
 
     it('should rescue a borderline name with close address and street-alias evidence', () => {
@@ -247,6 +257,35 @@ describe('GooglePlacesClient', () => {
           formattedAddress: '2 6th Ave, New York, NY 10013, USA',
           location: { latitude: 40.719404, longitude: -74.004902 },
           types: ['hotel', 'lodging'],
+        },
+      );
+
+      assert.ok(evidence.nameScore < 0.7, 'test fixture should stay below direct name threshold');
+      assert.strictEqual(evidence.address.houseNumberMatch, true);
+      assert.strictEqual(evidence.address.streetMatch, true);
+      assert.strictEqual(evidence.addressRescue, true);
+      assert.strictEqual(evidence.accepted, true);
+    });
+
+    it('should parse street-first addresses for close address evidence', () => {
+      const evidence = scorePlaceCandidate(
+        {
+          name: 'Apartamentos del Sol',
+          poi_type: 'hotel',
+          latitude: 40.416626,
+          longitude: -3.702500,
+          tags: {
+            'addr:housenumber': '3',
+            'addr:street': 'Plaza de la Puerta del Sol',
+          },
+        },
+        ['Apartamentos del Sol'],
+        {
+          id: 'sol-apartments',
+          displayName: { text: 'Sol Apartments' },
+          formattedAddress: 'Prta del Sol, 3, Centro, 28013 Madrid, Spain',
+          location: { latitude: 40.4166443, longitude: -3.7025212 },
+          types: ['lodging'],
         },
       );
 
