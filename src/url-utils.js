@@ -99,7 +99,7 @@ export function sanitizePoiExternalUrls(poi) {
     }
   }
 
-  if ('google_website' in sanitized) {
+  if (sanitized.google_website) {
     sanitized.google_website = preferHttpsForSameHost(
       sanitized.google_website,
       sanitized.osm_website || sanitized.website,

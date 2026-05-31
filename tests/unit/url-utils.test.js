@@ -58,6 +58,15 @@ describe('url utilities', () => {
     assert.strictEqual(poi.osm_website, 'https://www.roxyhotelnyc.com/');
   });
 
+  it('does not copy OSM website into a missing Google website field', () => {
+    const poi = sanitizePoiExternalUrls({
+      google_website: null,
+      osm_website: 'https://www.roxyhotelnyc.com/',
+    });
+    assert.strictEqual(poi.google_website, null);
+    assert.strictEqual(poi.osm_website, 'https://www.roxyhotelnyc.com/');
+  });
+
   it('builds safe contact hrefs', () => {
     assert.strictEqual(sanitizePhoneHref('+1 (555) 123-4567'), 'tel:+15551234567');
     assert.strictEqual(sanitizePhoneHref('call me'), null);
