@@ -68,7 +68,7 @@ describe('frontend regressions', () => {
     assert.match(styleCss, /\.home-category-strip/, 'Homepage category controls should be styled');
     assert.match(styleCss, /\.hero-credit/, 'Hero image attribution should be styled');
     assert.match(indexHtml, /Raw place data/, 'PDP should hide raw data behind a data modal');
-    assert.match(appJs, /__travelAnalytics\?\.update\?\.\(pathname\)/, 'SPA route changes should update route-aware analytics before loading the PDP');
+    assert.doesNotMatch(appJs, /__travelAnalytics|gtag|google-analytics/, 'PDP should not keep client-side Google Analytics hooks');
     assert.match(dossierCss, /\.photo-strip[\s\S]*overflow-x: auto/, 'PDP photos should render as a horizontal scroller');
     assert.match(indexHtml, /media-carousel[\s\S]*poiPhotoStrip[\s\S]*carousel-dots/, 'PDP photo scroller should expose arrows and dots');
     assert.match(indexHtml, /class="open-compact hero-open-status"[\s\S]*price-pill/, 'PDP should show the compact open status and price pills in the hero');

@@ -18,20 +18,9 @@ describe('http static utils', () => {
     });
   });
 
-  it('only renders analytics for valid measurement IDs', () => {
+  it('does not render Google Analytics tags while web analytics is disabled', () => {
     assert.strictEqual(renderGoogleAnalyticsTag('not-valid'), '');
-    assert.strictEqual(renderGoogleAnalyticsTag('GTM-ABC123DEF').includes('googletagmanager.com/gtag/js'), false);
-    assert.ok(renderGoogleAnalyticsTag('G-ABC123DEF4').includes('G-ABC123DEF4'));
-  });
-
-  it('renders route-aware analytics that suppresses PDP tracking', () => {
-    const html = renderGoogleAnalyticsTag('G-ABC123DEF4');
-
-    assert.ok(html.includes('window.__travelAnalytics'));
-    assert.ok(html.includes("indexOf('/poi/') === 0"));
-    assert.ok(html.includes('send_page_view: false'));
-    assert.ok(html.includes("window.gtag('event', 'page_view'"));
-    assert.ok(!html.includes('<script async src="https://www.googletagmanager.com/gtag/js'));
+    assert.strictEqual(renderGoogleAnalyticsTag('G-ABC123DEF4'), '');
   });
 
   it('adds asset versions and optional analytics to the web index', () => {
@@ -50,6 +39,7 @@ describe('http static utils', () => {
     assert.ok(html.includes('href="/favicon.ico"'));
     assert.ok(html.includes('href="/favicon.png"'));
     assert.ok(html.includes('<span>abc123</span>'));
-    assert.ok(html.includes('G-ABC123DEF4'));
+    assert.ok(!html.includes('G-ABC123DEF4'));
+    assert.ok(!html.includes('googletagmanager.com'));
   });
 });
