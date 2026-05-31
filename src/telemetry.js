@@ -165,6 +165,36 @@ export function captureMessage(message, level = 'info', context = {}) {
 }
 
 /**
+ * Capture a low-volume metric event as a normal Sentry event.
+ *
+ * Sentry SDK v8+ removed the old custom metrics API, so counters recorded via
+ * incrementCounter() are only breadcrumbs in newer SDKs. Dashboard counters need
+ * queryable events/tags, especially for external API cost visibility.
+ */
+export function captureMetricEvent(name, value = 1, tags = {}, extra = {}) {
+  if (!telemetryEnabled) return;
+
+  Sentry.withScope(scope => {
+    scope.setLevel('info');
+    scope.setTag('metric_name', name);
+    for (const [key, rawValue] of Object.entries(tags)) {
+      if (rawValue !== undefined && rawValue !== null) {
+        scope.setTag(key, String(rawValue));
+      }
+    }
+    scope.setExtra('metric_value', value);
+    scope.setExtra('metric_tags', tags);
+    for (const [key, rawValue] of Object.entries(extra)) {
+      if (rawValue !== undefined) {
+        scope.setExtra(key, rawValue);
+      }
+    }
+    scope.setFingerprint(['metric', name]);
+    Sentry.captureMessage(`metric:${name}`);
+  });
+}
+
+/**
  * Start a transaction/span for performance monitoring
  * @param {string} name - Transaction name (e.g., 'mcp.tool.search_hotels')
  * @param {string} op - Operation type (e.g., 'mcp.request', 'db.query')
@@ -421,6 +451,7 @@ export default {
   isEnabled,
   captureException,
   captureMessage,
+  captureMetricEvent,
   startTransaction,
   withTransaction,
   addBreadcrumb,

@@ -96,6 +96,16 @@ describe('telemetry', () => {
     });
   });
 
+  describe('captureMetricEvent (disabled)', () => {
+    it('should return early when telemetry disabled', () => {
+      telemetry.captureMetricEvent('test.metric');
+    });
+
+    it('should accept value, tags, and extra context', () => {
+      telemetry.captureMetricEvent('test.metric', 2, { endpoint: 'test' }, { sample: true });
+    });
+  });
+
   describe('startTransaction (disabled)', () => {
     it('should return no-op transaction object', () => {
       const txn = telemetry.startTransaction('test-txn', 'test');

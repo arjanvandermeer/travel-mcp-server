@@ -24,6 +24,28 @@ dotenv.config();
 
 const GOOGLE_PLACES_API_KEY = process.env.GOOGLE_PLACES_API_KEY;
 
+function recordGooglePlacesApiCall(endpoint, method, fieldMask = null) {
+  const tags = {
+    provider: 'google_places',
+    source: 'enrichment',
+    endpoint,
+    method,
+  };
+  telemetry.incrementCounter('google_places.api_calls', 1, { endpoint, method });
+  telemetry.captureMetricEvent('google_places.api_calls', 1, tags, { fieldMask });
+}
+
+function recordGooglePlacesApiError(endpoint, tags = {}) {
+  const eventTags = {
+    provider: 'google_places',
+    source: 'enrichment',
+    endpoint,
+    ...tags,
+  };
+  telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, ...tags });
+  telemetry.captureMetricEvent('google_places.api_errors', 1, eventTags);
+}
+
 export class GooglePlacesClient {
   /**
    * @param {string} apiKey - Google Places API key
@@ -74,7 +96,7 @@ export class GooglePlacesClient {
 
     // Track API call with metrics
     return telemetry.timeAsync('google_places.api_latency', async () => {
-      telemetry.incrementCounter('google_places.api_calls', 1, { endpoint, method: 'POST' });
+      recordGooglePlacesApiCall(endpoint, 'POST', fieldMask);
 
       return new Promise((resolve, reject) => {
         const req = https.request(url, options, (res) => {
@@ -90,21 +112,21 @@ export class GooglePlacesClient {
 
               // Check for error in response
               if (result.error) {
-                telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, error_status: result.error.status });
+                recordGooglePlacesApiError(endpoint, { error_status: result.error.status });
                 reject(new Error(`Google Places API error: ${result.error.status} - ${result.error.message || ''}`));
                 return;
               }
 
               resolve(result);
             } catch (error) {
-              telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, error_type: 'parse_error' });
+              recordGooglePlacesApiError(endpoint, { error_type: 'parse_error' });
               reject(new Error(`Failed to parse Google Places API response: ${error.message}`));
             }
           });
         });
 
         req.on('error', (error) => {
-          telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, error_type: 'request_error' });
+          recordGooglePlacesApiError(endpoint, { error_type: 'request_error' });
           reject(new Error(`Google Places API request failed: ${error.message}`));
         });
 
@@ -134,7 +156,7 @@ export class GooglePlacesClient {
 
     // Track API call with metrics
     return telemetry.timeAsync('google_places.api_latency', async () => {
-      telemetry.incrementCounter('google_places.api_calls', 1, { endpoint, method: 'GET' });
+      recordGooglePlacesApiCall(endpoint, 'GET', fieldMask);
 
       return new Promise((resolve, reject) => {
         const req = https.request(url, options, (res) => {
@@ -147,7 +169,7 @@ export class GooglePlacesClient {
           res.on('end', () => {
             try {
               if (!data) {
-                telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, error_type: 'empty_response' });
+                recordGooglePlacesApiError(endpoint, { error_type: 'empty_response' });
                 reject(new Error('Empty response from Google Places API'));
                 return;
               }
@@ -156,21 +178,21 @@ export class GooglePlacesClient {
 
               // Check for error in response
               if (result.error) {
-                telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, error_status: result.error.status });
+                recordGooglePlacesApiError(endpoint, { error_status: result.error.status });
                 reject(new Error(`Google Places API error: ${result.error.status} - ${result.error.message || ''}`));
                 return;
               }
 
               resolve(result);
             } catch (error) {
-              telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, error_type: 'parse_error' });
+              recordGooglePlacesApiError(endpoint, { error_type: 'parse_error' });
               reject(new Error(`Failed to parse Google Places API response: ${error.message}`));
             }
           });
         });
 
         req.on('error', (error) => {
-          telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, error_type: 'request_error' });
+          recordGooglePlacesApiError(endpoint, { error_type: 'request_error' });
           reject(new Error(`Google Places API request failed: ${error.message}`));
         });
 
