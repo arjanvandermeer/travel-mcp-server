@@ -35,6 +35,7 @@
     "test:rest-smoke:live": "node scripts/rest-endpoints-smoke.js",
     "test:smoke:live": "npm run test:mcp-smoke:live && npm run test:rest-smoke:live",
     "test:maintenance-gate-smoke": "node scripts/maintenance-review-smoke.js",
+    "validate:google-mappings": "node scripts/validate-google-mappings.js",
     "test:legacy": "node tests/test-bangkok-postgres.js",
     "config": "node scripts/manage-config.js",
     "lint": "eslint src/ scripts/",
