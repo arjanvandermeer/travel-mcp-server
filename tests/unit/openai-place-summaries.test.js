@@ -41,6 +41,8 @@ describe('createOpenAIPlaceSummarizer', () => {
     assert.equal(calls[0].max_output_tokens, 1000);
     assert.deepEqual(calls[0].tools, []);
     assert.match(calls[0].input[0].content, /2-3 concise sentences/);
+    assert.match(calls[0].input[0].content, /Do not repeat the place name, city, street, neighborhood, country, or exact location/);
+    assert.match(calls[0].input[0].content, /available public footprint/);
   });
 
   it('uses web_search for homepage summaries', async () => {
@@ -59,6 +61,9 @@ describe('createOpenAIPlaceSummarizer', () => {
     assert.match(result.summary, /Guests praise/);
     assert.deepEqual(calls[0].tools, [{ type: 'web_search' }]);
     assert.match(calls[0].input[1].content, /https:\/\/example.com\/hotel/);
+    assert.match(calls[0].input[0].content, /visitor-facing copy/);
+    assert.match(calls[0].input[0].content, /Do not repeat the place name, city, street, neighborhood, country, or exact location/);
+    assert.match(calls[0].input[0].content, /available public footprint/);
   });
 
   it('returns null when no review text or homepage URL is available', async () => {

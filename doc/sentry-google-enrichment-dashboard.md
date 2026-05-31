@@ -2,29 +2,21 @@
 
 This dashboard tracks Google Places requests made by enrichment.
 
-## Required Events
+## Primary Source: Spans
 
-The server emits a normal Sentry message event for every outbound Google Places API request:
+Every outbound Google Places request is wrapped in a Sentry span:
 
 ```text
-message = metric:google_places.api_calls
-metric_name = google_places.api_calls
+span.op = http.client
+span.description/name = Google Places nearby_search | Google Places text_search | Google Places place_details
 provider = google_places
 source = enrichment
 endpoint = nearby_search | text_search | place_details
 method = POST | GET
-```
-
-Google Places request failures emit:
-
-```text
-message = metric:google_places.api_errors
-metric_name = google_places.api_errors
-provider = google_places
-source = enrichment
-endpoint = nearby_search | text_search | place_details
-error_status = <Google API status>
-error_type = parse_error | request_error | empty_response
+http.request.method = POST | GET
+server.address = places.googleapis.com
+url.scheme = https
+status = success | error
 ```
 
 ## Suggested Widgets
@@ -33,54 +25,74 @@ Create a dashboard in Sentry with these widgets.
 
 ### Google Enrichment Requests
 
-- Dataset: Errors / Events
+- Dataset: Spans
 - Visualization: Big Number
 - Query:
 
 ```text
-metric_name:google_places.api_calls source:enrichment
+span.op:http.client provider:google_places source:enrichment
 ```
 
 - Aggregate: `count()`
 
 ### Google Enrichment Requests Over Time
 
-- Dataset: Errors / Events
+- Dataset: Spans
 - Visualization: Line Chart
 - Query:
 
 ```text
-metric_name:google_places.api_calls source:enrichment
+span.op:http.client provider:google_places source:enrichment
 ```
 
 - Aggregate: `count()`
 - Group by: `endpoint`
 
-### Google Enrichment Request Errors
+### Google Enrichment Request Duration
 
-- Dataset: Errors / Events
-- Visualization: Big Number
+- Dataset: Spans
+- Visualization: Line Chart
 - Query:
 
 ```text
-metric_name:google_places.api_errors source:enrichment
+span.op:http.client provider:google_places source:enrichment
 ```
 
-- Aggregate: `count()`
+- Aggregate: `p95(span.duration)`
+- Group by: `endpoint`
 
-### Google Enrichment Errors By Type
+### Google Enrichment Requests By Endpoint
 
-- Dataset: Errors / Events
+- Dataset: Spans
 - Visualization: Table
 - Query:
 
 ```text
+span.op:http.client provider:google_places source:enrichment
+```
+
+- Columns: `endpoint`, `method`, `status`, `count()`, `p95(span.duration)`
+- Sort: `count()` descending
+
+### Google Enrichment Errors
+
+- Dataset: Spans
+- Visualization: Big Number
+- Query:
+
+```text
+span.op:http.client provider:google_places source:enrichment status:error
+```
+
+- Aggregate: `count()`
+
+## Fallback: Events
+
+The server also emits info-level metric events for compatibility:
+
+```text
+metric_name:google_places.api_calls source:enrichment
 metric_name:google_places.api_errors source:enrichment
 ```
 
-- Columns: `endpoint`, `error_status`, `error_type`, `count()`
-- Sort: `count()` descending
-
-## Notes
-
-The Sentry JavaScript SDK no longer exposes the old custom metrics API in the version used by this project, so these counters are emitted as normal tagged events. This makes them queryable in Discover and Dashboard widgets.
+Use these only if the Spans dataset is unavailable or sampled too heavily.

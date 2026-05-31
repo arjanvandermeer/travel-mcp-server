@@ -2,36 +2,31 @@
 
 This dashboard tracks OpenAI API requests made by the server.
 
-## Required Events
+## Primary Source: Spans
 
-The server emits a normal Sentry message event for every outbound OpenAI request:
+Every outbound OpenAI request is wrapped in a Sentry span:
 
 ```text
-message = metric:openai.api_requests
-metric_name = openai.api_requests
+span.op = ai.openai
+span.description/name = OpenAI review_summary | OpenAI homepage_summary
 provider = openai
 source = ai_place_summary
 operation = review_summary | homepage_summary
 model = <OpenAI model>
 tools = none | web_search
+ai.provider = openai
+ai.model_id = <OpenAI model>
+ai.operation = responses.create
 status = success | error
 ```
 
-OpenAI request failures also emit:
+When OpenAI returns usage data, the span also includes:
 
 ```text
-message = metric:openai.api_errors
-metric_name = openai.api_errors
-provider = openai
-source = ai_place_summary
-operation = review_summary | homepage_summary
-model = <OpenAI model>
-tools = none | web_search
-status = error
-error_name = <Error class>
+ai.usage.input_tokens
+ai.usage.output_tokens
+ai.usage.total_tokens
 ```
-
-When the OpenAI SDK response includes usage information, the event contains it in `usage` extra data.
 
 ## Suggested Widgets
 
@@ -39,67 +34,74 @@ Create a dashboard in Sentry with these widgets.
 
 ### OpenAI Requests
 
-- Dataset: Errors / Events
+- Dataset: Spans
 - Visualization: Big Number
 - Query:
 
 ```text
-metric_name:openai.api_requests provider:openai
+span.op:ai.openai provider:openai
 ```
 
 - Aggregate: `count()`
 
 ### OpenAI Requests Over Time
 
-- Dataset: Errors / Events
+- Dataset: Spans
 - Visualization: Line Chart
 - Query:
 
 ```text
-metric_name:openai.api_requests provider:openai
+span.op:ai.openai provider:openai
 ```
 
 - Aggregate: `count()`
 - Group by: `operation`
 
+### OpenAI Request Duration
+
+- Dataset: Spans
+- Visualization: Line Chart
+- Query:
+
+```text
+span.op:ai.openai provider:openai
+```
+
+- Aggregate: `p95(span.duration)`
+- Group by: `operation`
+
 ### OpenAI Requests By Model
 
-- Dataset: Errors / Events
+- Dataset: Spans
 - Visualization: Table
 - Query:
 
 ```text
-metric_name:openai.api_requests provider:openai
+span.op:ai.openai provider:openai
 ```
 
-- Columns: `model`, `operation`, `tools`, `status`, `count()`
+- Columns: `model`, `operation`, `tools`, `status`, `count()`, `p95(span.duration)`
 - Sort: `count()` descending
 
 ### OpenAI Errors
 
-- Dataset: Errors / Events
+- Dataset: Spans
 - Visualization: Big Number
 - Query:
 
 ```text
-metric_name:openai.api_errors provider:openai
+span.op:ai.openai provider:openai status:error
 ```
 
 - Aggregate: `count()`
 
-### OpenAI Errors By Operation
+## Fallback: Events
 
-- Dataset: Errors / Events
-- Visualization: Table
-- Query:
+The server also emits info-level metric events for compatibility:
 
 ```text
+metric_name:openai.api_requests provider:openai
 metric_name:openai.api_errors provider:openai
 ```
 
-- Columns: `operation`, `model`, `tools`, `error_name`, `count()`
-- Sort: `count()` descending
-
-## Notes
-
-The Sentry JavaScript SDK no longer exposes the old custom metrics API in the version used by this project, so these counters are emitted as normal tagged events. This makes them queryable in Discover and Dashboard widgets.
+Use these only if the Spans dataset is unavailable or sampled too heavily.

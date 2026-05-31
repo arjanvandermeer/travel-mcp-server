@@ -153,6 +153,47 @@ describe('telemetry', () => {
     });
   });
 
+  describe('withSpan (disabled)', () => {
+    it('should call fn directly when disabled', async () => {
+      let called = false;
+      const result = await telemetry.withSpan('test-span', 'test.op', { provider: 'test' }, async (span) => {
+        called = true;
+        span.setAttribute('status', 'ok');
+        return 42;
+      });
+
+      assert.strictEqual(called, true);
+      assert.strictEqual(result, 42);
+    });
+
+    it('should propagate errors from fn', async () => {
+      await assert.rejects(
+        () => telemetry.withSpan('test-span', 'test.op', {}, async () => {
+          throw new Error('span error');
+        }),
+        /span error/,
+      );
+    });
+  });
+
+  describe('setSpanAttributes', () => {
+    it('should set only non-null attributes', () => {
+      const attributes = {};
+      telemetry.setSpanAttributes({
+        setAttribute: (key, value) => {
+          attributes[key] = value;
+        },
+      }, {
+        ok: 'yes',
+        zero: 0,
+        missing: null,
+        absent: undefined,
+      });
+
+      assert.deepStrictEqual(attributes, { ok: 'yes', zero: 0 });
+    });
+  });
+
   describe('addBreadcrumb (disabled)', () => {
     it('should return early when disabled', () => {
       telemetry.addBreadcrumb('test breadcrumb');

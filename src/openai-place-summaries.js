@@ -52,6 +52,19 @@ function recordOpenAIRequest({ operation, model, tools, status, durationMs, usag
   }
 }
 
+function openAISpanAttributes(operation, model, tools = []) {
+  return {
+    provider: 'openai',
+    source: 'ai_place_summary',
+    operation,
+    model,
+    tools: toolNames(tools),
+    'ai.provider': 'openai',
+    'ai.model_id': model,
+    'ai.operation': 'responses.create',
+  };
+}
+
 export function createOpenAIPlaceSummarizer({
   apiKey,
   client,
@@ -66,15 +79,28 @@ export function createOpenAIPlaceSummarizer({
   async function createResponse({ operation, input, tools = [] }) {
     const startedAt = Date.now();
     try {
-      const response = await openai.responses.create({
-        model,
-        input,
-        tools,
-        store: false,
-        reasoning: { effort: 'minimal' },
-        text: { verbosity: 'low' },
-        max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
-      });
+      const response = await telemetry.withSpan(
+        `OpenAI ${operation}`,
+        'ai.openai',
+        openAISpanAttributes(operation, model, tools),
+        async (span) => {
+          const result = await openai.responses.create({
+            model,
+            input,
+            tools,
+            store: false,
+            reasoning: { effort: 'minimal' },
+            text: { verbosity: 'low' },
+            max_output_tokens: DEFAULT_MAX_OUTPUT_TOKENS,
+          });
+          telemetry.setSpanAttributes(span, {
+            'ai.usage.input_tokens': result?.usage?.input_tokens,
+            'ai.usage.output_tokens': result?.usage?.output_tokens,
+            'ai.usage.total_tokens': result?.usage?.total_tokens,
+          });
+          return result;
+        },
+      );
       recordOpenAIRequest({
         operation,
         model,
@@ -116,7 +142,14 @@ export function createOpenAIPlaceSummarizer({
         input: [
           {
             role: 'system',
-            content: 'You summarize traveler reviews for a travel app. Be balanced, concrete, and useful. Do not invent facts. Return exactly 2-3 concise sentences and no bullets.',
+            content: [
+              'You summarize traveler reviews for a travel app.',
+              'Write visitor-facing copy about what guests experience, not a database description.',
+              'Do not repeat the place name, city, street, neighborhood, country, or exact location.',
+              'Avoid meta phrases such as "available public footprint", "business record", "reviews indicate", or "the data suggests".',
+              'Be balanced, concrete, and useful. Do not invent facts.',
+              'Return exactly 2-3 concise sentences and no bullets.',
+            ].join(' '),
           },
           {
             role: 'user',
@@ -145,7 +178,15 @@ export function createOpenAIPlaceSummarizer({
         input: [
           {
             role: 'system',
-            content: 'You inspect official property websites for a travel app. Use web search/opening only for the provided URL. Return exactly 2-3 concise sentences. Prefer factual details about the property experience, facilities, location, and booking-relevant traits. Do not mention inability unless the page cannot be accessed.',
+            content: [
+              'You inspect official property websites for a travel app.',
+              'Use web search/opening only for the provided URL.',
+              'Write visitor-facing copy about the experience, menu/services, amenities, vibe, and practical reasons to choose it.',
+              'Do not repeat the place name, city, street, neighborhood, country, or exact location.',
+              'Avoid meta phrases such as "available public footprint", "business record", "official site says", or "the website presents itself".',
+              'If the homepage is thin, summarize only concrete visitor-relevant facts and do not talk about missing information.',
+              'Return exactly 2-3 concise sentences and no bullets.',
+            ].join(' '),
           },
           {
             role: 'user',

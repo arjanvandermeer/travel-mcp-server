@@ -46,6 +46,19 @@ function recordGooglePlacesApiError(endpoint, tags = {}) {
   telemetry.captureMetricEvent('google_places.api_errors', 1, eventTags);
 }
 
+function googlePlacesSpanAttributes(endpoint, method, fieldMask = null) {
+  return {
+    provider: 'google_places',
+    source: 'enrichment',
+    endpoint,
+    method,
+    'http.request.method': method,
+    'server.address': 'places.googleapis.com',
+    'url.scheme': 'https',
+    field_mask: fieldMask,
+  };
+}
+
 export class GooglePlacesClient {
   /**
    * @param {string} apiKey - Google Places API key
@@ -94,46 +107,54 @@ export class GooglePlacesClient {
       },
     };
 
-    // Track API call with metrics
-    return telemetry.timeAsync('google_places.api_latency', async () => {
-      recordGooglePlacesApiCall(endpoint, 'POST', fieldMask);
+    return telemetry.withSpan(
+      `Google Places ${endpoint}`,
+      'http.client',
+      googlePlacesSpanAttributes(endpoint, 'POST', fieldMask),
+      async (span) => telemetry.timeAsync('google_places.api_latency', async () => {
+        recordGooglePlacesApiCall(endpoint, 'POST', fieldMask);
 
-      return new Promise((resolve, reject) => {
-        const req = https.request(url, options, (res) => {
-          let data = '';
+        return new Promise((resolve, reject) => {
+          const req = https.request(url, options, (res) => {
+            let data = '';
 
-          res.on('data', (chunk) => {
-            data += chunk;
-          });
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
 
-          res.on('end', () => {
-            try {
-              const result = JSON.parse(data);
+            res.on('end', () => {
+              try {
+                const result = JSON.parse(data);
 
-              // Check for error in response
-              if (result.error) {
-                recordGooglePlacesApiError(endpoint, { error_status: result.error.status });
-                reject(new Error(`Google Places API error: ${result.error.status} - ${result.error.message || ''}`));
-                return;
+                // Check for error in response
+                if (result.error) {
+                  recordGooglePlacesApiError(endpoint, { error_status: result.error.status });
+                  reject(new Error(`Google Places API error: ${result.error.status} - ${result.error.message || ''}`));
+                  return;
+                }
+
+                resolve(result);
+              } catch (error) {
+                recordGooglePlacesApiError(endpoint, { error_type: 'parse_error' });
+                reject(new Error(`Failed to parse Google Places API response: ${error.message}`));
               }
-
-              resolve(result);
-            } catch (error) {
-              recordGooglePlacesApiError(endpoint, { error_type: 'parse_error' });
-              reject(new Error(`Failed to parse Google Places API response: ${error.message}`));
-            }
+            });
           });
-        });
 
-        req.on('error', (error) => {
-          recordGooglePlacesApiError(endpoint, { error_type: 'request_error' });
-          reject(new Error(`Google Places API request failed: ${error.message}`));
-        });
+          req.on('error', (error) => {
+            recordGooglePlacesApiError(endpoint, { error_type: 'request_error' });
+            reject(new Error(`Google Places API request failed: ${error.message}`));
+          });
 
-        req.write(postData);
-        req.end();
-      });
-    }, { tags: { endpoint } });
+          req.write(postData);
+          req.end();
+        });
+      }, {
+        tags: { endpoint },
+        onSuccess: (_result, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
+        onError: (_error, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
+      }),
+    );
   }
 
   /**
@@ -154,51 +175,59 @@ export class GooglePlacesClient {
       headers,
     };
 
-    // Track API call with metrics
-    return telemetry.timeAsync('google_places.api_latency', async () => {
-      recordGooglePlacesApiCall(endpoint, 'GET', fieldMask);
+    return telemetry.withSpan(
+      `Google Places ${endpoint}`,
+      'http.client',
+      googlePlacesSpanAttributes(endpoint, 'GET', fieldMask),
+      async (span) => telemetry.timeAsync('google_places.api_latency', async () => {
+        recordGooglePlacesApiCall(endpoint, 'GET', fieldMask);
 
-      return new Promise((resolve, reject) => {
-        const req = https.request(url, options, (res) => {
-          let data = '';
+        return new Promise((resolve, reject) => {
+          const req = https.request(url, options, (res) => {
+            let data = '';
 
-          res.on('data', (chunk) => {
-            data += chunk;
+            res.on('data', (chunk) => {
+              data += chunk;
+            });
+
+            res.on('end', () => {
+              try {
+                if (!data) {
+                  recordGooglePlacesApiError(endpoint, { error_type: 'empty_response' });
+                  reject(new Error('Empty response from Google Places API'));
+                  return;
+                }
+
+                const result = JSON.parse(data);
+
+                // Check for error in response
+                if (result.error) {
+                  recordGooglePlacesApiError(endpoint, { error_status: result.error.status });
+                  reject(new Error(`Google Places API error: ${result.error.status} - ${result.error.message || ''}`));
+                  return;
+                }
+
+                resolve(result);
+              } catch (error) {
+                recordGooglePlacesApiError(endpoint, { error_type: 'parse_error' });
+                reject(new Error(`Failed to parse Google Places API response: ${error.message}`));
+              }
+            });
           });
 
-          res.on('end', () => {
-            try {
-              if (!data) {
-                recordGooglePlacesApiError(endpoint, { error_type: 'empty_response' });
-                reject(new Error('Empty response from Google Places API'));
-                return;
-              }
-
-              const result = JSON.parse(data);
-
-              // Check for error in response
-              if (result.error) {
-                recordGooglePlacesApiError(endpoint, { error_status: result.error.status });
-                reject(new Error(`Google Places API error: ${result.error.status} - ${result.error.message || ''}`));
-                return;
-              }
-
-              resolve(result);
-            } catch (error) {
-              recordGooglePlacesApiError(endpoint, { error_type: 'parse_error' });
-              reject(new Error(`Failed to parse Google Places API response: ${error.message}`));
-            }
+          req.on('error', (error) => {
+            recordGooglePlacesApiError(endpoint, { error_type: 'request_error' });
+            reject(new Error(`Google Places API request failed: ${error.message}`));
           });
-        });
 
-        req.on('error', (error) => {
-          recordGooglePlacesApiError(endpoint, { error_type: 'request_error' });
-          reject(new Error(`Google Places API request failed: ${error.message}`));
+          req.end();
         });
-
-        req.end();
-      });
-    }, { tags: { endpoint } });
+      }, {
+        tags: { endpoint },
+        onSuccess: (_result, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
+        onError: (_error, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
+      }),
+    );
   }
 
   /**

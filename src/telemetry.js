@@ -268,6 +268,39 @@ export async function withTransaction(name, op, fn) {
 }
 
 /**
+ * Wrap an async operation in a Sentry span with queryable attributes.
+ * Use this for outbound provider calls that should appear in the Spans dataset.
+ */
+export async function withSpan(name, op, attributes = {}, fn) {
+  if (!telemetryEnabled) {
+    return fn({ setAttribute: () => {}, setStatus: () => {} });
+  }
+
+  return Sentry.startSpan({ name, op, attributes }, async (span) => {
+    try {
+      const result = await fn(span);
+      span?.setAttribute('status', 'success');
+      span?.setStatus({ code: 1 });
+      return result;
+    } catch (error) {
+      span?.setAttribute('status', 'error');
+      span?.setAttribute('error.name', error?.name || 'Error');
+      span?.setAttribute('error.message', error?.message || String(error));
+      span?.setStatus({ code: 2, message: error?.message });
+      throw error;
+    }
+  });
+}
+
+export function setSpanAttributes(span, attributes = {}) {
+  for (const [key, value] of Object.entries(attributes)) {
+    if (value !== undefined && value !== null) {
+      span?.setAttribute?.(key, value);
+    }
+  }
+}
+
+/**
  * Add breadcrumb for debugging
  */
 export function addBreadcrumb(message, category = 'custom', data = {}) {
@@ -454,6 +487,8 @@ export default {
   captureMetricEvent,
   startTransaction,
   withTransaction,
+  withSpan,
+  setSpanAttributes,
   addBreadcrumb,
   setUser,
   setTag,
