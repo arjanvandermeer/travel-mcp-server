@@ -317,16 +317,21 @@ button { cursor: pointer; }
   font-size: clamp(20px, 3vw, 28px);
 }
 .home-place-card .place-body p {
-  margin: 6px 0 18px;
+  margin: 6px 0 10px;
   font-size: 16px;
+}
+.home-place-card .home-place-meta {
+  color: var(--muted);
+  white-space: nowrap;
 }
 .home-place-card .home-place-summary {
   display: -webkit-box;
   overflow: hidden;
   line-height: 1.35;
+  margin-bottom: 16px;
   white-space: normal;
   -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
 }
 .home-place-card .place-actions button {
   width: 44px;

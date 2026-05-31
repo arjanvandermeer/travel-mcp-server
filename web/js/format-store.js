@@ -34,18 +34,18 @@ export function createFormatStore() {
       if (!text) return '';
       return text.length > maxLength ? `${text.slice(0, maxLength - 3).trim()}...` : text;
     },
-    placeCardSummary(poi = {}) {
-      const summaries = [
-        this.compactText(poi.ai_homepage_summary, 180),
-        this.compactText(poi.ai_review_summary, 180),
-      ].filter(Boolean);
-      if (summaries.length) return summaries.join(' ');
-
+    placeCardMeta(poi = {}) {
       const bits = [];
       if (poi.distance_km != null) bits.push(`${Number(poi.distance_km).toFixed(1)} km`);
       if (poi.poi_type) bits.push(String(poi.poi_type).replaceAll('_', ' '));
       if (poi.google_rating) bits.push(`${Number(poi.google_rating).toFixed(1)} rating`);
       return bits.join(' · ') || 'Travel place';
+    },
+    placeCardSummary(poi = {}) {
+      return [
+        this.compactText(poi.ai_homepage_summary, 160),
+        this.compactText(poi.ai_review_summary, 160),
+      ].filter(Boolean).join(' ');
     },
     thumbStyle(poi = {}) {
       const url = cssUrl(poi.photo_url || poi.primary_photo_url);
