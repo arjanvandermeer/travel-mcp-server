@@ -1621,4 +1621,18 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.deepStrictEqual(calls, [300, 100, 200]);
     });
   });
+
+  describe('getDueAiSummaryEntries', () => {
+    it('guards review array length checks against non-array JSON values', async () => {
+      mockPool.setResponse('FROM osm_google_mappings m', dbResult([]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      await db.getDueAiSummaryEntries(5);
+
+      const dueCall = mockPool.getCalls().find(call => call.sql.includes('FROM osm_google_mappings m'));
+      assert.ok(dueCall);
+      assert.match(dueCall.sql, /jsonb_typeof\(g\.reviews\) = 'array'/);
+      assert.match(dueCall.sql, /jsonb_array_length\(g\.reviews\) > 0/);
+    });
+  });
 });

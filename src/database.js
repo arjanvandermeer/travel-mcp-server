@@ -896,9 +896,15 @@ export class TravelDatabase {
         g.google_maps_uri as google_maps_url,
         g.opening_hours as google_opening_hours, g.photos as google_photos,
         g.utc_offset_minutes as google_utc_offset_minutes,
-        g.amenities as google_amenities, g.accessibility as google_accessibility
+        g.amenities as google_amenities, g.accessibility as google_accessibility,
+        g.ai_review_summary,
+        h.summary as ai_homepage_summary,
+        h.original_url as ai_homepage_url
       FROM osm_google_mappings m
       JOIN google_places g ON m.google_place_id = g.google_place_id
+      LEFT JOIN poi_homepage_summaries h
+        ON h.osm_id = m.osm_id
+        AND h.summary_status = 'complete'
       WHERE m.osm_id = ANY($1) AND m.mapping_status = 'active'
     `, [osmIds]);
 
@@ -927,6 +933,9 @@ export class TravelDatabase {
         google_utc_offset_minutes: g.google_utc_offset_minutes,
         google_amenities: g.google_amenities,
         google_accessibility: g.google_accessibility,
+        ai_homepage_summary: g.ai_homepage_summary,
+        ai_homepage_url: g.ai_homepage_url,
+        ai_review_summary: g.ai_review_summary,
       };
     });
   }
@@ -3586,7 +3595,12 @@ export class TravelDatabase {
       WHERE m.mapping_status = 'active'
         AND m.google_place_id IS NOT NULL
         AND (
-          (g.reviews IS NOT NULL AND jsonb_array_length(g.reviews) > 0 AND g.ai_review_summary IS NULL)
+          (
+            g.reviews IS NOT NULL
+            AND jsonb_typeof(g.reviews) = 'array'
+            AND jsonb_array_length(g.reviews) > 0
+            AND g.ai_review_summary IS NULL
+          )
           OR (
             COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, '')) IS NOT NULL
             AND NOT EXISTS (

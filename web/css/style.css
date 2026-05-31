@@ -320,6 +320,14 @@ button { cursor: pointer; }
   margin: 6px 0 18px;
   font-size: 16px;
 }
+.home-place-card .home-place-summary {
+  display: -webkit-box;
+  overflow: hidden;
+  line-height: 1.35;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
 .home-place-card .place-actions button {
   width: 44px;
   height: 44px;

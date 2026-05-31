@@ -11,6 +11,7 @@ const formatStoreJs = fs.readFileSync(path.join(__dirname, '../../web/js/format-
 const proximityJs = fs.readFileSync(path.join(__dirname, '../../web/js/proximity.js'), 'utf8');
 const styleCss = fs.readFileSync(path.join(__dirname, '../../web/css/style.css'), 'utf8');
 const dossierCss = fs.readFileSync(path.join(__dirname, '../../web/css/dossier.css'), 'utf8');
+const databaseJs = fs.readFileSync(path.join(__dirname, '../../src/database.js'), 'utf8');
 
 describe('frontend regressions', () => {
   it('uses New York City when geolocation cannot produce a usable city', () => {
@@ -55,6 +56,11 @@ describe('frontend regressions', () => {
     assert.match(appJs, /open_now: this\.placeOpenNow/, 'Homepage search requests should pass the open-now filter');
     assert.match(appJs, /Promise\.all\(this\.feedCategories\.map/, 'Homepage name search should query Stay, Eat, and See result groups');
     assert.match(appJs, /loadMoreFeed\(\)/, 'Discovery store should support loading more homepage cards');
+    assert.match(indexHtml, /home-place-summary[\s\S]*placeCardSummary\(poi\)/, 'City cards should render the dedicated summary subtitle');
+    assert.match(formatStoreJs, /placeCardSummary\(poi = \{\}\)[\s\S]*ai_homepage_summary[\s\S]*ai_review_summary/, 'City cards should prefer homepage and review summaries when available');
+    assert.match(formatStoreJs, /placeCardSummary\(poi = \{\}\)[\s\S]*distance_km[\s\S]*poi_type[\s\S]*google_rating/, 'City card fallback should avoid location and review count noise');
+    assert.match(styleCss, /\.home-place-card \.home-place-summary[\s\S]*-webkit-line-clamp: 3/, 'City card summaries should wrap to multiple lines');
+    assert.match(databaseJs, /enrichWithGoogleData\(rows\)[\s\S]*poi_homepage_summaries[\s\S]*ai_homepage_summary[\s\S]*ai_review_summary/, 'Nearby POI enrichment should expose stored AI summaries to cards');
     assert.match(appJs, /feedCount\(key\)/, 'Atlas store should count visible map results by category');
     assert.doesNotMatch(appJs, /resultsLabel\(\)/, 'Atlas store should not keep unused result status text');
     assert.doesNotMatch(appJs, /resetView\(\)/, 'Atlas store should not keep an unused reset action');

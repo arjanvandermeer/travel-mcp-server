@@ -116,7 +116,7 @@
                 <div class="thumb" :style="$store.format.thumbStyle(poi)"></div>
                 <div class="place-body">
                   <h3 x-text="poi.name || poi.osm_name"></h3>
-                  <p x-text="$store.format.distance(poi)"></p>
+                  <p class="home-place-summary" x-text="$store.format.placeCardSummary(poi)"></p>
                   <div class="place-actions" @click.stop>
                     <button title="Save" @click="$store.favorites.toggle(poi)" :class="{ active: poi.is_favorite }">♡</button>
                     <button title="Inspect" @click="$store.poi.open(poi.osm_id)">↗</button>
