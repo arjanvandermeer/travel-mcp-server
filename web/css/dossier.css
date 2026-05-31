@@ -214,34 +214,20 @@
   font-weight: 700;
   overflow-wrap: anywhere;
 }
-.place-website-box {
-  display: grid;
-  gap: 4px;
-  margin: 14px;
-  padding: 15px;
-  border: 1px solid rgba(15,118,110,.28);
-  border-radius: 8px;
-  background: linear-gradient(135deg, #ecfdf5, #f8fafc);
-  color: var(--ink);
-  text-decoration: none;
+.place-website-row strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.place-website-box:hover { border-color: var(--accent); }
-.place-website-box span,
 .section-heading span {
   color: var(--accent);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: .08em;
   text-transform: uppercase;
-}
-.place-website-box strong {
-  display: block;
-  min-width: 0;
-  max-width: 100%;
-  overflow: hidden;
-  font-size: 15px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .ai-summary-section {
   max-width: 760px;

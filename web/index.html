@@ -286,11 +286,11 @@
                         <span>Phone</span>
                         <strong x-text="$store.poi.phoneNumber()"></strong>
                       </a>
+                      <a class="place-contact-row place-website-row" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener">
+                        <span>Website</span>
+                        <strong :title="$store.poi.websiteUrl()" x-text="$store.format.websiteLabel($store.poi.current)"></strong>
+                      </a>
                     </div>
-                    <a class="place-website-box" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener">
-                      <span>Website</span>
-                      <strong :title="$store.poi.websiteUrl()" x-text="$store.format.websiteLabel($store.poi.current)"></strong>
-                    </a>
                   </div>
                   <div class="ai-summary-section" x-show="$store.poi.current.ai_homepage_summary || $store.poi.current.ai_review_summary">
                     <div class="section-heading">
