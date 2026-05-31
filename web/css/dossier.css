@@ -235,8 +235,13 @@
   text-transform: uppercase;
 }
 .place-website-box strong {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
   font-size: 15px;
-  overflow-wrap: anywhere;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .ai-summary-section {
   max-width: 760px;

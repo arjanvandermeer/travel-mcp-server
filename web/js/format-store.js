@@ -93,6 +93,16 @@ export function createFormatStore() {
     bestWebsite(poi = {}) {
       return safeHttpUrl(poi.google_website) || safeHttpUrl(poi.osm_website) || safeHttpUrl(poi.website) || '';
     },
+    websiteLabel(poi = {}) {
+      const href = this.bestWebsite(poi);
+      if (!href) return '';
+      try {
+        const url = new URL(href);
+        return url.hostname.replace(/^www\./, '');
+      } catch {
+        return href;
+      }
+    },
     bestMapsUrl(poi = {}) {
       const storedUrl = safeHttpUrl(poi.google_maps_url);
       if (storedUrl) return storedUrl;

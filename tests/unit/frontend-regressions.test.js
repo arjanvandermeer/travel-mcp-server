@@ -78,6 +78,9 @@ describe('frontend regressions', () => {
     assert.doesNotMatch(appJs, /is listed as/, 'PDP summary copy should not keep the listed-as sentence generator');
     assert.doesNotMatch(indexHtml, /visitor-details|contact-card|contactLinks\(\$store\.poi\.current\)/, 'PDP should remove the old lower status and separate contact text boxes');
     assert.match(indexHtml, /place-contact-box[\s\S]*Address[\s\S]*Phone[\s\S]*place-website-box[\s\S]*Website/, 'PDP should show website in a distinct box below address and phone');
+    assert.match(indexHtml, /place-website-box[\s\S]*websiteLabel\(\$store\.poi\.current\)/, 'PDP should render a short display label for long website URLs');
+    assert.match(formatStoreJs, /websiteLabel\(poi = \{\}\)[\s\S]*hostname\.replace/, 'PDP website labels should prefer the hostname');
+    assert.match(dossierCss, /\.place-website-box strong[\s\S]*text-overflow: ellipsis[\s\S]*white-space: nowrap/, 'PDP website labels should truncate absurdly long URLs');
     assert.match(indexHtml, /ai-summary-section[\s\S]*ai_homepage_summary[\s\S]*ai_review_summary/, 'PDP should render AI homepage and review summaries when available');
     assert.match(dossierCss, /\.ai-summary-section[\s\S]*\.ai-summary-card/, 'PDP AI summaries should have dedicated card styling');
     assert.match(appJs, /phoneNumber\(\)/, 'PDP should preserve the formatted phone number for display');
