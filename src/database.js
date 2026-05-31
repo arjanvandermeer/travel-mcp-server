@@ -35,6 +35,33 @@ function getEnrichmentLockKey(osmId) {
   return String(osmId);
 }
 
+async function recordGoogleEnrichmentSkipSpan(osmId, reason, attributes = {}) {
+  try {
+    await telemetry.withSpan(
+      'Google Places enrichment skipped',
+      'app.google_places.enrichment',
+      {
+        provider: 'google_places',
+        source: 'enrichment',
+        outcome: 'skipped',
+        status: 'skipped',
+        skip_reason: reason,
+        osm_id: osmId === undefined || osmId === null ? null : String(osmId),
+        ...attributes,
+      },
+      async (span) => {
+        telemetry.setSpanAttributes(span, {
+          'enrichment.skipped': true,
+          'enrichment.skip_reason': reason,
+        });
+      },
+      { forceTransaction: true },
+    );
+  } catch (error) {
+    console.error(`[Telemetry] Failed to record Google enrichment skip span: ${error.message}`);
+  }
+}
+
 function clampSearchRadiusKm(value, defaultValue = SEARCH_RADIUS_DEFAULT_KM) {
   const parsed = Number(value);
   if (!Number.isFinite(parsed) || parsed <= 0) return defaultValue;
@@ -2707,6 +2734,13 @@ export class TravelDatabase {
         const quota = await this.checkGoogleApiLimit();
         if (!quota.allowed) {
           enrichment_status = 'pending';
+          await recordGoogleEnrichmentSkipSpan(osmId, 'quota_exhausted_before_restart', {
+            stage: 'poi_details',
+            mapping_status: poi.mapping_status,
+            quota_current: quota.current,
+            quota_limit: quota.limit,
+            quota_remaining: quota.remaining,
+          });
           enrichment_message = await this.markGoogleQuotaExceeded(osmId, quota);
         } else {
           // Server restart (or crash) left a stale pending row.
@@ -2737,8 +2771,18 @@ export class TravelDatabase {
         enrichment_status = 'pending';
         const checkBackAt = new Date(startedAt.getTime() + 60000);
         if (poi.mapping_notes?.includes('daily API limit')) {
+          await recordGoogleEnrichmentSkipSpan(osmId, 'quota_retry_deferred', {
+            stage: 'poi_details',
+            mapping_status: poi.mapping_status,
+            next_enrichment_at: poi.next_enrichment_at ? new Date(poi.next_enrichment_at).toISOString() : null,
+          });
           enrichment_message = poi.mapping_notes;
         } else if (retryDeferred) {
+          await recordGoogleEnrichmentSkipSpan(osmId, 'retry_deferred', {
+            stage: 'poi_details',
+            mapping_status: poi.mapping_status,
+            next_enrichment_at: new Date(poi.next_enrichment_at).toISOString(),
+          });
           enrichment_message = `Google Places enrichment is paused until ${new Date(poi.next_enrichment_at).toISOString()}.`;
         } else {
           enrichment_message = `Google Places enrichment in progress (started at ${startedAt.toISOString()}). Check back after ${checkBackAt.toISOString()}.`;
@@ -2772,11 +2816,20 @@ export class TravelDatabase {
         // Check if enrichment is already in-flight for this POI (dedup concurrent requests)
         if (this._enrichmentLock.has(enrichmentKey)) {
           enrichment_status = 'pending';
+          await recordGoogleEnrichmentSkipSpan(osmId, 'already_in_progress', {
+            stage: 'poi_details',
+          });
           enrichment_message = 'Google Places enrichment already in progress. Check back shortly for complete information.';
         } else {
           const quota = await this.checkGoogleApiLimit();
           if (!quota.allowed) {
             enrichment_status = 'pending';
+            await recordGoogleEnrichmentSkipSpan(osmId, 'quota_exhausted_before_start', {
+              stage: 'poi_details',
+              quota_current: quota.current,
+              quota_limit: quota.limit,
+              quota_remaining: quota.remaining,
+            });
             enrichment_message = await this.markGoogleQuotaExceeded(osmId, quota);
           } else {
             // Mark as pending IMMEDIATELY before starting enrichment
@@ -2818,6 +2871,9 @@ export class TravelDatabase {
         }
       } else {
         enrichment_status = 'disabled';
+        await recordGoogleEnrichmentSkipSpan(osmId, 'google_places_disabled', {
+          stage: 'poi_details',
+        });
         enrichment_message = 'Google Places enrichment is not enabled. Only OpenStreetMap data is available.';
       }
     }
@@ -3072,6 +3128,9 @@ export class TravelDatabase {
     await this.ensureGooglePlacesReady();
 
     if (!this.googlePlaces || !this.googlePlaces.isEnabled()) {
+      await recordGoogleEnrichmentSkipSpan(osmId, 'google_places_disabled', {
+        stage: 'enrich_osm_poi',
+      });
       return;
     }
 
@@ -3091,6 +3150,9 @@ export class TravelDatabase {
       `, [osmId]);
 
       if (osmResult.rows.length === 0) {
+        await recordGoogleEnrichmentSkipSpan(osmId, 'osm_poi_missing', {
+          stage: 'enrich_osm_poi',
+        });
         return;
       }
 
@@ -3113,27 +3175,57 @@ export class TravelDatabase {
         const mapping = existingMapping.rows[0];
         if (mapping.mapping_status === 'active') {
           if (isFutureDate(mapping.next_enrichment_at)) {
+            await recordGoogleEnrichmentSkipSpan(osmId, 'active_cache_deferred', {
+              stage: 'enrich_osm_poi',
+              mapping_status: mapping.mapping_status,
+              next_enrichment_at: new Date(mapping.next_enrichment_at).toISOString(),
+            });
             return; // Active enrichment is still fresh.
           }
           if (!mapping.next_enrichment_at) {
             const hoursSinceMapping = (Date.now() - new Date(mapping.mapped_at).getTime()) / (1000 * 60 * 60);
             const refreshHours = GOOGLE_ACTIVE_REFRESH_MS / (60 * 60 * 1000);
-            if (hoursSinceMapping < refreshHours) return;
+            if (hoursSinceMapping < refreshHours) {
+              await recordGoogleEnrichmentSkipSpan(osmId, 'active_cache_fresh', {
+                stage: 'enrich_osm_poi',
+                mapping_status: mapping.mapping_status,
+                cache_age_hours: Number(hoursSinceMapping.toFixed(2)),
+                refresh_after_hours: Number(refreshHours.toFixed(2)),
+              });
+              return;
+            }
           }
         }
         if (mapping.mapping_status !== 'active' && isFutureDate(mapping.next_enrichment_at)) {
+          await recordGoogleEnrichmentSkipSpan(osmId, 'retry_deferred', {
+            stage: 'enrich_osm_poi',
+            mapping_status: mapping.mapping_status,
+            next_enrichment_at: new Date(mapping.next_enrichment_at).toISOString(),
+          });
           return; // Retry window has not opened yet.
         }
         if (mapping.mapping_status === 'pending' && !forcePending) {
           const mappedAt = mapping.mapped_at ? new Date(mapping.mapped_at).getTime() : Date.now();
           if (Date.now() - mappedAt < PENDING_ENRICHMENT_STALE_MS) {
+            await recordGoogleEnrichmentSkipSpan(osmId, 'pending_in_progress', {
+              stage: 'enrich_osm_poi',
+              mapping_status: mapping.mapping_status,
+            });
             return; // Another request just queued or started this enrichment.
           }
         }
         // Backfill retry throttling for older rows that predate next_enrichment_at.
         if (mapping.mapping_status === 'not_found' && !mapping.next_enrichment_at) {
           const daysSinceCheck = (Date.now() - new Date(mapping.mapped_at).getTime()) / (1000 * 60 * 60 * 24);
-          if (daysSinceCheck < 7) return;
+          if (daysSinceCheck < 7) {
+            await recordGoogleEnrichmentSkipSpan(osmId, 'not_found_retry_deferred', {
+              stage: 'enrich_osm_poi',
+              mapping_status: mapping.mapping_status,
+              retry_after_days: 7,
+              days_since_check: Number(daysSinceCheck.toFixed(2)),
+            });
+            return;
+          }
         }
       }
 
@@ -3141,6 +3233,12 @@ export class TravelDatabase {
       const quota1 = await this.consumeGoogleApiQuota();
       if (!quota1.allowed) {
         console.error(`Google API daily limit reached (${quota1.current}/${quota1.limit}). Skipping enrichment for OSM ${osmId}`);
+        await recordGoogleEnrichmentSkipSpan(osmId, 'quota_exhausted_before_match', {
+          stage: 'enrich_osm_poi',
+          quota_current: quota1.current,
+          quota_limit: quota1.limit,
+          quota_remaining: quota1.remaining,
+        });
         await this.markGoogleQuotaExceeded(osmId, quota1);
         return;
       }
@@ -3162,6 +3260,13 @@ export class TravelDatabase {
       const quota2 = await this.consumeGoogleApiQuota();
       if (!quota2.allowed) {
         console.error(`Google API daily limit reached (${quota2.current}/${quota2.limit}). Skipping details for OSM ${osmId}`);
+        await recordGoogleEnrichmentSkipSpan(osmId, 'quota_exhausted_before_details', {
+          stage: 'enrich_osm_poi',
+          google_place_id: matchResult.place_id,
+          quota_current: quota2.current,
+          quota_limit: quota2.limit,
+          quota_remaining: quota2.remaining,
+        });
         await this.markGoogleQuotaExceeded(
           osmId,
           quota2,

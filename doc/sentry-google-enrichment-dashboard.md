@@ -19,6 +19,18 @@ url.scheme = https
 status = success | error
 ```
 
+Skipped enrichment decisions are also wrapped in a separate application span so quota pauses and retry deferrals are visible without inflating the outbound Google request count:
+
+```text
+span.op = app.google_places.enrichment
+span.description/name = Google Places enrichment skipped
+provider = google_places
+source = enrichment
+outcome = skipped
+status = skipped
+skip_reason = quota_exhausted_before_start | quota_exhausted_before_match | quota_exhausted_before_details | retry_deferred | active_cache_fresh | already_in_progress | google_places_disabled | ...
+```
+
 ## Suggested Widgets
 
 Create a dashboard in Sentry with these widgets.
@@ -82,6 +94,31 @@ span.op:http.client provider:google_places source:enrichment
 
 ```text
 span.op:http.client provider:google_places source:enrichment status:error
+```
+
+- Aggregate: `count()`
+
+### Google Enrichment Skips
+
+- Dataset: Spans
+- Visualization: Line Chart
+- Query:
+
+```text
+span.op:app.google_places.enrichment provider:google_places source:enrichment outcome:skipped
+```
+
+- Aggregate: `count()`
+- Group by: `skip_reason`
+
+### Google Enrichment Quota Skips
+
+- Dataset: Spans
+- Visualization: Big Number
+- Query:
+
+```text
+span.op:app.google_places.enrichment provider:google_places source:enrichment outcome:skipped skip_reason:quota*
 ```
 
 - Aggregate: `count()`

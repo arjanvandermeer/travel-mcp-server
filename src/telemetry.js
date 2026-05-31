@@ -271,15 +271,15 @@ export async function withTransaction(name, op, fn) {
  * Wrap an async operation in a Sentry span with queryable attributes.
  * Use this for outbound provider calls that should appear in the Spans dataset.
  */
-export async function withSpan(name, op, attributes = {}, fn) {
+export async function withSpan(name, op, attributes = {}, fn, options = {}) {
   if (!telemetryEnabled) {
     return fn({ setAttribute: () => {}, setStatus: () => {} });
   }
 
-  return Sentry.startSpan({ name, op, attributes }, async (span) => {
+  return Sentry.startSpan({ name, op, attributes, ...options }, async (span) => {
     try {
       const result = await fn(span);
-      span?.setAttribute('status', 'success');
+      span?.setAttribute('status', attributes.status || 'success');
       span?.setStatus({ code: 1 });
       return result;
     } catch (error) {
