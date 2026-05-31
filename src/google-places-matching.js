@@ -65,6 +65,8 @@ const FILLER_WORDS = new Set([
   'hostels', 'bistro', 'resort', 'resorts', 'guesthouse', 'guesthouses',
 ]);
 
+const LEADING_ARTICLES = new Set(['the', 'a', 'an']);
+
 const TOKEN_ALIASES = new Map([
   ['intl', 'international'],
   ['int', 'international'],
@@ -101,6 +103,22 @@ function getComparableTokens(str) {
     .split(' ')
     .map(canonicalToken)
     .filter(w => w.length > 1 && !FILLER_WORDS.has(w));
+}
+
+function stripLeadingArticles(str) {
+  const tokens = normalizeName(str).split(' ').filter(Boolean);
+  while (tokens.length > 0 && LEADING_ARTICLES.has(tokens[0])) {
+    tokens.shift();
+  }
+  return tokens.join(' ');
+}
+
+function hasComparableIdentity(tokens) {
+  return tokens.length > 0;
+}
+
+function isPhrasePrefix(longer, shorter) {
+  return longer === shorter || longer.startsWith(`${shorter} `);
 }
 
 function tokensMatch(token1, token2) {
@@ -170,12 +188,37 @@ function calculateNameSimilarityPair(name1, name2) {
     prefixScore = 0.7 + 0.3 * (shorter / longer);
   }
 
+  const n1WithoutLeadingArticles = stripLeadingArticles(n1);
+  const n2WithoutLeadingArticles = stripLeadingArticles(n2);
+  let articleInsensitivePrefixScore = 0;
+  if (
+    hasComparableIdentity(words1) &&
+    n1WithoutLeadingArticles &&
+    isPhrasePrefix(n2WithoutLeadingArticles, n1WithoutLeadingArticles)
+  ) {
+    articleInsensitivePrefixScore = 1.0;
+  }
+  if (
+    hasComparableIdentity(words2) &&
+    n2WithoutLeadingArticles &&
+    isPhrasePrefix(n1WithoutLeadingArticles, n2WithoutLeadingArticles)
+  ) {
+    articleInsensitivePrefixScore = 1.0;
+  }
+
   let containsScore = 0;
   if (n1.includes(n2) || n2.includes(n1)) {
     containsScore = Math.min(n1.length, n2.length) / Math.max(n1.length, n2.length);
   }
 
-  return Math.max(wordOverlapScore, reorderedScore, levenshteinScore, containsScore, prefixScore);
+  return Math.max(
+    wordOverlapScore,
+    reorderedScore,
+    levenshteinScore,
+    containsScore,
+    prefixScore,
+    articleInsensitivePrefixScore,
+  );
 }
 
 export function calculateNameSimilarity(name1, name2) {

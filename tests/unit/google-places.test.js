@@ -171,6 +171,11 @@ describe('GooglePlacesClient', () => {
       assert.ok(score > 0.5);
     });
 
+    it('should not penalize leading articles or trailing city suffixes', () => {
+      assert.strictEqual(client.calculateNameSimilarity('Roxy Hotel', 'The Roxy Hotel New York'), 1.0);
+      assert.strictEqual(client.calculateNameSimilarity('The Roxy Hotel New York', 'Roxy Hotel'), 1.0);
+    });
+
     it('should return high score for word overlap', () => {
       const score = client.calculateNameSimilarity('The Grand Hotel', 'Grand Hotel');
       assert.ok(score > 0.5);
@@ -259,6 +264,16 @@ describe('GooglePlacesClient', () => {
       assert.ok(match);
       // Should prefer the closer match
       assert.strictEqual(match.id, '2');
+    });
+
+    it('should match names with a leading article and trailing city suffix', () => {
+      const results = [
+        { displayName: { text: "The Artist's Loft" }, id: 'artist-loft' },
+        { displayName: { text: 'The Roxy Hotel New York' }, id: 'roxy' },
+      ];
+      const match = client.findBestNameMatch('Roxy Hotel', results);
+      assert.ok(match);
+      assert.strictEqual(match.id, 'roxy');
     });
   });
 
