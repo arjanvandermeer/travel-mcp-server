@@ -31,8 +31,10 @@ function recordGooglePlacesApiCall(endpoint, method, fieldMask = null) {
     endpoint,
     method,
   };
-  telemetry.incrementCounter('google_places.api_calls', 1, { endpoint, method });
-  telemetry.captureMetricEvent('google_places.api_calls', 1, tags, { fieldMask });
+  telemetry.incrementCounter('google_places.api_calls', 1, tags);
+  if (fieldMask) {
+    telemetry.addBreadcrumb('Google Places API call', 'metric', { ...tags, fieldMask });
+  }
 }
 
 function recordGooglePlacesApiError(endpoint, tags = {}) {
@@ -42,8 +44,10 @@ function recordGooglePlacesApiError(endpoint, tags = {}) {
     endpoint,
     ...tags,
   };
-  telemetry.incrementCounter('google_places.api_errors', 1, { endpoint, ...tags });
-  telemetry.captureMetricEvent('google_places.api_errors', 1, eventTags);
+  telemetry.incrementCounter('google_places.api_errors', 1, eventTags);
+  telemetry.captureLog('Google Places API error', 'warn', eventTags, {
+    breadcrumbCategory: 'metric',
+  });
 }
 
 function googlePlacesSpanAttributes(endpoint, method, fieldMask = null) {
@@ -117,6 +121,9 @@ export class GooglePlacesClient {
         return new Promise((resolve, reject) => {
           const req = https.request(url, options, (res) => {
             let data = '';
+            telemetry.setSpanAttributes(span, {
+              'http.response.status_code': res.statusCode,
+            });
 
             res.on('data', (chunk) => {
               data += chunk;
@@ -150,7 +157,7 @@ export class GooglePlacesClient {
           req.end();
         });
       }, {
-        tags: { endpoint },
+        tags: { provider: 'google_places', source: 'enrichment', endpoint, method: 'POST' },
         onSuccess: (_result, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
         onError: (_error, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
       }),
@@ -185,6 +192,9 @@ export class GooglePlacesClient {
         return new Promise((resolve, reject) => {
           const req = https.request(url, options, (res) => {
             let data = '';
+            telemetry.setSpanAttributes(span, {
+              'http.response.status_code': res.statusCode,
+            });
 
             res.on('data', (chunk) => {
               data += chunk;
@@ -223,7 +233,7 @@ export class GooglePlacesClient {
           req.end();
         });
       }, {
-        tags: { endpoint },
+        tags: { provider: 'google_places', source: 'enrichment', endpoint, method: 'GET' },
         onSuccess: (_result, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
         onError: (_error, duration) => telemetry.setSpanAttributes(span, { duration_ms: duration }),
       }),

@@ -25,29 +25,49 @@ function toolNames(tools = []) {
 }
 
 function recordOpenAIRequest({ operation, model, tools, status, durationMs, usage = null, error = null }) {
+  const toolsLabel = toolNames(tools);
   const tags = {
     provider: 'openai',
     source: 'ai_place_summary',
     operation,
     model,
-    tools: toolNames(tools),
+    tools: toolsLabel,
     status,
   };
   telemetry.incrementCounter('openai.api_requests', 1, tags);
-  telemetry.captureMetricEvent('openai.api_requests', 1, tags, {
-    durationMs,
-    usage,
-    error: error?.message,
-  });
+  telemetry.recordDistribution('openai.api_latency', durationMs, { tags, unit: 'millisecond' });
+
+  if (usage) {
+    const usageTags = {
+      provider: 'openai',
+      source: 'ai_place_summary',
+      operation,
+      model,
+      tools: toolsLabel,
+    };
+    if (Number.isFinite(usage.input_tokens)) {
+      telemetry.incrementCounter('openai.tokens', usage.input_tokens, { ...usageTags, token_type: 'input' });
+    }
+    if (Number.isFinite(usage.output_tokens)) {
+      telemetry.incrementCounter('openai.tokens', usage.output_tokens, { ...usageTags, token_type: 'output' });
+    }
+    if (Number.isFinite(usage.total_tokens)) {
+      telemetry.incrementCounter('openai.tokens', usage.total_tokens, { ...usageTags, token_type: 'total' });
+    }
+  }
 
   if (status === 'error') {
-    telemetry.incrementCounter('openai.api_errors', 1, { ...tags, error_name: error?.name || 'Error' });
-    telemetry.captureMetricEvent('openai.api_errors', 1, {
+    const errorTags = {
       ...tags,
       error_name: error?.name || 'Error',
-    }, {
-      durationMs,
+    };
+    telemetry.incrementCounter('openai.api_errors', 1, errorTags);
+    telemetry.captureLog('OpenAI API request failed', 'warn', {
+      ...errorTags,
       error: error?.message,
+      durationMs,
+    }, {
+      breadcrumbCategory: 'metric',
     });
   }
 }

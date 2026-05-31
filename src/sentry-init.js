@@ -32,7 +32,7 @@ if (dsn && enabled) {
     environment,
     tracesSampleRate: sampleRate,
     profilesSampleRate: sampleRate * 0.1,
-    // Enable Sentry logs for debugging
+    enableLogs: true,
     _experiments: {
       enableLogs: true,
     },

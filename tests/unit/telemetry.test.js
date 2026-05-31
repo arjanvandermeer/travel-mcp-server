@@ -96,6 +96,16 @@ describe('telemetry', () => {
     });
   });
 
+  describe('captureLog (disabled)', () => {
+    it('should return early when telemetry disabled', () => {
+      telemetry.captureLog('test log');
+    });
+
+    it('should accept level, attributes, and options', () => {
+      telemetry.captureLog('test', 'warn', { key: 'value' }, { breadcrumbCategory: 'test' });
+    });
+  });
+
   describe('captureMetricEvent (disabled)', () => {
     it('should return early when telemetry disabled', () => {
       telemetry.captureMetricEvent('test.metric');
@@ -201,6 +211,10 @@ describe('telemetry', () => {
 
     it('should accept category and data', () => {
       telemetry.addBreadcrumb('test', 'custom', { key: 'value' });
+    });
+
+    it('should accept a breadcrumb level', () => {
+      telemetry.addBreadcrumb('test', 'custom', { key: 'value' }, 'warning');
     });
   });
 

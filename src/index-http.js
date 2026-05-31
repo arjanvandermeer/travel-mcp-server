@@ -112,9 +112,11 @@ function cleanupExpiredSessions() {
   }
   if (expiredCount > 0) {
     telemetry.recordGauge('session.active', sessions.size);
-    telemetry.captureMessage(`Session cleanup: ${expiredCount} expired`, 'info', {
+    telemetry.captureLog('Session cleanup expired sessions', 'info', {
       expiredCount,
       remainingSessions: sessions.size,
+    }, {
+      breadcrumbCategory: 'session',
     });
   }
   return expiredCount;
@@ -167,8 +169,10 @@ async function getUserFromRequest(req) {
   if (tokenLength < AUTH_TOKEN_MIN_LENGTH) {
     console.error('[Auth] Token too short');
     telemetry.incrementCounter('auth.failure', 1, { reason: 'token_too_short' });
-    telemetry.captureMessage('Auth failed: token too short', 'warning', {
+    telemetry.captureLog('Auth failed: token too short', 'warn', {
       reason: 'token_too_short',
+    }, {
+      breadcrumbCategory: 'auth',
     });
     return null;
   }
@@ -203,7 +207,7 @@ async function getUserFromRequest(req) {
       telemetry.setUser({ id: dbUser.id.toString(), email: obfuscateEmail(dbUser.email), username: dbUser.name });
       telemetry.setTag('user.id', dbUser.id.toString());
       telemetry.setTag('auth.method', 'database');
-      telemetry.captureMessage(`Auth success: user ${dbUser.id}`, 'info', {
+      telemetry.addBreadcrumb('Auth success', 'auth', {
         method: 'database',
         userId: dbUser.id,
         duration: authDuration,
@@ -252,7 +256,7 @@ async function getUserFromRequest(req) {
           telemetry.setTag('user.id', user.id.toString());
           telemetry.setTag('auth.method', 'oauth');
           telemetry.setTag('user.oauth', 'true');
-          telemetry.captureMessage(`Auth success: user ${user.id}`, 'info', {
+          telemetry.addBreadcrumb('Auth success', 'auth', {
             method: 'oauth',
             userId: user.id,
             duration: authDuration,
@@ -282,7 +286,7 @@ async function getUserFromRequest(req) {
           const severity = inactiveReason === 'not_found' ? 'error' : 'warning';
           telemetry.incrementCounter('auth.failure', 1, { reason: 'token_inactive', method: 'oauth', inactive_reason: inactiveReason });
           telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'oauth', status: 'failure' }, unit: 'millisecond' });
-          telemetry.captureMessage(`Auth failed: token not active (${inactiveReason})`, severity, {
+          telemetry.captureLog('Auth failed: token not active', severity, {
             reason: 'token_inactive',
             inactiveReason,
             duration: authDuration,
@@ -292,6 +296,8 @@ async function getUserFromRequest(req) {
             hasExp: !!data.exp,
             introspectionError: data.error,
             introspectionErrorDesc: data.error_description,
+          }, {
+            breadcrumbCategory: 'auth',
           });
         }
       } else {
@@ -300,18 +306,22 @@ async function getUserFromRequest(req) {
         console.error(`[Auth] Introspection error: ${response.status} - ${errorText.slice(0, 100)}`);
         telemetry.incrementCounter('auth.failure', 1, { reason: 'introspection_error', method: 'oauth' });
         telemetry.recordDistribution('auth.latency', authDuration, { tags: { method: 'oauth', status: 'failure' }, unit: 'millisecond' });
-        telemetry.captureMessage(`Auth failed: introspection error (${response.status})`, 'warning', {
+        telemetry.captureLog('Auth failed: introspection error', 'warn', {
           reason: 'introspection_error',
           httpStatus: response.status,
           errorText: errorText.slice(0, 200),
           duration: authDuration,
+        }, {
+          breadcrumbCategory: 'auth',
         });
       }
     } else {
       console.error('[Auth] No introspection URL configured - cannot validate OAuth token');
       telemetry.incrementCounter('auth.failure', 1, { reason: 'no_introspection_url' });
-      telemetry.captureMessage('Auth failed: no introspection URL configured', 'warning', {
+      telemetry.captureLog('Auth failed: no introspection URL configured', 'warn', {
         reason: 'no_introspection_url',
+      }, {
+        breadcrumbCategory: 'auth',
       });
     }
 
@@ -329,10 +339,12 @@ async function getUserFromRequest(req) {
       context: 'auth_validation',
       duration: authDuration,
     });
-    telemetry.captureMessage(`Auth failed: ${err.message}`, 'error', {
+    telemetry.captureLog('Auth validation threw', 'error', {
       reason: 'exception',
       error: err.message,
       duration: authDuration,
+    }, {
+      breadcrumbCategory: 'auth',
     });
 
     return null;
@@ -665,7 +677,7 @@ async function main() {
 
             // Telemetry: mid-session authentication upgrade
             telemetry.incrementCounter('session.auth_upgrade', 1, { from: wasAnonymous ? 'anonymous' : 'different_user' });
-            telemetry.captureMessage(`Session authenticated mid-stream: user ${newUser.id}`, 'info', {
+            telemetry.addBreadcrumb('Session authenticated mid-stream', 'session', {
               sessionId,
               userId: newUser.id,
               wasAnonymous,
@@ -710,7 +722,7 @@ async function main() {
             console.error(`Session expired, created new: ${newSessionId} (total: ${sessions.size})${user ? ` [${obfuscateEmail(user.email)}]` : ''}`);
             // Telemetry: session expired and recreated
             telemetry.incrementCounter('session.expired', 1);
-            telemetry.captureMessage('Session expired, created new', 'info', {
+            telemetry.addBreadcrumb('Session expired, created new', 'session', {
               oldSessionId: sessionId,
               newSessionId,
               totalSessions: sessions.size,
@@ -721,7 +733,7 @@ async function main() {
             console.error(`New session created: ${newSessionId} (total: ${sessions.size})${user ? ` [${obfuscateEmail(user.email)}]` : ''}`);
             // Telemetry: new session created
             telemetry.incrementCounter('session.created', 1, { authenticated: user ? 'true' : 'false' });
-            telemetry.captureMessage('New session created', 'info', {
+            telemetry.addBreadcrumb('New session created', 'session', {
               sessionId: newSessionId,
               totalSessions: sessions.size,
               authenticated: !!user,

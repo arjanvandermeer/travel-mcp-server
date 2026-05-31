@@ -64,6 +64,10 @@ function initSentry(config) {
       environment: config.environment,
       tracesSampleRate: config.sampleRate,
       profilesSampleRate: config.sampleRate * 0.1, // Profile 10% of traces
+      enableLogs: true,
+      _experiments: {
+        enableLogs: true,
+      },
       integrations: [
         // Auto-instrument common modules
         Sentry.postgresIntegration(),
@@ -153,7 +157,10 @@ export function captureException(error, context = {}) {
 }
 
 /**
- * Capture a message
+ * Capture an issue-worthy message.
+ *
+ * Use this for unusual states that should appear in Sentry Issues. For normal
+ * lifecycle events, use captureLog(), addBreadcrumb(), or the metric helpers.
  */
 export function captureMessage(message, level = 'info', context = {}) {
   if (!telemetryEnabled) return;
@@ -165,32 +172,50 @@ export function captureMessage(message, level = 'info', context = {}) {
 }
 
 /**
- * Capture a low-volume metric event as a normal Sentry event.
+ * Capture a structured operational log without creating a Sentry Issue.
+ */
+export function captureLog(message, level = 'info', attributes = {}, options = {}) {
+  if (!telemetryEnabled) return;
+
+  const normalizedLevel = normalizeLogLevel(level);
+  const cleanAttributes = sanitizeAttributes(attributes);
+  const logger = Sentry.logger?.[normalizedLevel];
+
+  if (typeof logger === 'function') {
+    try {
+      logger(message, cleanAttributes);
+    } catch (_error) {
+      // Logs are diagnostic only; never let telemetry affect request handling.
+    }
+  }
+
+  if (options.breadcrumb !== false) {
+    addBreadcrumb(
+      message,
+      options.breadcrumbCategory || 'log',
+      cleanAttributes,
+      toBreadcrumbLevel(normalizedLevel),
+    );
+  }
+}
+
+/**
+ * Capture a low-volume metric event as a structured log/breadcrumb.
  *
- * Sentry SDK v8+ removed the old custom metrics API, so counters recorded via
- * incrementCounter() are only breadcrumbs in newer SDKs. Dashboard counters need
- * queryable events/tags, especially for external API cost visibility.
+ * This intentionally does not call Sentry.captureMessage(); metric events should
+ * be queryable telemetry, not Sentry Issues. Use incrementCounter() for the
+ * actual metric count and this only when a per-event log is useful.
  */
 export function captureMetricEvent(name, value = 1, tags = {}, extra = {}) {
   if (!telemetryEnabled) return;
 
-  Sentry.withScope(scope => {
-    scope.setLevel('info');
-    scope.setTag('metric_name', name);
-    for (const [key, rawValue] of Object.entries(tags)) {
-      if (rawValue !== undefined && rawValue !== null) {
-        scope.setTag(key, String(rawValue));
-      }
-    }
-    scope.setExtra('metric_value', value);
-    scope.setExtra('metric_tags', tags);
-    for (const [key, rawValue] of Object.entries(extra)) {
-      if (rawValue !== undefined) {
-        scope.setExtra(key, rawValue);
-      }
-    }
-    scope.setFingerprint(['metric', name]);
-    Sentry.captureMessage(`metric:${name}`);
+  captureLog(`metric:${name}`, 'info', {
+    metric_name: name,
+    metric_value: value,
+    ...prefixAttributes('metric_tag.', tags),
+    ...prefixAttributes('metric_extra.', extra),
+  }, {
+    breadcrumbCategory: 'metric',
   });
 }
 
@@ -303,14 +328,14 @@ export function setSpanAttributes(span, attributes = {}) {
 /**
  * Add breadcrumb for debugging
  */
-export function addBreadcrumb(message, category = 'custom', data = {}) {
+export function addBreadcrumb(message, category = 'custom', data = {}, level = 'info') {
   if (!telemetryEnabled) return;
 
   Sentry.addBreadcrumb({
     message,
     category,
-    data,
-    level: 'info',
+    data: sanitizeAttributes(data),
+    level,
   });
 }
 
@@ -358,12 +383,73 @@ export function getConfig() {
 
 // =============================================================================
 // Metrics API (Sentry Metrics)
-// Note: Sentry metrics API was removed in v8+. These functions now use
-// custom span attributes as a fallback for metric-like data.
 // =============================================================================
 
-// Check if Sentry metrics API is available (it's not in v10+)
-const hasMetricsApi = typeof Sentry.metrics?.increment === 'function';
+const hasMetricsCountApi = typeof Sentry.metrics?.count === 'function';
+const hasMetricsDistributionApi = typeof Sentry.metrics?.distribution === 'function';
+const hasMetricsGaugeApi = typeof Sentry.metrics?.gauge === 'function';
+
+function normalizeLogLevel(level) {
+  if (level === 'warning') return 'warn';
+  if (['trace', 'debug', 'info', 'warn', 'error', 'fatal'].includes(level)) return level;
+  return 'info';
+}
+
+function toBreadcrumbLevel(level) {
+  if (level === 'warn') return 'warning';
+  return level;
+}
+
+function sanitizeAttributeValue(value) {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') return value;
+  if (Array.isArray(value)) {
+    const compact = value
+      .map(item => sanitizeAttributeValue(item))
+      .filter(item => item !== undefined);
+    if (compact.every(item => typeof item === 'string')) return compact;
+    if (compact.every(item => typeof item === 'number')) return compact;
+    if (compact.every(item => typeof item === 'boolean')) return compact;
+    return stringifyAttributeValue(value);
+  }
+  if (value instanceof Date) return value.toISOString();
+  return stringifyAttributeValue(value);
+}
+
+function stringifyAttributeValue(value) {
+  try {
+    return (JSON.stringify(value) ?? String(value)).slice(0, 1000);
+  } catch (_error) {
+    return String(value).slice(0, 1000);
+  }
+}
+
+function sanitizeAttributes(attributes = {}) {
+  const sanitized = {};
+  for (const [key, value] of Object.entries(attributes || {})) {
+    const sanitizedValue = sanitizeAttributeValue(value);
+    if (sanitizedValue !== undefined) {
+      sanitized[key] = sanitizedValue;
+    }
+  }
+  return sanitized;
+}
+
+function prefixAttributes(prefix, attributes = {}) {
+  const prefixed = {};
+  for (const [key, value] of Object.entries(attributes || {})) {
+    prefixed[`${prefix}${key}`] = value;
+  }
+  return prefixed;
+}
+
+function metricOptions(tags = {}, unit = null) {
+  const options = { attributes: sanitizeAttributes(tags) };
+  if (unit && unit !== 'none') {
+    options.unit = unit;
+  }
+  return options;
+}
 
 /**
  * Increment a counter metric
@@ -374,14 +460,14 @@ const hasMetricsApi = typeof Sentry.metrics?.increment === 'function';
 export function incrementCounter(name, value = 1, tags = {}) {
   if (!telemetryEnabled) return;
 
-  if (hasMetricsApi) {
+  if (hasMetricsCountApi) {
     try {
-      Sentry.metrics.increment(name, value, { tags });
+      Sentry.metrics.count(name, value, metricOptions(tags));
     } catch (_error) {
       // Silently ignore - metrics API not critical
     }
   }
-  // Fallback: add as breadcrumb for visibility
+
   addBreadcrumb(`Counter: ${name} += ${value}`, 'metric', { ...tags, value });
 }
 
@@ -395,14 +481,14 @@ export function recordDistribution(name, value, options = {}) {
   if (!telemetryEnabled) return;
 
   const { tags = {}, unit = 'none' } = options;
-  if (hasMetricsApi) {
+  if (hasMetricsDistributionApi) {
     try {
-      Sentry.metrics.distribution(name, value, { tags, unit });
+      Sentry.metrics.distribution(name, value, metricOptions(tags, unit));
     } catch (_error) {
       // Silently ignore - metrics API not critical
     }
   }
-  // Fallback: add as breadcrumb
+
   addBreadcrumb(`Distribution: ${name} = ${value}${unit !== 'none' ? unit : ''}`, 'metric', { ...tags, value, unit });
 }
 
@@ -415,14 +501,14 @@ export function recordDistribution(name, value, options = {}) {
 export function recordGauge(name, value, tags = {}) {
   if (!telemetryEnabled) return;
 
-  if (hasMetricsApi) {
+  if (hasMetricsGaugeApi) {
     try {
-      Sentry.metrics.gauge(name, value, { tags });
+      Sentry.metrics.gauge(name, value, metricOptions(tags));
     } catch (_error) {
       // Silently ignore - metrics API not critical
     }
   }
-  // Fallback: add as breadcrumb
+
   addBreadcrumb(`Gauge: ${name} = ${value}`, 'metric', { ...tags, value });
 }
 
@@ -435,15 +521,13 @@ export function recordGauge(name, value, tags = {}) {
 export function recordSet(name, value, tags = {}) {
   if (!telemetryEnabled) return;
 
-  if (hasMetricsApi) {
-    try {
-      Sentry.metrics.set(name, value, { tags });
-    } catch (_error) {
-      // Silently ignore - metrics API not critical
-    }
-  }
-  // Fallback: add as breadcrumb
-  addBreadcrumb(`Set: ${name} += ${value}`, 'metric', { ...tags, value });
+  captureLog(`Set: ${name} += ${value}`, 'info', {
+    metric_name: name,
+    metric_value: value,
+    ...prefixAttributes('metric_tag.', tags),
+  }, {
+    breadcrumbCategory: 'metric',
+  });
 }
 
 /**
@@ -484,6 +568,7 @@ export default {
   isEnabled,
   captureException,
   captureMessage,
+  captureLog,
   captureMetricEvent,
   startTransaction,
   withTransaction,
