@@ -1,5 +1,15 @@
 const HTTP_URL_PROTOCOLS = new Set(['http:', 'https:']);
 
+function isLocalHostname(hostname) {
+  const normalized = String(hostname || '').toLowerCase().replace(/\.$/, '');
+  return normalized === 'localhost' ||
+    normalized.endsWith('.localhost') ||
+    normalized === '0.0.0.0' ||
+    normalized === '::1' ||
+    normalized === '[::1]' ||
+    /^127(?:\.\d{1,3}){3}$/.test(normalized);
+}
+
 export function sanitizeHttpUrl(value) {
   if (typeof value !== 'string') return null;
   const trimmed = value.trim();
@@ -7,7 +17,9 @@ export function sanitizeHttpUrl(value) {
 
   try {
     const url = new URL(trimmed);
-    return HTTP_URL_PROTOCOLS.has(url.protocol) ? url.href : null;
+    if (!HTTP_URL_PROTOCOLS.has(url.protocol)) return null;
+    if (isLocalHostname(url.hostname)) return null;
+    return url.href;
   } catch {
     return null;
   }
@@ -116,9 +128,12 @@ export function sanitizePoiExternalUrls(poi) {
         .map(photo => {
           if (!photo || typeof photo !== 'object') return null;
           const next = { ...photo };
+          const hasUrlField = 'url' in next;
+          const hasThumbnailField = 'url_thumbnail' in next;
           if ('url' in next) next.url = sanitizeHttpUrl(next.url);
           if ('url_thumbnail' in next) next.url_thumbnail = sanitizeHttpUrl(next.url_thumbnail);
-          return next.url || next.url_thumbnail ? next : null;
+          if ((hasUrlField || hasThumbnailField) && !next.url && !next.url_thumbnail) return null;
+          return next;
         })
         .filter(Boolean);
     }

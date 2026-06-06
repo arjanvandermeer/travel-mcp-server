@@ -3,8 +3,15 @@ import { TYPE_COLORS } from './constants.js';
 export function safeHttpUrl(value) {
   if (typeof value !== 'string') return '';
   try {
-    const url = new URL(value, window.location.origin);
-    return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+    const isLocal = hostname === 'localhost' ||
+      hostname.endsWith('.localhost') ||
+      hostname === '0.0.0.0' ||
+      hostname === '::1' ||
+      hostname === '[::1]' ||
+      /^127(?:\.\d{1,3}){3}$/.test(hostname);
+    return (url.protocol === 'http:' || url.protocol === 'https:') && !isLocal ? url.href : '';
   } catch {
     return '';
   }

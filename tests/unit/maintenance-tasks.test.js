@@ -242,4 +242,65 @@ describe('MaintenanceTaskManager', () => {
     assert.deepEqual(parsed.stats, { total: 2, processed: 2, succeeded: 1, failed: 0, skipped: 1 });
     assert.ok(taskRows.some(row => row.kind === 'ai_place_summary' && row.status === 'completed'));
   });
+
+  it('starts a homepage harvest task and records harvest stats', async () => {
+    const calls = [];
+    const taskRows = [];
+    const db = {
+      getDueHomepageHarvestEntries: async (limit) => {
+        assert.equal(limit, 2);
+        return [{ osm_id: 101 }, { osm_id: 202 }, { osm_id: 303 }];
+      },
+      harvestPoiHomepage: async (osmId, options) => {
+        calls.push({ osmId, options });
+        if (osmId === '202') {
+          return { skipped: true, reason: 'fresh until tomorrow' };
+        }
+        if (osmId === '303') {
+          return {
+            skipped: false,
+            harvest: { fetch_status: 'empty' },
+            contentChanged: false,
+          };
+        }
+        return {
+          skipped: false,
+          harvest: { fetch_status: 'completed' },
+          contentChanged: true,
+        };
+      },
+      recordEnrichmentTask: async (row) => {
+        taskRows.push(row);
+      },
+    };
+    const manager = new MaintenanceTaskManager({ now: createClock() });
+
+    const { task } = manager.startHomepageHarvest({
+      db,
+      limit: 2,
+      force: true,
+      user: { id: 7, email: 'admin@example.com' },
+    });
+
+    const completed = await waitForTaskStatus(manager, task.taskId, 'completed');
+    assert.equal(completed.statusMessage, 'Homepage harvest for 3 POIs completed successfully');
+    assert.deepEqual(calls, [
+      { osmId: '101', options: { force: true } },
+      { osmId: '202', options: { force: true } },
+      { osmId: '303', options: { force: true } },
+    ]);
+
+    const parsed = JSON.parse(manager.getTaskPayload(task.taskId).content[0].text);
+    assert.equal(parsed.kind, 'homepage_harvest');
+    assert.deepEqual(parsed.stats, {
+      total: 3,
+      processed: 3,
+      succeeded: 2,
+      failed: 0,
+      skipped: 1,
+      empty: 1,
+      changed: 1,
+    });
+    assert.ok(taskRows.some(row => row.kind === 'homepage_harvest' && row.status === 'completed'));
+  });
 });

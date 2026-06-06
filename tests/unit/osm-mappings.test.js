@@ -271,7 +271,21 @@ describe('extractPOIData', () => {
     };
 
     const poi = extractPOIData(item, 'hotel', 'thailand');
-    assert.strictEqual(poi.website, 'https://test.com');
+    assert.strictEqual(poi.website, 'https://test.com/');
+  });
+
+  it('should reject relative and local websites', () => {
+    const relative = extractPOIData({
+      ...baseItem,
+      tags: { ...baseItem.tags, website: '/property' },
+    }, 'hotel', 'thailand');
+    const local = extractPOIData({
+      ...baseItem,
+      tags: { ...baseItem.tags, website: 'http://localhost:3000/property' },
+    }, 'hotel', 'thailand');
+
+    assert.strictEqual(relative.website, null);
+    assert.strictEqual(local.website, null);
   });
 
   it('should extract star rating', () => {

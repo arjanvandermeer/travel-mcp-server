@@ -863,7 +863,7 @@ describe('GooglePlacesClient', () => {
       assert.strictEqual(result.rating, 4.5);
       assert.strictEqual(result.user_rating_count, 200);
       assert.strictEqual(result.business_status, 'OPERATIONAL');
-      assert.strictEqual(result.website_uri, 'https://hotel.com');
+      assert.strictEqual(result.website_uri, 'https://hotel.com/');
       assert.strictEqual(result.editorial_summary, 'A fine hotel');
       assert.ok(result.opening_hours);
       assert.ok(result.current_opening_hours);
@@ -876,6 +876,25 @@ describe('GooglePlacesClient', () => {
       assert.strictEqual(result.reviews.length, 1);
       assert.strictEqual(result.reviews[0].author, 'John');
       assert.ok(result.enriched_at instanceof Date);
+    });
+
+    it('should reject relative and local website URLs from place details', async () => {
+      const client = new GooglePlacesClient('key', true);
+      client.findMatchingPlace = async () => ({ place_id: 'p1' });
+      client.getPlaceDetails = async () => ({
+        id: 'p1',
+        displayName: { text: 'Grand Hotel' },
+        location: { latitude: 40.7, longitude: -73.9 },
+        types: ['lodging'],
+        websiteUri: '/property',
+        googleMapsUri: 'http://localhost:3000/maps',
+      });
+      client.resolvePhotoUrl = async () => null;
+
+      const result = await client.enrichPOI({ name: 'Grand Hotel', latitude: 40.7, longitude: -73.9 });
+
+      assert.strictEqual(result.website_uri, null);
+      assert.strictEqual(result.google_maps_uri, null);
     });
 
     it('should handle photos with URL resolution', async () => {

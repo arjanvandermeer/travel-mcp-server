@@ -12,6 +12,8 @@ const proximityJs = fs.readFileSync(path.join(__dirname, '../../web/js/proximity
 const styleCss = fs.readFileSync(path.join(__dirname, '../../web/css/style.css'), 'utf8');
 const dossierCss = fs.readFileSync(path.join(__dirname, '../../web/css/dossier.css'), 'utf8');
 const databaseJs = fs.readFileSync(path.join(__dirname, '../../src/database.js'), 'utf8');
+const searchResultsHtml = fs.readFileSync(path.join(__dirname, '../../src/templates/search-results.hbs'), 'utf8');
+const nearbyPoisHtml = fs.readFileSync(path.join(__dirname, '../../src/templates/nearby-pois.hbs'), 'utf8');
 
 describe('frontend regressions', () => {
   it('uses London when geolocation cannot produce a usable city', () => {
@@ -106,6 +108,9 @@ describe('frontend regressions', () => {
     assert.doesNotMatch(indexHtml, /detail-list/, 'PDP should not use the old large detail-list fields');
     assert.doesNotMatch(indexHtml, /action-grid/, 'PDP should not separate phone/address into a detached action grid');
     assert.match(formatStoreJs, /safeHttpUrl/, 'External website, map, and image URLs should be scheme-sanitized before rendering');
+    assert.doesNotMatch(formatStoreJs, /new URL\(value,\s*window\.location\.origin\)/, 'PDP external URLs should not resolve relative values against the app origin');
+    assert.doesNotMatch(searchResultsHtml, /new URL\(value,\s*window\.location\.origin\)/, 'Search widget external URLs should not resolve relative values against the app origin');
+    assert.doesNotMatch(nearbyPoisHtml, /new URL\(value,\s*window\.location\.origin\)/, 'Nearby widget external URLs should not resolve relative values against the app origin');
     assert.match(appJs, /cssUrl\(this\.heroImageUrl\)/, 'City hero image CSS URLs should be sanitized');
     assert.match(appJs, /return \/\^\\\+\?\\d\{3,20\}\$\/\.test\(compactPhone\)/, 'Phone links should only render dialable tel URLs');
   });

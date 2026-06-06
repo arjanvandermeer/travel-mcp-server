@@ -8,7 +8,7 @@ import { addResourceUris, removeNullFields } from './response-utils.js';
 import { databaseUserMethods } from './database-user-methods.js';
 import { databaseImportMethods } from './database-import-methods.js';
 import { coerceOpenAt, isPoiOpenAt } from './lib/opening-hours.js';
-import { sanitizeHttpUrl, sanitizePoiExternalUrlsArray } from './url-utils.js';
+import { sanitizeHttpUrl, sanitizePoiExternalUrls, sanitizePoiExternalUrlsArray } from './url-utils.js';
 import { createOpenRouterPlaceSummarizer, fetchHomepageHarvest } from './openrouter-place-summaries.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
@@ -2967,10 +2967,11 @@ export class TravelDatabase {
     // No runtime URL computation needed — photo urls are direct CDN links.
 
     const [scoredResponse] = await this.addStayQualityScores([response]);
+    const sanitizedResponse = sanitizePoiExternalUrls(scoredResponse);
 
     // Remove null/undefined fields and add resource URIs
     const baseUrl = await this.getServerBaseUrl();
-    const withUris = addResourceUris(removeNullFields(scoredResponse), baseUrl);
+    const withUris = addResourceUris(removeNullFields(sanitizedResponse), baseUrl);
 
     // Add favorite status for authenticated users (returns array, we extract single item)
     const withFavorites = await this.addFavoriteStatus([withUris], userId);
@@ -3526,8 +3527,8 @@ export class TravelDatabase {
       placeData.shortFormattedAddress || null,
       placeData.internationalPhoneNumber || null,
       placeData.nationalPhoneNumber || null,
-      placeData.websiteUri || null,
-      placeData.googleMapsUri || null,
+      sanitizeHttpUrl(placeData.websiteUri),
+      sanitizeHttpUrl(placeData.googleMapsUri),
       placeData.rating || null,
       placeData.userRatingCount || null,
       JSON.stringify(reviews),
@@ -4001,13 +4002,6 @@ export class TravelDatabase {
             AND (
               NOT EXISTS (
                 SELECT 1
-                FROM poi_homepage_summaries h
-                WHERE h.osm_id = m.osm_id
-                  AND h.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
-                  AND h.summary IS NOT NULL
-              )
-              OR NOT EXISTS (
-                SELECT 1
                 FROM poi_homepage_harvests hh
                 WHERE hh.osm_id = m.osm_id
                   AND hh.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
@@ -4021,6 +4015,26 @@ export class TravelDatabase {
                     hh.next_fetch_at IS NULL
                     OR hh.next_fetch_at <= CURRENT_TIMESTAMP
                   )
+              )
+              OR (
+                NOT EXISTS (
+                  SELECT 1
+                  FROM poi_homepage_summaries h
+                  WHERE h.osm_id = m.osm_id
+                    AND h.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
+                    AND h.summary IS NOT NULL
+                )
+                AND EXISTS (
+                  SELECT 1
+                  FROM poi_homepage_harvests hh
+                  WHERE hh.osm_id = m.osm_id
+                    AND hh.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
+                    AND COALESCE(NULLIF(hh.text_content, ''), NULL) IS NOT NULL
+                    AND (
+                      hh.next_fetch_at IS NULL
+                      OR hh.next_fetch_at > CURRENT_TIMESTAMP
+                    )
+                )
               )
             )
           )

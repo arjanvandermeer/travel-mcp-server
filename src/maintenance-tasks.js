@@ -16,6 +16,8 @@ const DEFAULT_GOOGLE_ENRICHMENT_LIMIT = 100;
 const MAX_GOOGLE_ENRICHMENT_LIMIT = 500;
 const DEFAULT_AI_SUMMARY_LIMIT = 25;
 const MAX_AI_SUMMARY_LIMIT = 100;
+const DEFAULT_HOMEPAGE_HARVEST_LIMIT = 25;
+const MAX_HOMEPAGE_HARVEST_LIMIT = 100;
 const ACTIVE_STATUSES = new Set(['working', 'input_required']);
 
 export function isAdminUser(user) {
@@ -79,6 +81,14 @@ function describeAiSummaryScope(record) {
     return total === 1 ? `AI place summary for OSM ${record.requestedOsmIds[0]}` : `AI place summaries for ${total} requested POIs`;
   }
   return `AI place summaries${total ? ` for ${total} POIs` : ''}`;
+}
+
+function describeHomepageHarvestScope(record) {
+  const total = record.stats?.total || record.osmIds?.length || 0;
+  if (record.requestedOsmIds?.length > 0) {
+    return total === 1 ? `Homepage harvest for OSM ${record.requestedOsmIds[0]}` : `Homepage harvest for ${total} requested POIs`;
+  }
+  return `Homepage harvest${total ? ` for ${total} POIs` : ''}`;
 }
 
 export class MaintenanceTaskManager {
@@ -252,6 +262,66 @@ export class MaintenanceTaskManager {
     return { task: this.toPublicTask(record), alreadyRunning: false };
   }
 
+  startHomepageHarvest({ db, osmIds, limit, force = false, user, ttl } = {}) {
+    this.pruneExpiredTasks();
+    if (!db || typeof db.harvestPoiHomepage !== 'function') {
+      throw new Error('Homepage harvest requires a database with harvestPoiHomepage');
+    }
+
+    const requestedOsmIds = normalizeOsmIds(osmIds);
+    const normalizedLimit = normalizePositiveInteger(limit, DEFAULT_HOMEPAGE_HARVEST_LIMIT, MAX_HOMEPAGE_HARVEST_LIMIT);
+    if (requestedOsmIds.length === 0 && typeof db.getDueHomepageHarvestEntries !== 'function') {
+      throw new Error('Homepage harvest requires getDueHomepageHarvestEntries when osm_ids are omitted');
+    }
+
+    const existing = this.findActiveTask('homepage_harvest');
+    if (existing) {
+      return { task: this.toPublicTask(existing), alreadyRunning: true };
+    }
+
+    const task = this.createTask({
+      kind: 'homepage_harvest',
+      statusMessage: requestedOsmIds.length > 0
+        ? `Homepage harvest queued for ${requestedOsmIds.length} requested POIs`
+        : `Homepage harvest queued (limit ${normalizedLimit})`,
+      ttl,
+    });
+    const record = {
+      kind: 'homepage_harvest',
+      task,
+      db,
+      requestedOsmIds,
+      osmIds: [...requestedOsmIds],
+      limit: normalizedLimit,
+      force: force === true,
+      output: '',
+      result: null,
+      cancelRequested: false,
+      currentOsmId: null,
+      stats: {
+        total: requestedOsmIds.length,
+        processed: 0,
+        succeeded: 0,
+        failed: 0,
+        skipped: 0,
+        empty: 0,
+        changed: 0,
+      },
+      requestedBy: user ? { id: user.id, email: user.email } : null,
+      cancel: () => {
+        record.cancelRequested = true;
+      },
+    };
+
+    this.tasks.set(task.taskId, record);
+    this.runHomepageHarvest(record).catch(error => {
+      if (!ACTIVE_STATUSES.has(record.task.status)) return;
+      this.finishTask(record, 'failed', `Homepage harvest failed: ${error.message}`, { error });
+    });
+
+    return { task: this.toPublicTask(record), alreadyRunning: false };
+  }
+
   listTasks({ kind } = {}) {
     this.pruneExpiredTasks();
     return Array.from(this.tasks.values())
@@ -300,6 +370,8 @@ export class MaintenanceTaskManager {
       message = `${describeGoogleEnrichmentScope(record)} cancelled by admin. Current in-flight Google request may still finish.`;
     } else if (record.kind === 'ai_place_summary') {
       message = `${describeAiSummaryScope(record)} cancelled by admin. Current OpenRouter request may still finish.`;
+    } else if (record.kind === 'homepage_harvest') {
+      message = `${describeHomepageHarvestScope(record)} cancelled by admin. Current homepage request may still finish.`;
     }
     this.finishTask(record, 'cancelled', message, {
       signal,
@@ -462,6 +534,68 @@ export class MaintenanceTaskManager {
     this.finishTask(record, status, message);
   }
 
+  async runHomepageHarvest(record) {
+    this.updateTask(record, 'working', 'Homepage harvest started');
+
+    if (typeof record.db.recordEnrichmentTask === 'function') {
+      await record.db.recordEnrichmentTask(this.toTaskRow(record)).catch(() => {});
+    }
+
+    if (record.osmIds.length === 0) {
+      this.updateTask(record, 'working', `Finding due homepage harvest entries (limit ${record.limit})`);
+      const entries = await record.db.getDueHomepageHarvestEntries(record.limit);
+      record.osmIds = normalizeOsmIds(entries.map(entry => entry.osm_id));
+      record.stats.total = record.osmIds.length;
+    }
+
+    if (record.osmIds.length === 0) {
+      this.finishTask(record, 'completed', 'No due homepage harvest entries found');
+      return;
+    }
+
+    for (const [index, osmId] of record.osmIds.entries()) {
+      if (record.cancelRequested || !ACTIVE_STATUSES.has(record.task.status)) {
+        if (ACTIVE_STATUSES.has(record.task.status)) {
+          this.finishTask(record, 'cancelled', `${describeHomepageHarvestScope(record)} cancelled by admin`);
+        }
+        return;
+      }
+
+      record.currentOsmId = osmId;
+      this.updateTask(record, 'working', `Harvesting homepage for OSM ${osmId} (${index + 1}/${record.osmIds.length})`);
+      if (typeof record.db.recordEnrichmentTask === 'function') {
+        await record.db.recordEnrichmentTask(this.toTaskRow(record)).catch(() => {});
+      }
+
+      try {
+        const result = await record.db.harvestPoiHomepage(osmId, { force: record.force });
+        const harvest = result?.harvest || null;
+        if (result?.skipped) {
+          record.stats.skipped += 1;
+          this.appendOutput(record, `OSM ${osmId}: skipped - ${result.reason}\n`);
+        } else if (harvest?.fetch_status === 'error') {
+          record.stats.failed += 1;
+          this.appendOutput(record, `OSM ${osmId}: ${harvest.fetch_error || 'Homepage fetch failed'}\n`);
+        } else {
+          record.stats.succeeded += 1;
+          if (harvest?.fetch_status === 'empty') record.stats.empty += 1;
+          if (result?.contentChanged) record.stats.changed += 1;
+        }
+      } catch (error) {
+        record.stats.failed += 1;
+        this.appendOutput(record, `OSM ${osmId}: ${error.message}\n`);
+      } finally {
+        record.stats.processed += 1;
+      }
+    }
+
+    const status = record.stats.failed > 0 ? 'failed' : 'completed';
+    const message = record.stats.failed > 0
+      ? `${describeHomepageHarvestScope(record)} completed with ${record.stats.failed} errors`
+      : `${describeHomepageHarvestScope(record)} completed successfully`;
+    this.finishTask(record, status, message);
+  }
+
   appendOutput(record, chunk) {
     const text = String(chunk);
     record.output = `${record.output}${text}`.slice(-this.maxOutputChars);
@@ -500,6 +634,17 @@ export class MaintenanceTaskManager {
       });
     }
     if (record.kind === 'ai_place_summary') {
+      Object.assign(payload, {
+        limit: record.limit,
+        force: record.force,
+        osmIdCount: record.osmIds.length,
+        osmIds: record.osmIds.slice(0, 100),
+        currentOsmId: record.currentOsmId,
+        cancelRequested: record.cancelRequested,
+        stats: { ...record.stats },
+      });
+    }
+    if (record.kind === 'homepage_harvest') {
       Object.assign(payload, {
         limit: record.limit,
         force: record.force,

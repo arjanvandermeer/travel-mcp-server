@@ -1166,9 +1166,28 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(result);
       assert.strictEqual(result.osm_phone, undefined, 'Null fields should be removed');
       assert.strictEqual(result.osm_email, undefined, 'Null fields should be removed');
-      assert.strictEqual(result.osm_website, 'https://example.com', 'Non-null strings should be preserved');
+      assert.strictEqual(result.osm_website, 'https://example.com/', 'Non-null strings should be preserved');
       assert.strictEqual(result.google_rating, 4.5, 'Numbers should be preserved');
       assert.strictEqual(result.osm_stars, 0, 'Falsy non-null values (0) should be preserved');
+    });
+
+    it('should remove invalid external website URLs from POI details', async () => {
+      const poiWithBadUrls = {
+        ...samplePOIDetail,
+        google_website: 'localhost',
+        osm_website: '/property',
+        google_maps_url: 'http://localhost:3000/maps',
+      };
+      mockPool.setResponse('enriched_pois', dbResult([poiWithBadUrls]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      const result = await db.getPOIDetails(12345);
+
+      assert.ok(result);
+      assert.strictEqual(result.google_website, undefined);
+      assert.strictEqual(result.osm_website, undefined);
+      assert.strictEqual(result.google_maps_url, undefined);
+      assert.match(result.resource_uri, /^ui:\/\/\/poi\//);
     });
 
     it('should preserve all field types through the full data pipeline', async () => {
@@ -1633,6 +1652,24 @@ describe('TravelDatabase POI Search Functions', () => {
       assert.ok(dueCall);
       assert.match(dueCall.sql, /jsonb_typeof\(g\.reviews\) = 'array'/);
       assert.match(dueCall.sql, /jsonb_array_length\(g\.reviews\) > 0/);
+      assert.match(dueCall.sql, /poi_homepage_harvests/);
+      assert.match(dueCall.sql, /hh\.next_fetch_at <= CURRENT_TIMESTAMP/);
+    });
+  });
+
+  describe('getDueHomepageHarvestEntries', () => {
+    it('selects active POIs with missing or stale homepage harvests', async () => {
+      mockPool.setResponse('FROM osm_google_mappings m', dbResult([]));
+
+      db = new TravelDatabase({ pool: mockPool });
+      await db.getDueHomepageHarvestEntries(5);
+
+      const dueCall = mockPool.getCalls().find(call => call.sql.includes('FROM osm_google_mappings m'));
+      assert.ok(dueCall);
+      assert.match(dueCall.sql, /LEFT JOIN poi_homepage_harvests h/);
+      assert.match(dueCall.sql, /COALESCE\(NULLIF\(g\.website_uri, ''\), NULLIF\(p\.website, ''\)\) IS NOT NULL/);
+      assert.match(dueCall.sql, /h\.next_fetch_at <= CURRENT_TIMESTAMP/);
+      assert.deepStrictEqual(dueCall.params, [5]);
     });
   });
 });

@@ -8,6 +8,7 @@
  */
 
 import { getEnglishName } from './transliterate-thai.js';
+import { sanitizeHttpUrl } from '../url-utils.js';
 
 /**
  * POI type mappings: OSM tag pattern -> our normalized poi_type
@@ -274,7 +275,7 @@ export function extractPOIData(item, poiType, regionName) {
     address: buildAddress(tags),
     phone: truncate(tags.phone || tags['contact:phone'], 100),
     email: truncate(tags.email || tags['contact:email'], 200),
-    website: truncate(tags.website || tags['contact:website'] || tags.url, 500),
+    website: truncate(sanitizeHttpUrl(tags.website || tags['contact:website'] || tags.url), 500),
     opening_hours: truncate(tags.opening_hours, 500),
     cuisine: truncate(tags.cuisine, 200),
     wheelchair: truncate(tags.wheelchair, 20),

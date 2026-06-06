@@ -20,7 +20,12 @@ export { accommodationTypes, attractionTypes, fetchNearbyForPOI, foodTypes, getN
 const hotelIntents = ['remote_work', 'family', 'romantic', 'budget', 'accessible', 'pet_friendly'];
 const restaurantOccasions = ['business_dinner', 'casual_lunch', 'date_night', 'family_meal', 'quick_bite', 'late_night'];
 export const geonamesRefreshToolNames = new Set(['refresh_geonames', 'load_geonames_country']);
-export const maintenanceTaskToolNames = new Set([...geonamesRefreshToolNames, 'start_enrichment_task', 'start_ai_place_summary_task']);
+export const maintenanceTaskToolNames = new Set([
+  ...geonamesRefreshToolNames,
+  'start_enrichment_task',
+  'start_ai_place_summary_task',
+  'start_homepage_harvest_task',
+]);
 
 // Base tool definitions
 const baseToolsConfig = [
@@ -643,7 +648,7 @@ const baseToolsConfig = [
   },
   {
     name: 'list_enrichment_tasks',
-    description: 'Admin-only: list Google Places enrichment tasks started through MCP plus any currently active in-process POI enrichment locks.',
+    description: 'Admin-only: list Google Places, AI summary, and homepage harvest tasks started through MCP plus any currently active in-process POI enrichment locks.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -672,13 +677,13 @@ const baseToolsConfig = [
   },
   {
     name: 'stop_enrichment_task',
-    description: 'Admin-only: cancel a running Google Places enrichment task by task_id. Cancellation stops before the next POI; a current in-flight Google request may still finish.',
+    description: 'Admin-only: cancel a running Google Places, AI summary, or homepage harvest task by task_id. Cancellation stops before the next POI; a current in-flight request may still finish.',
     inputSchema: {
       type: 'object',
       properties: {
         task_id: {
           type: 'string',
-          description: 'The taskId returned by start_enrichment_task, tasks/list, or list_enrichment_tasks.',
+          description: 'The taskId returned by a maintenance start task, tasks/list, or list_enrichment_tasks.',
         },
       },
       required: ['task_id'],
@@ -705,6 +710,32 @@ const baseToolsConfig = [
         force: {
           type: 'boolean',
           description: 'If true, regenerate existing summaries for the selected POIs.',
+          default: false,
+        },
+      },
+    },
+  },
+  {
+    name: 'start_homepage_harvest_task',
+    description: 'Admin-only: start a homepage harvest task that fetches official property homepage text and image URLs. Provide osm_ids for specific POIs, or omit osm_ids to process due homepage harvests up to limit.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        osm_ids: {
+          type: 'array',
+          items: {
+            oneOf: [{ type: 'number' }, { type: 'string' }],
+          },
+          description: 'Optional OSM IDs to harvest. If omitted, the task processes due homepage harvest entries.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum due entries to process when osm_ids is omitted (default: 25, max: 100).',
+          default: 25,
+        },
+        force: {
+          type: 'boolean',
+          description: 'If true, refresh selected homepage harvests even when they are still fresh.',
           default: false,
         },
       },
@@ -1611,6 +1642,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
 
       const tasks = options.taskManager.listTasks({ kind: 'google_places_enrichment' });
       const aiSummaryTasks = options.taskManager.listTasks({ kind: 'ai_place_summary' });
+      const homepageHarvestTasks = options.taskManager.listTasks({ kind: 'homepage_harvest' });
       const activeOperations = typeof db.getActiveEnrichmentOperations === 'function'
         ? db.getActiveEnrichmentOperations()
         : [];
@@ -1623,6 +1655,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
           text: JSON.stringify({
             tasks,
             ai_summary_tasks: aiSummaryTasks,
+            homepage_harvest_tasks: homepageHarvestTasks,
             active_operations: activeOperations,
             database_tasks: databaseTasks,
           }, null, 2),
@@ -1711,6 +1744,47 @@ export async function executeToolHandler(name, args, db, options = {}) {
       }
     }
 
+    case 'start_homepage_harvest_task': {
+      const user = options.user;
+      if (!user) {
+        return taskToolError(options, 'Authentication required. Please provide a valid admin token.');
+      }
+      if (!isAdminUser(user)) {
+        return taskToolError(options, 'Admin role required to start homepage harvest tasks.');
+      }
+      if (!options.taskManager?.startHomepageHarvest) {
+        return taskToolError(options, 'Maintenance task manager is not available.');
+      }
+
+      try {
+        const { task, alreadyRunning } = options.taskManager.startHomepageHarvest({
+          db,
+          osmIds: args.osm_ids,
+          limit: validateLimit(args.limit, 25, 100),
+          force: args.force === true,
+          ttl: options.taskMetadata?.ttl,
+          user,
+        });
+
+        if (options.createTaskResult) {
+          return { task };
+        }
+
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              success: true,
+              already_running: alreadyRunning,
+              task,
+            }, null, 2),
+          }],
+        };
+      } catch (error) {
+        return taskToolError(options, error.message);
+      }
+    }
+
     case 'stop_enrichment_task': {
       const user = options.user;
       if (!user) {
@@ -1726,7 +1800,7 @@ export async function executeToolHandler(name, args, db, options = {}) {
       if (!taskId) {
         return taskToolError(options, 'task_id is required to stop an enrichment task.');
       }
-      if (!['google_places_enrichment', 'ai_place_summary'].includes(options.taskManager.getTaskKind(taskId))) {
+      if (!['google_places_enrichment', 'ai_place_summary', 'homepage_harvest'].includes(options.taskManager.getTaskKind(taskId))) {
         return taskToolError(options, `Enrichment task not found: ${taskId}`);
       }
       const task = options.taskManager.cancelTask(taskId);

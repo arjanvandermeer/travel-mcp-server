@@ -14,6 +14,11 @@ describe('url utilities', () => {
   it('allows only http and https URLs', () => {
     assert.strictEqual(sanitizeHttpUrl('https://example.com/a'), 'https://example.com/a');
     assert.strictEqual(sanitizeHttpUrl('http://example.com/a'), 'http://example.com/a');
+    assert.strictEqual(sanitizeHttpUrl('/relative/path'), null);
+    assert.strictEqual(sanitizeHttpUrl('localhost'), null);
+    assert.strictEqual(sanitizeHttpUrl('http://localhost:3000'), null);
+    assert.strictEqual(sanitizeHttpUrl('https://127.0.0.1/place'), null);
+    assert.strictEqual(sanitizeHttpUrl('http://[::1]/place'), null);
     assert.strictEqual(sanitizeHttpUrl('javascript:alert(1)'), null);
     assert.strictEqual(sanitizeHttpUrl('data:text/html,hi'), null);
   });
@@ -30,6 +35,8 @@ describe('url utilities', () => {
   it('sanitizes POI external URL fields', () => {
     const poi = sanitizePoiExternalUrls({
       photo_url: 'javascript:alert(1)',
+      osm_website: '/bad-relative',
+      website: 'http://localhost:3000/place',
       google_website: 'https://venue.example',
       google_maps_url: 'data:text/html,hi',
       google_photos: [
@@ -39,6 +46,8 @@ describe('url utilities', () => {
     });
 
     assert.strictEqual(poi.photo_url, null);
+    assert.strictEqual(poi.osm_website, null);
+    assert.strictEqual(poi.website, null);
     assert.strictEqual(poi.google_website, 'https://venue.example/');
     assert.strictEqual(poi.google_maps_url, null);
     assert.deepStrictEqual(poi.google_photos, [{ url: 'https://images.example/a.jpg' }]);

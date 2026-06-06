@@ -1306,6 +1306,7 @@ describe('executeToolHandler: enrichment tasks', () => {
         listTasks: ({ kind }) => {
           if (kind === 'google_places_enrichment') return [task];
           if (kind === 'ai_place_summary') return [{ ...task, taskId: 'ai_place_summary-test' }];
+          if (kind === 'homepage_harvest') return [{ ...task, taskId: 'homepage_harvest-test' }];
           return [];
         },
       },
@@ -1315,6 +1316,7 @@ describe('executeToolHandler: enrichment tasks', () => {
     const parsed = parseResponse(result);
     assert.deepStrictEqual(parsed.tasks, [task]);
     assert.strictEqual(parsed.ai_summary_tasks[0].taskId, 'ai_place_summary-test');
+    assert.strictEqual(parsed.homepage_harvest_tasks[0].taskId, 'homepage_harvest-test');
     assert.strictEqual(parsed.database_tasks[0].task_id, 'ai_place_summary-db');
     assert.deepStrictEqual(parsed.active_operations, [{ osmId: '101', startedAt: '2026-01-01T00:00:00.000Z', ageMs: 10 }]);
   });
@@ -1336,6 +1338,29 @@ describe('executeToolHandler: enrichment tasks', () => {
     const parsed = parseResponse(result);
     assert.strictEqual(parsed.success, true);
     assert.strictEqual(parsed.task.taskId, aiTask.taskId);
+    assert.deepStrictEqual(captured.osmIds, [101]);
+    assert.strictEqual(captured.limit, 100);
+    assert.strictEqual(captured.force, true);
+    assert.strictEqual(captured.db, db);
+  });
+
+  it('should start a homepage harvest task for admins', async () => {
+    const db = createMockDb();
+    let captured;
+    const harvestTask = { ...task, taskId: 'homepage_harvest-test' };
+    const result = await executeToolHandler('start_homepage_harvest_task', { osm_ids: [101], limit: 999, force: true }, db, {
+      taskManager: {
+        startHomepageHarvest: (args) => {
+          captured = args;
+          return { task: harvestTask, alreadyRunning: false };
+        },
+      },
+      user: adminUser,
+    });
+
+    const parsed = parseResponse(result);
+    assert.strictEqual(parsed.success, true);
+    assert.strictEqual(parsed.task.taskId, harvestTask.taskId);
     assert.deepStrictEqual(captured.osmIds, [101]);
     assert.strictEqual(captured.limit, 100);
     assert.strictEqual(captured.force, true);

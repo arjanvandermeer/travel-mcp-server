@@ -40,6 +40,10 @@ function createTaskManager(overrides = {}) {
       task: { ...task, taskId: 'ai_place_summary-test' },
       alreadyRunning: false,
     }),
+    startHomepageHarvest: () => ({
+      task: { ...task, taskId: 'homepage_harvest-test' },
+      alreadyRunning: false,
+    }),
     ...overrides,
   };
 }
@@ -164,6 +168,22 @@ describe('MCP maintenance task handlers', () => {
       }, CreateTaskResultSchema);
 
       assert.equal(result.task.taskId, 'ai_place_summary-test');
+    });
+  });
+
+  it('supports MCP task-augmented start_homepage_harvest_task calls for admins', async () => {
+    const admin = { id: 1, email: 'admin@example.com', config: { role: 'admin' } };
+    await withClient({ user: admin, taskManager: createTaskManager() }, async (client) => {
+      const result = await client.request({
+        method: 'tools/call',
+        params: {
+          name: 'start_homepage_harvest_task',
+          arguments: { osm_ids: [101] },
+          task: { ttl: 60000 },
+        },
+      }, CreateTaskResultSchema);
+
+      assert.equal(result.task.taskId, 'homepage_harvest-test');
     });
   });
 });

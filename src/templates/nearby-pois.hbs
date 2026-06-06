@@ -204,8 +204,15 @@
     function safeHttpUrl(value) {
       if (typeof value !== 'string') return '';
       try {
-        var url = new URL(value, window.location.origin);
-        return (url.protocol === 'http:' || url.protocol === 'https:') ? url.href : '';
+        var url = new URL(value);
+        var hostname = url.hostname.toLowerCase().replace(/\.$/, '');
+        var isLocal = hostname === 'localhost' ||
+          hostname.slice(-10) === '.localhost' ||
+          hostname === '0.0.0.0' ||
+          hostname === '::1' ||
+          hostname === '[::1]' ||
+          /^127(?:\.\d{1,3}){3}$/.test(hostname);
+        return (url.protocol === 'http:' || url.protocol === 'https:') && !isLocal ? url.href : '';
       } catch (err) {
         return '';
       }

@@ -20,6 +20,7 @@ import {
   levenshteinDistance,
   radiusToBBox,
 } from './google-places-matching.js';
+import { sanitizeHttpUrl } from './url-utils.js';
 
 dotenv.config();
 
@@ -616,8 +617,8 @@ export class GooglePlacesClient {
       // Contact
       national_phone: details.nationalPhoneNumber || null,
       international_phone: details.internationalPhoneNumber || null,
-      website_uri: details.websiteUri || null,
-      google_maps_uri: details.googleMapsUri || null,
+      website_uri: sanitizeHttpUrl(details.websiteUri),
+      google_maps_uri: sanitizeHttpUrl(details.googleMapsUri),
 
       // Business info
       business_status: details.businessStatus || null,
