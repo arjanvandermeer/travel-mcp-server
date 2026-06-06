@@ -67,10 +67,11 @@ INSERT INTO app_config (key, value, encrypted, description) VALUES
     ('google_places_cache_hours', '168', FALSE, 'Hours to cache Google Places data (default: 7 days)'),
     ('google_analytics_measurement_id', NULL, FALSE, 'Google Analytics measurement ID for optional gtag.js web analytics'),
     ('google_api_daily_limit', '100', FALSE, 'Daily limit for Google Places API calls (default: 100)'),
-    ('openai_api_key', NULL, TRUE, 'OpenAI API key for AI enrichment jobs'),
-    ('openai_place_summary_model', 'gpt-5-mini', FALSE, 'OpenAI model for place review and homepage summaries'),
+    ('openrouter_api_key', NULL, TRUE, 'OpenRouter API key for AI enrichment jobs'),
+    ('openrouter_place_summary_model', 'openrouter/auto', FALSE, 'OpenRouter model for place review and homepage summaries'),
     ('review_summary_enabled', '1', FALSE, 'Enable AI summaries from Google review text (1 enabled, 0 disabled)'),
     ('homepage_summary_enabled', '1', FALSE, 'Enable AI summaries from official property homepages (1 enabled, 0 disabled)'),
+    ('homepage_harvest_refresh_days', '180', FALSE, 'Days before official homepage content and images should be refreshed'),
     ('sentry_dsn', NULL, TRUE, 'Sentry DSN for error tracking and performance monitoring'),
     ('telemetry_enabled', 'true', FALSE, 'Enable/disable telemetry (errors + performance)'),
     ('telemetry_sample_rate', '1.0', FALSE, 'Trace sample rate 0.0-1.0'),
@@ -402,6 +403,30 @@ CREATE TABLE IF NOT EXISTS poi_homepage_summaries (
 
 CREATE INDEX IF NOT EXISTS idx_poi_homepage_summaries_osm_id ON poi_homepage_summaries(osm_id);
 
+CREATE TABLE IF NOT EXISTS poi_homepage_harvests (
+    id BIGSERIAL PRIMARY KEY,
+    osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
+    original_url VARCHAR(500) NOT NULL,
+    final_url VARCHAR(1000),
+    fetch_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+    http_status INTEGER,
+    content_type VARCHAR(200),
+    title TEXT,
+    meta_description TEXT,
+    text_content TEXT,
+    image_urls JSONB DEFAULT '[]'::jsonb,
+    content_hash VARCHAR(64),
+    fetch_error TEXT,
+    fetched_at TIMESTAMP,
+    next_fetch_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (osm_id, original_url)
+);
+
+CREATE INDEX IF NOT EXISTS idx_poi_homepage_harvests_osm_id ON poi_homepage_harvests(osm_id);
+CREATE INDEX IF NOT EXISTS idx_poi_homepage_harvests_next_fetch ON poi_homepage_harvests(next_fetch_at) WHERE next_fetch_at IS NOT NULL;
+
 -- ============================================================================
 -- Hotel Chain / Brand Reference Data
 -- ============================================================================
@@ -539,6 +564,16 @@ SELECT
     h.summary_status as ai_homepage_summary_status,
     h.summary_error as ai_homepage_summary_error,
     h.summarized_at as ai_homepage_summarized_at,
+    hh.final_url as homepage_final_url,
+    hh.fetch_status as homepage_fetch_status,
+    hh.http_status as homepage_http_status,
+    hh.title as homepage_title,
+    hh.meta_description as homepage_meta_description,
+    hh.image_urls as homepage_image_urls,
+    hh.content_hash as homepage_content_hash,
+    hh.fetch_error as homepage_fetch_error,
+    hh.fetched_at as homepage_fetched_at,
+    hh.next_fetch_at as homepage_next_fetch_at,
     g.enriched_at as google_enriched_at,
     g.cache_expires_at as google_cache_expires_at,
 
@@ -562,7 +597,24 @@ LEFT JOIN LATERAL (
     WHERE osm_id = p.osm_id
     ORDER BY summarized_at DESC NULLS LAST, updated_at DESC
     LIMIT 1
-) h ON true;
+) h ON true
+LEFT JOIN LATERAL (
+    SELECT
+        final_url,
+        fetch_status,
+        http_status,
+        title,
+        meta_description,
+        image_urls,
+        content_hash,
+        fetch_error,
+        fetched_at,
+        next_fetch_at
+    FROM poi_homepage_harvests
+    WHERE osm_id = p.osm_id
+    ORDER BY fetched_at DESC NULLS LAST, updated_at DESC
+    LIMIT 1
+) hh ON true;
 
 -- ============================================================================
 -- Helper Functions

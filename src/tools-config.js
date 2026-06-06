@@ -686,7 +686,7 @@ const baseToolsConfig = [
   },
   {
     name: 'start_ai_place_summary_task',
-    description: 'Admin-only: start an AI enrichment task that summarizes Google review text and official property homepages with OpenAI. Provide osm_ids for specific POIs, or omit osm_ids to process due enriched POIs up to limit. Skips automatically when openai_api_key is missing, review_summary_enabled is 0, or homepage_summary_enabled is 0.',
+    description: 'Admin-only: start an AI enrichment task that summarizes Google review text and official property homepages with OpenRouter. Provide osm_ids for specific POIs, or omit osm_ids to process due enriched POIs up to limit. Skips automatically when openrouter_api_key is missing, review_summary_enabled is 0, or homepage_summary_enabled is 0.',
     inputSchema: {
       type: 'object',
       properties: {

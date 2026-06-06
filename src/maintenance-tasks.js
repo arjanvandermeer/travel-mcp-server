@@ -299,7 +299,7 @@ export class MaintenanceTaskManager {
     if (record.kind === 'google_places_enrichment') {
       message = `${describeGoogleEnrichmentScope(record)} cancelled by admin. Current in-flight Google request may still finish.`;
     } else if (record.kind === 'ai_place_summary') {
-      message = `${describeAiSummaryScope(record)} cancelled by admin. Current OpenAI request may still finish.`;
+      message = `${describeAiSummaryScope(record)} cancelled by admin. Current OpenRouter request may still finish.`;
     }
     this.finishTask(record, 'cancelled', message, {
       signal,

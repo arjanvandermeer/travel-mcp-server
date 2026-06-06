@@ -22,11 +22,11 @@ describe('telemetry noise regressions', () => {
 
   it('counts provider calls with metrics instead of issue events', () => {
     const googlePlaces = readRepoFile('src/google-places.js');
-    const openaiSummaries = readRepoFile('src/openai-place-summaries.js');
+    const openrouterSummaries = readRepoFile('src/openrouter-place-summaries.js');
     const telemetry = readRepoFile('src/telemetry.js');
 
     assert.doesNotMatch(googlePlaces, /captureMetricEvent\('google_places\.api_calls'/);
-    assert.doesNotMatch(openaiSummaries, /captureMetricEvent\('openai\.api_requests'/);
+    assert.doesNotMatch(openrouterSummaries, /captureMetricEvent\('openrouter\.api_requests'/);
     assert.match(telemetry, /Sentry\.metrics\.count/);
     assert.doesNotMatch(telemetry, /Sentry\.metrics\.increment/);
     assert.doesNotMatch(telemetry, /Sentry\.captureMessage\(`metric:/);

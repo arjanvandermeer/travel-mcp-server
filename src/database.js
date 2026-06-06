@@ -1,4 +1,5 @@
 import pg from 'pg';
+import crypto from 'crypto';
 import { GooglePlacesClient } from './google-places.js';
 import * as telemetry from './telemetry.js';
 import dotenv from 'dotenv';
@@ -8,7 +9,7 @@ import { databaseUserMethods } from './database-user-methods.js';
 import { databaseImportMethods } from './database-import-methods.js';
 import { coerceOpenAt, isPoiOpenAt } from './lib/opening-hours.js';
 import { sanitizeHttpUrl, sanitizePoiExternalUrlsArray } from './url-utils.js';
-import { createOpenAIPlaceSummarizer } from './openai-place-summaries.js';
+import { createOpenRouterPlaceSummarizer, fetchHomepageHarvest } from './openrouter-place-summaries.js';
 
 // Load environment variables (using dotenv 16.x to avoid verbose output that breaks MCP)
 dotenv.config();
@@ -18,6 +19,8 @@ if (!process.env.DATABASE_URL && process.env.NODE_ENV === 'production') {
 }
 const CONNECTION_STRING = process.env.DATABASE_URL ||
   'postgresql://<user>:<password>@localhost:5432/travel';
+const HOMEPAGE_HARVEST_REFRESH_DAYS_DEFAULT = 180;
+const HOMEPAGE_HARVEST_ERROR_RETRY_DAYS = 1;
 
 function clampPositiveInteger(value, defaultValue, maxValue) {
   const parsed = Number(value);
@@ -261,6 +264,26 @@ function isFutureDate(value, now = new Date()) {
   return !Number.isNaN(parsed.getTime()) && parsed.getTime() > now.getTime();
 }
 
+function homepageHarvestRefreshAt(status, refreshDays = HOMEPAGE_HARVEST_REFRESH_DAYS_DEFAULT) {
+  const days = status === 'error' || status === 'empty'
+    ? HOMEPAGE_HARVEST_ERROR_RETRY_DAYS
+    : refreshDays;
+  return retryAtFromNow(Math.max(1, days) * 24 * 60 * 60 * 1000);
+}
+
+function homepageHarvestContentHash(harvest = {}) {
+  return crypto
+    .createHash('sha256')
+    .update(JSON.stringify({
+      finalUrl: harvest.finalUrl || null,
+      title: harvest.title || '',
+      metaDescription: harvest.metaDescription || '',
+      textContent: harvest.textContent || '',
+      imageUrls: harvest.imageUrls || [],
+    }))
+    .digest('hex');
+}
+
 function isPositiveTagValue(value) {
   return value !== undefined && value !== null && value !== false && String(value).toLowerCase() !== 'no';
 }
@@ -432,6 +455,37 @@ export class TravelDatabase {
       ON poi_homepage_summaries(osm_id)
     `);
     await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS poi_homepage_harvests (
+        id BIGSERIAL PRIMARY KEY,
+        osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
+        original_url VARCHAR(500) NOT NULL,
+        final_url VARCHAR(1000),
+        fetch_status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        http_status INTEGER,
+        content_type VARCHAR(200),
+        title TEXT,
+        meta_description TEXT,
+        text_content TEXT,
+        image_urls JSONB DEFAULT '[]'::jsonb,
+        content_hash VARCHAR(64),
+        fetch_error TEXT,
+        fetched_at TIMESTAMP,
+        next_fetch_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE (osm_id, original_url)
+      )
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_poi_homepage_harvests_osm_id
+      ON poi_homepage_harvests(osm_id)
+    `);
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_poi_homepage_harvests_next_fetch
+      ON poi_homepage_harvests(next_fetch_at)
+      WHERE next_fetch_at IS NOT NULL
+    `);
+    await this.pool.query(`
       CREATE TABLE IF NOT EXISTS enrichment_tasks (
         task_id VARCHAR(120) PRIMARY KEY,
         kind VARCHAR(80) NOT NULL,
@@ -486,6 +540,9 @@ export class TravelDatabase {
         const firstPhoto = google_photos[0];
         // Use pre-resolved thumbnail URL from enrichment
         photo_url = sanitizeHttpUrl(firstPhoto.url_thumbnail || firstPhoto.url);
+      }
+      if (!photo_url && Array.isArray(poi.homepage_image_urls) && poi.homepage_image_urls.length > 0) {
+        photo_url = sanitizeHttpUrl(poi.homepage_image_urls[0]);
       }
 
       return { ...rest, photo_url };
@@ -926,12 +983,29 @@ export class TravelDatabase {
         g.amenities as google_amenities, g.accessibility as google_accessibility,
         g.ai_review_summary,
         h.summary as ai_homepage_summary,
-        h.original_url as ai_homepage_url
+        h.original_url as ai_homepage_url,
+        hh.image_urls as homepage_image_urls,
+        hh.final_url as homepage_final_url,
+        hh.fetch_status as homepage_fetch_status,
+        hh.fetched_at as homepage_fetched_at,
+        hh.next_fetch_at as homepage_next_fetch_at
       FROM osm_google_mappings m
       JOIN google_places g ON m.google_place_id = g.google_place_id
-      LEFT JOIN poi_homepage_summaries h
-        ON h.osm_id = m.osm_id
-        AND h.summary_status = 'complete'
+      LEFT JOIN LATERAL (
+        SELECT summary, original_url
+        FROM poi_homepage_summaries
+        WHERE osm_id = m.osm_id
+          AND summary_status IN ('completed', 'complete')
+        ORDER BY summarized_at DESC NULLS LAST, updated_at DESC
+        LIMIT 1
+      ) h ON true
+      LEFT JOIN LATERAL (
+        SELECT image_urls, final_url, fetch_status, fetched_at, next_fetch_at
+        FROM poi_homepage_harvests
+        WHERE osm_id = m.osm_id
+        ORDER BY fetched_at DESC NULLS LAST, updated_at DESC
+        LIMIT 1
+      ) hh ON true
       WHERE m.osm_id = ANY($1) AND m.mapping_status = 'active'
     `, [osmIds]);
 
@@ -960,6 +1034,11 @@ export class TravelDatabase {
         google_utc_offset_minutes: g.google_utc_offset_minutes,
         google_amenities: g.google_amenities,
         google_accessibility: g.google_accessibility,
+        homepage_image_urls: g.homepage_image_urls,
+        homepage_final_url: g.homepage_final_url,
+        homepage_fetch_status: g.homepage_fetch_status,
+        homepage_fetched_at: g.homepage_fetched_at,
+        homepage_next_fetch_at: g.homepage_next_fetch_at,
         ai_homepage_summary: g.ai_homepage_summary,
         ai_homepage_url: g.ai_homepage_url,
         ai_review_summary: g.ai_review_summary,
@@ -3501,17 +3580,203 @@ export class TravelDatabase {
     ]);
   }
 
-  async getOpenAIPlaceSummaryConfig() {
-    const apiKey = await this.getConfigCached('openai_api_key', process.env.OPENAI_API_KEY || null);
-    const model = await this.getConfigCached('openai_place_summary_model', 'gpt-5-mini');
+  async getOpenRouterPlaceSummaryConfig() {
+    const apiKey = await this.getConfigCached('openrouter_api_key', process.env.OPENROUTER_API_KEY || null);
+    const model = await this.getConfigCached('openrouter_place_summary_model', process.env.OPENROUTER_PLACE_SUMMARY_MODEL || 'openrouter/auto');
     const reviewSummaryEnabled = String(await this.getConfigCached('review_summary_enabled', '1')) !== '0';
     const homepageSummaryEnabled = String(await this.getConfigCached('homepage_summary_enabled', '1')) !== '0';
 
     return {
       apiKey,
-      model: model || 'gpt-5-mini',
+      model: model || 'openrouter/auto',
       reviewSummaryEnabled: !!apiKey && reviewSummaryEnabled,
       homepageSummaryEnabled: !!apiKey && homepageSummaryEnabled,
+    };
+  }
+
+  async getHomepageHarvestConfig() {
+    const refreshDays = clampPositiveInteger(
+      await this.getConfigCached('homepage_harvest_refresh_days', String(HOMEPAGE_HARVEST_REFRESH_DAYS_DEFAULT)),
+      HOMEPAGE_HARVEST_REFRESH_DAYS_DEFAULT,
+      365,
+    );
+    return { refreshDays };
+  }
+
+  async getLatestHomepageHarvest(osmId, originalUrl) {
+    await this.ensureAiSummaryColumns();
+    const result = await this.pool.query(`
+      SELECT
+        osm_id,
+        original_url,
+        final_url,
+        fetch_status,
+        http_status,
+        content_type,
+        title,
+        meta_description,
+        text_content,
+        image_urls,
+        content_hash,
+        fetch_error,
+        fetched_at,
+        next_fetch_at
+      FROM poi_homepage_harvests
+      WHERE osm_id = $1 AND original_url = $2
+      ORDER BY fetched_at DESC NULLS LAST, updated_at DESC
+      LIMIT 1
+    `, [osmId, originalUrl]);
+    return result.rows[0] || null;
+  }
+
+  async savePoiHomepageHarvest(osmId, {
+    originalUrl,
+    finalUrl = null,
+    fetchStatus = 'completed',
+    httpStatus = null,
+    contentType = null,
+    title = null,
+    metaDescription = null,
+    textContent = null,
+    imageUrls = [],
+    error = null,
+    refreshDays = HOMEPAGE_HARVEST_REFRESH_DAYS_DEFAULT,
+  } = {}) {
+    await this.ensureAiSummaryColumns();
+    const normalizedImages = Array.isArray(imageUrls)
+      ? imageUrls.map(sanitizeHttpUrl).filter(Boolean).slice(0, 20)
+      : [];
+    const harvest = {
+      finalUrl,
+      title,
+      metaDescription,
+      textContent,
+      imageUrls: normalizedImages,
+    };
+    const contentHash = homepageHarvestContentHash(harvest);
+    const nextFetchAt = homepageHarvestRefreshAt(fetchStatus, refreshDays);
+
+    const result = await this.pool.query(`
+      INSERT INTO poi_homepage_harvests (
+        osm_id,
+        original_url,
+        final_url,
+        fetch_status,
+        http_status,
+        content_type,
+        title,
+        meta_description,
+        text_content,
+        image_urls,
+        content_hash,
+        fetch_error,
+        fetched_at,
+        next_fetch_at,
+        updated_at
+      ) VALUES (
+        $1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb, $11, $12, CURRENT_TIMESTAMP, $13, CURRENT_TIMESTAMP
+      )
+      ON CONFLICT (osm_id, original_url) DO UPDATE SET
+        final_url = EXCLUDED.final_url,
+        fetch_status = EXCLUDED.fetch_status,
+        http_status = EXCLUDED.http_status,
+        content_type = EXCLUDED.content_type,
+        title = EXCLUDED.title,
+        meta_description = EXCLUDED.meta_description,
+        text_content = EXCLUDED.text_content,
+        image_urls = EXCLUDED.image_urls,
+        content_hash = EXCLUDED.content_hash,
+        fetch_error = EXCLUDED.fetch_error,
+        fetched_at = CURRENT_TIMESTAMP,
+        next_fetch_at = EXCLUDED.next_fetch_at,
+        updated_at = CURRENT_TIMESTAMP
+      RETURNING
+        osm_id,
+        original_url,
+        final_url,
+        fetch_status,
+        http_status,
+        content_type,
+        title,
+        meta_description,
+        text_content,
+        image_urls,
+        content_hash,
+        fetch_error,
+        fetched_at,
+        next_fetch_at
+    `, [
+      osmId,
+      originalUrl,
+      finalUrl,
+      fetchStatus,
+      httpStatus,
+      contentType,
+      title,
+      metaDescription,
+      textContent,
+      JSON.stringify(normalizedImages),
+      contentHash,
+      error,
+      nextFetchAt,
+    ]);
+    return result.rows[0] || null;
+  }
+
+  async harvestPoiHomepage(osmId, { force = false, homepageFetcher = fetchHomepageHarvest } = {}) {
+    const place = await this.getPlaceForAiSummary(osmId);
+    if (!place) return { skipped: true, reason: `No active Google Places enrichment found for OSM ${osmId}` };
+
+    const homepageUrl = sanitizeHttpUrl(place.website_uri) || sanitizeHttpUrl(place.osm_website);
+    if (!homepageUrl) return { skipped: true, reason: `No homepage URL found for OSM ${osmId}` };
+
+    const { refreshDays } = await this.getHomepageHarvestConfig();
+    const existing = await this.getLatestHomepageHarvest(osmId, homepageUrl);
+    if (!force && existing && isFutureDate(existing.next_fetch_at)) {
+      return {
+        skipped: true,
+        reason: `Homepage harvest is fresh until ${new Date(existing.next_fetch_at).toISOString()}`,
+        harvest: existing,
+        previousHarvest: existing,
+        contentChanged: false,
+      };
+    }
+
+    const harvested = await homepageFetcher(homepageUrl);
+    const harvest = typeof harvested === 'string'
+      ? {
+          originalUrl: homepageUrl,
+          finalUrl: homepageUrl,
+          fetchStatus: harvested ? 'completed' : 'empty',
+          httpStatus: null,
+          contentType: '',
+          title: '',
+          metaDescription: '',
+          textContent: harvested,
+          imageUrls: [],
+          error: null,
+        }
+      : harvested;
+
+    const saved = await this.savePoiHomepageHarvest(osmId, {
+      originalUrl: homepageUrl,
+      finalUrl: harvest?.finalUrl || homepageUrl,
+      fetchStatus: harvest?.fetchStatus || 'empty',
+      httpStatus: harvest?.httpStatus || null,
+      contentType: harvest?.contentType || null,
+      title: harvest?.title || null,
+      metaDescription: harvest?.metaDescription || null,
+      textContent: harvest?.textContent || null,
+      imageUrls: harvest?.imageUrls || [],
+      error: harvest?.error || null,
+      refreshDays,
+    });
+
+    return {
+      skipped: false,
+      harvest: saved,
+      previousHarvest: existing,
+      contentChanged: !existing || existing.content_hash !== saved?.content_hash,
     };
   }
 
@@ -3554,9 +3819,9 @@ export class TravelDatabase {
   }
 
   async summarizeEnrichedPOI(osmId, { force = false, summarizer = null } = {}) {
-    const config = await this.getOpenAIPlaceSummaryConfig();
+    const config = await this.getOpenRouterPlaceSummaryConfig();
     if (!config.reviewSummaryEnabled && !config.homepageSummaryEnabled) {
-      return { skipped: true, reason: 'OpenAI summaries are disabled or no OpenAI API key is configured' };
+      return { skipped: true, reason: 'OpenRouter summaries are disabled or no OpenRouter API key is configured' };
     }
 
     const place = await this.getPlaceForAiSummary(osmId);
@@ -3569,19 +3834,28 @@ export class TravelDatabase {
       Array.isArray(place.reviews) &&
       place.reviews.length > 0;
     const homepageUrl = sanitizeHttpUrl(place.website_uri) || sanitizeHttpUrl(place.osm_website);
-    const homepageDue = config.homepageSummaryEnabled &&
+    const latestHomepageHarvest = homepageUrl
+      ? await this.getLatestHomepageHarvest(place.osm_id, homepageUrl)
+      : null;
+    const homepageHarvestDue = config.homepageSummaryEnabled &&
+      homepageUrl &&
+      (force || !latestHomepageHarvest || !isFutureDate(latestHomepageHarvest.next_fetch_at));
+    const homepageSummaryDue = config.homepageSummaryEnabled &&
       homepageUrl &&
       (force || !place.ai_homepage_summary || place.ai_homepage_url !== homepageUrl);
+    const homepageDue = homepageHarvestDue || homepageSummaryDue;
 
     if (!reviewDue && !homepageDue) {
       return { skipped: true, reason: `No AI summary work due for OSM ${osmId}` };
     }
 
-    const client = summarizer || createOpenAIPlaceSummarizer({ apiKey: config.apiKey, model: config.model });
+    const client = summarizer || createOpenRouterPlaceSummarizer({ apiKey: config.apiKey, model: config.model });
     const updates = {
       reviewSummary: null,
       homepageSummary: null,
       homepageUrl: null,
+      homepageFinalUrl: null,
+      homepageHarvest: null,
       status: 'completed',
       error: null,
     };
@@ -3591,9 +3865,26 @@ export class TravelDatabase {
         updates.reviewSummary = await client.summarizeReviews(place);
       }
       if (homepageDue) {
-        const homepageResult = await client.summarizeHomepage(place);
+        const homepageHarvestResult = homepageHarvestDue
+          ? await this.harvestPoiHomepage(place.osm_id, { force })
+          : { skipped: true, harvest: latestHomepageHarvest, previousHarvest: latestHomepageHarvest, contentChanged: false };
+        const homepageHarvest = homepageHarvestResult?.harvest || null;
+        const homepageText = homepageHarvest?.text_content || '';
+        const shouldSummarizeHomepage = homepageText && (
+          homepageSummaryDue ||
+          homepageHarvestResult?.contentChanged
+        );
+        const homepageResult = shouldSummarizeHomepage
+          ? await client.summarizeHomepage({
+              ...place,
+              homepage_text: homepageText,
+              homepage_url: homepageHarvest.final_url || homepageUrl,
+            })
+          : null;
+        updates.homepageHarvest = homepageHarvest;
         updates.homepageSummary = homepageResult?.summary || null;
-        updates.homepageUrl = homepageResult?.url || homepageUrl;
+        updates.homepageUrl = homepageUrl;
+        updates.homepageFinalUrl = homepageResult?.url || homepageHarvest?.final_url || homepageUrl;
       }
 
       if (updates.reviewSummary) {
@@ -3619,6 +3910,8 @@ export class TravelDatabase {
         reviewSummary: updates.reviewSummary,
         homepageSummary: updates.homepageSummary,
         homepageUrl: updates.homepageUrl,
+        homepageFinalUrl: updates.homepageFinalUrl,
+        homepageHarvest: updates.homepageHarvest,
       };
     } catch (error) {
       if (reviewDue) {
@@ -3708,16 +4001,58 @@ export class TravelDatabase {
           )
           OR (
             COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, '')) IS NOT NULL
-            AND NOT EXISTS (
-              SELECT 1
-              FROM poi_homepage_summaries h
-              WHERE h.osm_id = m.osm_id
-                AND h.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
-                AND h.summary IS NOT NULL
+            AND (
+              NOT EXISTS (
+                SELECT 1
+                FROM poi_homepage_summaries h
+                WHERE h.osm_id = m.osm_id
+                  AND h.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
+                  AND h.summary IS NOT NULL
+              )
+              OR NOT EXISTS (
+                SELECT 1
+                FROM poi_homepage_harvests hh
+                WHERE hh.osm_id = m.osm_id
+                  AND hh.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
+              )
+              OR EXISTS (
+                SELECT 1
+                FROM poi_homepage_harvests hh
+                WHERE hh.osm_id = m.osm_id
+                  AND hh.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
+                  AND (
+                    hh.next_fetch_at IS NULL
+                    OR hh.next_fetch_at <= CURRENT_TIMESTAMP
+                  )
+              )
             )
           )
         )
       ORDER BY g.enriched_at DESC NULLS LAST
+      LIMIT $1
+    `, [limit]);
+    return result.rows;
+  }
+
+  async getDueHomepageHarvestEntries(limit = 100) {
+    await this.ensureAiSummaryColumns();
+    const result = await this.pool.query(`
+      SELECT m.osm_id
+      FROM osm_google_mappings m
+      JOIN osm_pois p ON p.osm_id = m.osm_id
+      JOIN google_places g ON g.google_place_id = m.google_place_id
+      LEFT JOIN poi_homepage_harvests h
+        ON h.osm_id = m.osm_id
+        AND h.original_url = COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, ''))
+      WHERE m.mapping_status = 'active'
+        AND m.google_place_id IS NOT NULL
+        AND COALESCE(NULLIF(g.website_uri, ''), NULLIF(p.website, '')) IS NOT NULL
+        AND (
+          h.osm_id IS NULL
+          OR h.next_fetch_at IS NULL
+          OR h.next_fetch_at <= CURRENT_TIMESTAMP
+        )
+      ORDER BY COALESCE(h.next_fetch_at, TIMESTAMP '1970-01-01') ASC, g.enriched_at DESC NULLS LAST
       LIMIT $1
     `, [limit]);
     return result.rows;
