@@ -20,7 +20,7 @@
     <header class="topbar">
       <nav class="nav-actions" aria-label="Primary">
         <button class="nav-link" :class="{ active: $store.route.page === 'home' }" @click="$store.route.goHome()">Pulse</button>
-        <button class="nav-link" :class="{ active: $store.route.page === 'atlas' }" @click="$store.route.goAtlas()">Atlas</button>
+        <!-- TODO: Build Atlas into a stronger map/discovery surface before restoring it to primary nav. -->
         <button class="nav-link" :class="{ active: $store.route.page === 'composer' }" @click="$store.route.goComposer()">Composer</button>
         <template x-if="$store.auth.checked && !$store.auth.authenticated">
           <button class="primary-button compact" @click="$store.auth.login()">Sign in</button>
