@@ -12,10 +12,10 @@ const HOME_FEED_PREFERENCE_KEY = 'travel.home.feedCategories';
 const ENRICHMENT_POLL_INTERVAL_MS = 5000;
 const ENRICHMENT_POLL_MAX_MS = 5 * 60 * 1000;
 const DEFAULT_CITY_FALLBACK = Object.freeze({
-  label: 'New York City, New York',
-  cityName: 'New York City',
-  countryCode: 'US',
-  state: 'New York',
+  label: 'London, UK',
+  cityName: 'London',
+  countryCode: 'GB',
+  state: null,
 });
 
 function debounce(fn, ms) {
@@ -54,8 +54,7 @@ function writeHomeFeedPreference(keys) {
 
 async function findDefaultCityFallback() {
   const searches = [
-    { q: DEFAULT_CITY_FALLBACK.cityName, country_code: DEFAULT_CITY_FALLBACK.countryCode, state: DEFAULT_CITY_FALLBACK.state, limit: 10 },
-    { q: 'New York', country_code: DEFAULT_CITY_FALLBACK.countryCode, state: DEFAULT_CITY_FALLBACK.state, limit: 10 },
+    { q: DEFAULT_CITY_FALLBACK.cityName, country_code: DEFAULT_CITY_FALLBACK.countryCode, limit: 10 },
   ];
 
   for (const params of searches) {
@@ -63,7 +62,7 @@ async function findDefaultCityFallback() {
     const cities = data.results || [];
     const preferred = cities.find(city =>
       String(city.name || city.ascii_name || '').toLowerCase() === DEFAULT_CITY_FALLBACK.cityName.toLowerCase() &&
-      String(city.state_name || '').toLowerCase() === DEFAULT_CITY_FALLBACK.state.toLowerCase()
+      (!DEFAULT_CITY_FALLBACK.state || String(city.state_name || '').toLowerCase() === DEFAULT_CITY_FALLBACK.state.toLowerCase())
     );
     if (preferred || cities[0]) return preferred || cities[0];
   }

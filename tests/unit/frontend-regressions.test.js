@@ -14,14 +14,14 @@ const dossierCss = fs.readFileSync(path.join(__dirname, '../../web/css/dossier.c
 const databaseJs = fs.readFileSync(path.join(__dirname, '../../src/database.js'), 'utf8');
 
 describe('frontend regressions', () => {
-  it('uses New York City when geolocation cannot produce a usable city', () => {
+  it('uses London when geolocation cannot produce a usable city', () => {
     const defaultFallbackCalls = [...appJs.matchAll(/loadDefaultCity\(\{ historyMode: 'replace' \}\)/g)];
 
-    assert.ok(defaultFallbackCalls.length >= 5, 'Geolocation, nearest-city, and failed city-search fallbacks should load New York City');
+    assert.ok(defaultFallbackCalls.length >= 5, 'Geolocation, nearest-city, and failed city-search fallbacks should load London');
     assert.match(
       appJs,
-      /DEFAULT_CITY_FALLBACK[\s\S]*New York City, New York/,
-      'Default fallback should be New York City, New York'
+      /DEFAULT_CITY_FALLBACK[\s\S]*London, UK/,
+      'Default fallback should be London, UK'
     );
   });
 
@@ -49,7 +49,7 @@ describe('frontend regressions', () => {
     assert.match(appJs, /toggleFeed\(key\)/, 'Discovery store should support combined category toggles');
     assert.match(appJs, /defaultHomeFeedKeys\(\)[\s\S]*return \['dining'\]/, 'Homepage should default to Eat only for new visitors');
     assert.match(appJs, /HOME_FEED_PREFERENCE_KEY/, 'Homepage category toggles should persist between sessions');
-    assert.match(appJs, /DEFAULT_CITY_FALLBACK[\s\S]*New York City, New York/, 'Frontend city-search failures should default to New York City, New York');
+    assert.match(appJs, /DEFAULT_CITY_FALLBACK[\s\S]*London, UK/, 'Frontend city-search failures should default to London, UK');
     assert.match(appJs, /loadDefaultCity\(\{ historyMode: 'replace' \}\)/, 'City Pulse failed city lookups should load the default city');
     assert.match(appJs, /searchPlacesByName\(\)/, 'Discovery store should search selected categories by name');
     assert.match(indexHtml, /Open now/, 'Homepage search options should expose an open-now filter');
