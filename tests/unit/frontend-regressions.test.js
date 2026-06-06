@@ -61,6 +61,7 @@ describe('frontend regressions', () => {
     assert.match(formatStoreJs, /placeCardSummary\(poi = \{\}\)[\s\S]*ai_homepage_summary[\s\S]*ai_review_summary/, 'City cards should render homepage and review summaries when available');
     assert.match(styleCss, /\.home-place-card \.home-place-summary[\s\S]*-webkit-line-clamp: 2/, 'City card summaries should wrap below the meta line');
     assert.match(databaseJs, /enrichWithGoogleData\(rows\)[\s\S]*poi_homepage_summaries[\s\S]*ai_homepage_summary[\s\S]*ai_review_summary/, 'Nearby POI enrichment should expose stored AI summaries to cards');
+    assert.match(databaseJs, /GOOGLE_ACTIVE_REFRESH_MS = 180 \* 24 \* 60 \* 60 \* 1000/, 'Active Google Places mappings should refresh after 180 days');
     assert.match(appJs, /feedCount\(key\)/, 'Atlas store should count visible map results by category');
     assert.doesNotMatch(appJs, /resultsLabel\(\)/, 'Atlas store should not keep unused result status text');
     assert.doesNotMatch(appJs, /resetView\(\)/, 'Atlas store should not keep an unused reset action');

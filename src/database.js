@@ -233,7 +233,7 @@ const PENDING_ENRICHMENT_RESTART_COOLDOWN_MS = 5 * 60 * 1000;
 const GOOGLE_QUOTA_RETRY_BUFFER_MS = 5 * 60 * 1000;
 const GOOGLE_ERROR_RETRY_MS = 60 * 60 * 1000;
 const GOOGLE_NOT_FOUND_RETRY_MS = 7 * 24 * 60 * 60 * 1000;
-const GOOGLE_ACTIVE_REFRESH_MS = 90 * 24 * 60 * 60 * 1000;
+const GOOGLE_ACTIVE_REFRESH_MS = 180 * 24 * 60 * 60 * 1000;
 
 function getGoogleQuotaExceededMessage(quota) {
   return `Google Places enrichment is paused because the daily API limit has been reached (${quota.current}/${quota.limit}). Try again after the quota resets.`;

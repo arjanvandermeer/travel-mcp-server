@@ -21,7 +21,7 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 
 This codebase is actively maintained as a practical AI-assisted engineering project. Recent work focused on:
 
-- **Reliable enrichment scheduling** — Google Places enrichment now uses a generic `next_enrichment_at` schedule for quota pauses, errors, not-found retries, and 90-day refreshes of active data.
+- **Reliable enrichment scheduling** — Google Places enrichment now uses a generic `next_enrichment_at` schedule for quota pauses, errors, not-found retries, and 180-day refreshes of active data.
 - **Search-triggered background enrichment** — displayed POIs can queue enrichment automatically, processed serially in oldest-due order to avoid quota spikes and duplicate work.
 - **Mobile-first web UI iteration** — the homepage has been reshaped around city discovery, combinable Stay/Eat/See filters, persisted feed preferences, and compact navigation.
 - **Operational guardrails** — CI-oriented checks, npm audit capture, Actions log monitoring, and a recurring code-audit workflow are documented and wired into the repository.
