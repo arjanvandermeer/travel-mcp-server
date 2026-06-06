@@ -27,6 +27,7 @@ describe('frontend regressions', () => {
 
   it('keeps the redesigned web product surface wired across pages', () => {
     assert.match(indexHtml, /aria-label="Primary"/, 'Primary navigation should be exposed as navigation');
+    assert.match(appJs, /_lastPulsePath[\s\S]*goHome\(\)[\s\S]*this\.navigate\(this\._lastPulsePath \|\| this\.pathFor\('home'\)\)/, 'Pulse nav should return to the last city Pulse route instead of the empty root');
     assert.doesNotMatch(indexHtml, /<button class="nav-link"[\s\S]*?>Atlas<\/button>/, 'Atlas should stay hidden from primary nav until it is rebuilt');
     assert.match(indexHtml, /TODO: Build Atlas into a stronger map\/discovery surface/, 'Hidden Atlas nav should be marked as future work');
     assert.match(indexHtml, /home-category-strip/, 'City Pulse should expose the Stay, Eat, and See feed controls');

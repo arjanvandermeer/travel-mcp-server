@@ -92,6 +92,7 @@ Alpine.store('route', {
   page: 'home',
   poiOsmId: null,
   _lastPath: '',
+  _lastPulsePath: '',
   _booted: false,
   boot() {
     if (this._booted) return;
@@ -118,6 +119,7 @@ Alpine.store('route', {
   },
   setLocation(city, mode = 'replace') {
     const path = this.locationPath(city?.country_code, city?.name);
+    this._lastPulsePath = path;
     if (window.location.pathname === path && !window.location.hash) return;
     if (mode === 'push') history.pushState({}, '', path);
     else history.replaceState({}, '', path);
@@ -159,13 +161,16 @@ Alpine.store('route', {
     this.poiOsmId = null;
     if (locationMatch) {
       this.page = 'home';
+      this._lastPulsePath = this.locationPath(decodeURIComponent(locationMatch[1]), decodeURIComponent(locationMatch[2]));
       Alpine.store('discovery').loadLocation(decodeURIComponent(locationMatch[1]), decodeURIComponent(locationMatch[2]));
       return;
     }
     this.page = pathname === '/composer' ? 'composer' : ['/map', '/atlas'].includes(pathname) ? 'atlas' : 'home';
     if (this.page === 'atlas') Alpine.store('atlas').activate();
   },
-  goHome() { this.navigate(this.pathFor('home')); },
+  goHome() {
+    this.navigate(this._lastPulsePath || this.pathFor('home'));
+  },
   goAtlas() { this.navigate(this.pathFor('atlas')); },
   goComposer() { this.navigate(this.pathFor('composer')); },
 });
