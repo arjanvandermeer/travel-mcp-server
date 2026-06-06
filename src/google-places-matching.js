@@ -230,6 +230,21 @@ function tokenOverlapScore(tokens1, tokens2) {
   return matches > 0 ? (matches * 2) / (tokens1.length + tokens2.length) : 0;
 }
 
+function tokenSubsetScore(tokens1, tokens2) {
+  const shorter = tokens1.length <= tokens2.length ? tokens1 : tokens2;
+  const longer = tokens1.length <= tokens2.length ? tokens2 : tokens1;
+  if (shorter.length < 2 || longer.length < 2) return 0;
+
+  const remaining = [...longer];
+  for (const token of shorter) {
+    const idx = remaining.findIndex(other => tokensMatch(token, other));
+    if (idx < 0) return 0;
+    remaining.splice(idx, 1);
+  }
+
+  return 0.9;
+}
+
 function sortedTokenScore(tokens1, tokens2) {
   if (tokens1.length < 2 || tokens2.length < 2) return 0;
   const sorted1 = [...tokens1].sort().join(' ');
@@ -261,6 +276,7 @@ function calculateNameSimilarityPair(name1, name2) {
   if (words1.length === 1 && words2.length === 1 && n1 !== n2) {
     wordOverlapScore = Math.min(wordOverlapScore, 0.65);
   }
+  const subsetScore = tokenSubsetScore(words1, words2);
   const reorderedScore = sortedTokenScore(words1, words2);
 
   const maxLen = Math.max(n1.length, n2.length);
@@ -300,6 +316,7 @@ function calculateNameSimilarityPair(name1, name2) {
 
   return Math.max(
     wordOverlapScore,
+    subsetScore,
     reorderedScore,
     levenshteinScore,
     containsScore,

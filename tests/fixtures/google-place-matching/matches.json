@@ -139,6 +139,50 @@
       }
     },
     {
+      "id": "marugame-strand-long-google-name",
+      "description": "A concise OSM chain name should match a longer Google branch name when its meaningful tokens, address, type, and distance agree.",
+      "poi": {
+        "osm_id": 2540083234,
+        "poi_type": "fast_food",
+        "name": "Marugame Udon",
+        "latitude": 51.5087165,
+        "longitude": -0.1256877,
+        "tags": {
+          "brand": "Marugame Seimen",
+          "alt_name": "Marugame Seimen",
+          "addr:housenumber": "449",
+          "addr:street": "Strand"
+        }
+      },
+      "candidates": [
+        {
+          "id": "nearby-mcdonalds",
+          "displayName": { "text": "McDonald's" },
+          "formattedAddress": "48 Leicester Square, London WC2H 7LU, UK",
+          "location": { "latitude": 51.5092, "longitude": -0.1265 },
+          "types": ["fast_food_restaurant", "restaurant", "food"]
+        },
+        {
+          "id": "marugame-strand",
+          "displayName": { "text": "Marugame (The Strand) - Japanese Udon Noodles & Tempura (丸亀製麺)" },
+          "formattedAddress": "449 Strand, London WC2R 0QU, UK",
+          "location": { "latitude": 51.50856, "longitude": -0.12562 },
+          "types": ["restaurant", "food", "point_of_interest", "establishment"]
+        }
+      ],
+      "expected": {
+        "selectedId": "marugame-strand",
+        "selected": {
+          "accepted": true,
+          "directNameMatch": true,
+          "houseNumberMatch": true,
+          "streetMatch": true,
+          "minNameScore": 0.9,
+          "minConfidence": 0.9
+        }
+      }
+    },
+    {
       "id": "sol-apartments-street-first-address-rescue",
       "description": "European street-first addresses should provide house and street evidence for borderline translated names.",
       "poi": {
