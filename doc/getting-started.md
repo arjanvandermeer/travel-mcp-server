@@ -410,7 +410,6 @@ TELEMETRY_ENVIRONMENT=development
 | `TELEMETRY_ENABLED` | `true` | Set to `false` to disable telemetry even if DSN is set |
 | `TELEMETRY_SAMPLE_RATE` | `1.0` | Trace sample rate 0.0-1.0 (reduce for high-traffic) |
 | `TELEMETRY_ENVIRONMENT` | `development` | Environment name shown in Sentry |
-| `SENTRY_SEND_DEV` | (not set) | Set to `true` to send events in development mode |
 
 ### 6.5.5 What Gets Tracked
 

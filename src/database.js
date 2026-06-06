@@ -639,13 +639,12 @@ export class TravelDatabase {
       enabled: process.env.TELEMETRY_ENABLED !== 'false',
       sampleRate: parseFloat(process.env.TELEMETRY_SAMPLE_RATE || '1.0'),
       environment: process.env.TELEMETRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
-      sendDev: process.env.SENTRY_SEND_DEV === 'true',
     };
 
-    // Try to get database config (single query instead of 5 separate ones)
+    // Try to get database config (single query instead of separate lookups)
     try {
       const result = await this.pool.query(
-        `SELECT key, value FROM app_config WHERE key IN ('sentry_dsn', 'telemetry_enabled', 'telemetry_sample_rate', 'telemetry_environment', 'sentry_send_dev')`
+        `SELECT key, value FROM app_config WHERE key IN ('sentry_dsn', 'telemetry_enabled', 'telemetry_sample_rate', 'telemetry_environment')`
       );
       const dbConfig = new Map(result.rows.map(r => [r.key, r.value]));
 
@@ -654,13 +653,11 @@ export class TravelDatabase {
       const dbEnabled = dbConfig.get('telemetry_enabled');
       const dbSampleRate = dbConfig.get('telemetry_sample_rate');
       const dbEnvironment = dbConfig.get('telemetry_environment');
-      const dbSendDev = dbConfig.get('sentry_send_dev');
 
       if (dbSentryDsn) config.sentryDsn = dbSentryDsn;
       if (dbEnabled !== undefined) config.enabled = dbEnabled !== 'false';
       if (dbSampleRate) config.sampleRate = parseFloat(dbSampleRate);
       if (dbEnvironment) config.environment = dbEnvironment;
-      if (dbSendDev !== undefined) config.sendDev = dbSendDev === 'true';
     } catch (_error) {
       // Database config is optional, continue with env vars
     }

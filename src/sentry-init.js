@@ -22,7 +22,6 @@ const environment = process.env.TELEMETRY_ENVIRONMENT || process.env.NODE_ENV ||
 const release = `travel-mcp-server@${getVersionString()}`;
 const sampleRate = parseFloat(process.env.TELEMETRY_SAMPLE_RATE || '1.0');
 const enabled = process.env.TELEMETRY_ENABLED !== 'false';
-const sendDev = process.env.SENTRY_SEND_DEV === 'true';
 
 // Initialize Sentry early if DSN is configured
 if (dsn && enabled) {
@@ -42,21 +41,9 @@ if (dsn && enabled) {
       // Auto-instrument HTTP requests
       Sentry.httpIntegration(),
     ],
-    beforeSend(event) {
-      if (environment === 'development' && !sendDev) {
-        return null;
-      }
-      return event;
-    },
-    beforeSendTransaction(transaction) {
-      if (environment === 'development' && !sendDev) {
-        return null;
-      }
-      return transaction;
-    },
   });
 
-  console.error(`[Sentry] Early init complete (release: ${release}, env: ${environment}, sample: ${sampleRate}, sendDev: ${sendDev})`);
+  console.error(`[Sentry] Early init complete (release: ${release}, env: ${environment}, sample: ${sampleRate})`);
 } else {
   console.error('[Sentry] Skipping early init (no DSN or disabled)');
 }

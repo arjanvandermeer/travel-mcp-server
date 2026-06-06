@@ -37,7 +37,6 @@ describe('telemetry', () => {
       assert.ok('sentryDsn' in config);
       assert.ok('environment' in config);
       assert.ok('sampleRate' in config);
-      assert.ok('sendDev' in config);
     });
   });
 

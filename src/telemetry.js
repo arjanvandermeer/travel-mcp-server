@@ -8,7 +8,6 @@
  * - TELEMETRY_ENABLED: Set to 'false' to disable (default: true if DSN present)
  * - TELEMETRY_SAMPLE_RATE: Trace sample rate 0.0-1.0 (default: 1.0)
  * - TELEMETRY_ENVIRONMENT: Environment name (default: 'development')
- * - SENTRY_SEND_DEV: Set to 'true' to send events in development mode
  */
 
 import * as Sentry from '@sentry/node';
@@ -29,7 +28,6 @@ function getEnvConfig() {
     enabled: process.env.TELEMETRY_ENABLED !== 'false',
     sampleRate: parseFloat(process.env.TELEMETRY_SAMPLE_RATE || '1.0'),
     environment: process.env.TELEMETRY_ENVIRONMENT || process.env.NODE_ENV || 'development',
-    sendDev: process.env.SENTRY_SEND_DEV === 'true',
     serviceName: 'travel-mcp-server',
     serviceVersion: '1.0.0',
   };
@@ -73,23 +71,6 @@ function initSentry(config) {
         Sentry.postgresIntegration(),
         Sentry.httpIntegration(),
       ],
-      beforeSend(event) {
-        // Don't send events in development unless explicitly enabled
-        if (config.environment === 'development' && !config.sendDev) {
-          console.error('[Telemetry] Sentry event (not sent in dev):', event.message || event.exception?.values?.[0]?.value);
-          return null;
-        }
-        return event;
-      },
-      beforeSendTransaction(transaction) {
-        // Don't send transactions in development unless explicitly enabled
-        if (config.environment === 'development' && !config.sendDev) {
-          console.error('[Telemetry] Sentry transaction BLOCKED (sendDev=false):', transaction.transaction);
-          return null;
-        }
-        console.error('[Telemetry] Sentry transaction SENDING:', transaction.transaction);
-        return transaction;
-      },
     });
 
     sentryInitialized = true;
@@ -132,7 +113,7 @@ export async function initTelemetry(dbConfig = null) {
   telemetryEnabled = sentryOk;
 
   if (telemetryEnabled) {
-    console.error(`[Telemetry] Enabled (env: ${config.environment}, sample: ${config.sampleRate}, sendDev: ${config.sendDev})`);
+    console.error(`[Telemetry] Enabled (env: ${config.environment}, sample: ${config.sampleRate})`);
   }
 
   return telemetryEnabled;
