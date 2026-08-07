@@ -1,5 +1,5 @@
 /**
- * Lightweight API router for /api/v1/* and /auth/* routes.
+ * Lightweight API router for REST routes.
  * No external dependencies — just method + path matching.
  */
 
@@ -137,24 +137,4 @@ export function parseBody(req) {
     });
     req.on('error', reject);
   });
-}
-
-/**
- * Parse cookies from request headers
- * @returns {Object} key-value pairs of cookies
- */
-export function parseCookies(req) {
-  const header = req.headers.cookie;
-  if (!header) return {};
-  const cookies = {};
-  header.split(';').forEach(pair => {
-    const [name, ...rest] = pair.trim().split('=');
-    if (!name) return;
-    try {
-      cookies[name] = decodeURIComponent(rest.join('='));
-    } catch {
-      telemetry.incrementCounter('cookie.parse_rejected', 1, { reason: 'malformed_percent_encoding' });
-    }
-  });
-  return cookies;
 }

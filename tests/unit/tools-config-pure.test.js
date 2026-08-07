@@ -1,159 +1,17 @@
 /**
  * Tests for pure functions in tools-config.js (Tier 1 coverage)
- * getPromptMessages, getToolsConfig, getResourcesConfig, buildSearchResponse
+ * getToolsConfig, getResourcesConfig, buildSearchResponse
  */
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
 import {
-  getPromptMessages,
   getToolsConfig,
   getResourcesConfig,
   buildSearchResponse,
+  isToolAvailableToUser,
 } from '../../src/tools-config.js';
 import { MCP_APP_HTML_MIME_TYPE } from '../../src/resources-config.js';
-
-// =============================================================================
-// getPromptMessages
-// =============================================================================
-
-describe('getPromptMessages', () => {
-  describe('find_hotels_in_city', () => {
-    it('should return prompt with provided city and country', () => {
-      const result = getPromptMessages('find_hotels_in_city', {
-        city: 'Bangkok',
-        country_code: 'TH',
-      });
-
-      assert.strictEqual(result.description, 'Find hotels in Bangkok');
-      assert.strictEqual(result.messages.length, 1);
-      assert.strictEqual(result.messages[0].role, 'user');
-      assert.strictEqual(result.messages[0].content.type, 'text');
-      assert.ok(result.messages[0].content.text.includes('Bangkok'));
-      assert.ok(result.messages[0].content.text.includes('TH'));
-    });
-
-    it('should use defaults when no args provided', () => {
-      const result = getPromptMessages('find_hotels_in_city');
-
-      assert.ok(result.description.includes('the specified city'));
-      assert.ok(result.messages[0].content.text.includes('New York'));
-      assert.ok(result.messages[0].content.text.includes('US'));
-    });
-  });
-
-  describe('find_restaurants_nearby', () => {
-    it('should return prompt with provided coordinates', () => {
-      const result = getPromptMessages('find_restaurants_nearby', {
-        latitude: '13.7563',
-        longitude: '100.5018',
-        radius_km: '2',
-      });
-
-      assert.ok(result.description.includes('13.7563'));
-      assert.ok(result.description.includes('100.5018'));
-      assert.ok(result.messages[0].content.text.includes('13.7563'));
-      assert.ok(result.messages[0].content.text.includes('100.5018'));
-      assert.ok(result.messages[0].content.text.includes('2'));
-    });
-
-    it('should use default coordinates when no args', () => {
-      const result = getPromptMessages('find_restaurants_nearby');
-
-      assert.ok(result.messages[0].content.text.includes('40.7580'));
-      assert.ok(result.messages[0].content.text.includes('-73.9855'));
-      assert.ok(result.messages[0].content.text.includes('1'));
-    });
-  });
-
-  describe('find_attractions', () => {
-    it('should return prompt with provided city', () => {
-      const result = getPromptMessages('find_attractions', {
-        city: 'Paris',
-        country_code: 'FR',
-      });
-
-      assert.ok(result.description.includes('Paris'));
-      assert.ok(result.messages[0].content.text.includes('Paris'));
-      assert.ok(result.messages[0].content.text.includes('FR'));
-    });
-
-    it('should use defaults when no args', () => {
-      const result = getPromptMessages('find_attractions');
-
-      assert.ok(result.messages[0].content.text.includes('New York'));
-    });
-  });
-
-  describe('explore_area', () => {
-    it('should return prompt with provided city', () => {
-      const result = getPromptMessages('explore_area', {
-        city: 'Tokyo',
-        country_code: 'JP',
-      });
-
-      assert.ok(result.description.includes('Tokyo'));
-      assert.ok(result.messages[0].content.text.includes('Tokyo'));
-      assert.ok(result.messages[0].content.text.includes('JP'));
-    });
-
-    it('should use defaults when no args', () => {
-      const result = getPromptMessages('explore_area');
-
-      assert.ok(result.messages[0].content.text.includes('New York'));
-    });
-  });
-
-  describe('find_near_landmark', () => {
-    it('should return prompt with landmark and search type', () => {
-      const result = getPromptMessages('find_near_landmark', {
-        landmark: 'Eiffel Tower',
-        search_type: 'restaurants',
-      });
-
-      assert.ok(result.description.includes('restaurants'));
-      assert.ok(result.description.includes('Eiffel Tower'));
-      assert.ok(result.messages[0].content.text.includes('Eiffel Tower'));
-      assert.ok(result.messages[0].content.text.includes('search_restaurants'));
-    });
-
-    it('should handle hotels search type', () => {
-      const result = getPromptMessages('find_near_landmark', {
-        landmark: 'Big Ben',
-        search_type: 'hotels',
-      });
-
-      assert.ok(result.messages[0].content.text.includes('search_hotels'));
-    });
-
-    it('should include brand when provided', () => {
-      const result = getPromptMessages('find_near_landmark', {
-        landmark: 'Central Park',
-        search_type: 'restaurants',
-        brand: 'Starbucks',
-      });
-
-      assert.ok(result.description.includes('Starbucks'));
-      assert.ok(result.messages[0].content.text.includes('Starbucks'));
-    });
-
-    it('should use defaults when no args', () => {
-      const result = getPromptMessages('find_near_landmark');
-
-      assert.ok(result.messages[0].content.text.includes('Empire State Building'));
-    });
-  });
-
-  describe('unknown prompt', () => {
-    it('should return unknown prompt message', () => {
-      const result = getPromptMessages('nonexistent_prompt');
-
-      assert.strictEqual(result.description, 'Unknown prompt');
-      assert.ok(result.messages[0].content.text.includes('Unknown prompt: nonexistent_prompt'));
-      assert.ok(result.messages[0].content.text.includes('find_hotels_in_city'));
-    });
-  });
-});
 
 // =============================================================================
 // getToolsConfig
@@ -228,6 +86,40 @@ describe('getToolsConfig', () => {
       assert.ok(tool.inputSchema, 'Each tool should have an inputSchema');
     }
   });
+
+  it('should hide personal and admin tools from anonymous sessions', () => {
+    const names = new Set(getToolsConfig('https://example.com').map(tool => tool.name));
+
+    assert.ok(names.has('search_hotels_ui'));
+    assert.ok(!names.has('add_favorite'));
+    assert.ok(!names.has('get_user_preferences'));
+    assert.ok(!names.has('start_enrichment_task'));
+    assert.ok(!names.has('get_stats'));
+  });
+
+  it('should expose personal tools after authentication and admin tools only to admins', () => {
+    const user = { id: 1, email: 'user@example.com', config: {} };
+    const admin = { id: 2, email: 'admin@example.com', config: { role: 'admin' } };
+    const userNames = new Set(getToolsConfig('https://example.com', { user }).map(tool => tool.name));
+    const adminNames = new Set(getToolsConfig('https://example.com', { user: admin }).map(tool => tool.name));
+
+    assert.ok(userNames.has('add_favorite'));
+    assert.ok(!userNames.has('start_enrichment_task'));
+    assert.ok(adminNames.has('add_favorite'));
+    assert.ok(adminNames.has('start_enrichment_task'));
+    assert.ok(adminNames.has('start_ai_place_summary_task'));
+  });
+
+  it('should use the same access policy for tool invocation', () => {
+    const user = { id: 1, config: {} };
+    const admin = { id: 2, config: { role: 'admin' } };
+
+    assert.equal(isToolAvailableToUser('search_pois'), true);
+    assert.equal(isToolAvailableToUser('add_favorite'), false);
+    assert.equal(isToolAvailableToUser('add_favorite', user), true);
+    assert.equal(isToolAvailableToUser('start_enrichment_task', user), false);
+    assert.equal(isToolAvailableToUser('start_enrichment_task', admin), true);
+  });
 });
 
 // =============================================================================
@@ -242,32 +134,6 @@ describe('getResourcesConfig', () => {
 
     assert.ok(Array.isArray(config.resources));
     assert.ok(Array.isArray(config.resourceTemplates));
-  });
-
-  describe('static resources', () => {
-    it('should include version resource', () => {
-      const config = getResourcesConfig(domain);
-      const version = config.resources.find(r => r.uri === 'info://version');
-
-      assert.ok(version);
-      assert.strictEqual(version.mimeType, 'application/json');
-    });
-
-    it('should include random-poi resource', () => {
-      const config = getResourcesConfig(domain);
-      const randomPoi = config.resources.find(r => r.uri === 'info://random-poi');
-
-      assert.ok(randomPoi);
-      assert.strictEqual(randomPoi.mimeType, 'application/json');
-    });
-
-    it('should include sample queries resource', () => {
-      const config = getResourcesConfig(domain);
-      const samples = config.resources.find(r => r.uri === 'samples://queries');
-
-      assert.ok(samples);
-      assert.strictEqual(samples.mimeType, 'application/json');
-    });
   });
 
   describe('resource templates', () => {

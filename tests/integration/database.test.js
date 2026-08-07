@@ -273,44 +273,6 @@ describe('TravelDatabase with Mock Pool', () => {
     });
   });
 
-  describe('getRandomCityWithData', () => {
-    it('should restrict random cities to completed imported source countries', async () => {
-      mockPool.setResponse('FROM import_log l', dbResult([
-        { keyword: 'great-britain', region_name: 'great-britain-latest' },
-      ]));
-      mockPool.setResponse('FROM geonames_cities c', dbResult([{
-        geoname_id: 2643743,
-        name: 'London',
-        country_code: 'GB',
-        country_name: 'United Kingdom',
-        poi_count: 1200,
-      }]));
-
-      db = new TravelDatabase({ pool: mockPool });
-      const city = await db.getRandomCityWithData();
-
-      assert.strictEqual(city.name, 'London');
-      const cityQuery = mockPool.getCalls().find(call => call.sql.includes('FROM geonames_cities c'));
-      assert.ok(cityQuery.sql.includes('c.country_code = ANY'));
-      assert.deepStrictEqual(cityQuery.params[0], ['GB']);
-    });
-
-    it('should still require cities to have POIs when loaded source country is unknown', async () => {
-      mockPool.setResponse('FROM import_log l', dbResult([
-        { keyword: 'custom-region', region_name: 'custom-region-latest' },
-      ]));
-      mockPool.setResponse('FROM geonames_cities c', emptyResult());
-
-      db = new TravelDatabase({ pool: mockPool });
-      const city = await db.getRandomCityWithData();
-
-      assert.strictEqual(city, null);
-      const cityQuery = mockPool.getCalls().find(call => call.sql.includes('FROM geonames_cities c'));
-      assert.ok(cityQuery.sql.includes('HAVING COUNT(p.osm_id) >='));
-      assert.deepStrictEqual(cityQuery.params, [50000, 25]);
-    });
-  });
-
   describe('getStats', () => {
     it('should return database statistics', async () => {
       // Set up responses for all stat queries

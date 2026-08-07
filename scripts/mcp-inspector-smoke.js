@@ -120,8 +120,8 @@ async function main() {
     cwd: new URL('..', import.meta.url),
     env: {
       ...process.env,
-      DATABASE_URL: process.env.DATABASE_URL || defaultDatabaseUrl(),
-      NODE_ENV: process.env.NODE_ENV || 'test',
+      DATABASE_URL: process.env.MCP_SMOKE_DATABASE_URL || defaultDatabaseUrl(),
+      NODE_ENV: 'test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -159,14 +159,8 @@ async function main() {
         'ui://widget/search-results.html',
         'search_hotels_ui should declare an MCP Apps resource URI',
       );
-    });
-    await assertRpcResult('resources/list', sessionId, result => {
-      assert.ok(Array.isArray(result.resources), 'resources/list should return resources');
-      assert.ok(result.resources.some(resource => resource.uri === 'info://version'), 'resources/list should include info://version');
-    });
-    await assertRpcResultWithParams('resources/read', sessionId, { uri: 'info://version' }, result => {
-      assert.ok(Array.isArray(result.contents), 'resources/read should return contents');
-      assert.ok(result.contents.some(content => content.uri === 'info://version'), 'resources/read should return the requested resource');
+      assert.ok(!result.tools.some(tool => tool.name === 'get_stats'), 'anonymous tools/list must hide admin tools');
+      assert.ok(!result.tools.some(tool => tool.name === 'add_favorite'), 'anonymous tools/list must hide account tools');
     });
     await assertRpcResultWithParams('resources/read', sessionId, { uri: 'ui://widget/search-results.html' }, result => {
       assert.equal(result.contents.length, 1, 'MCP Apps resource reads should return exactly one content item');
@@ -184,23 +178,12 @@ async function main() {
         'resources/templates/list should include the POI details widget template',
       );
     });
-    await assertRpcResult('prompts/list', sessionId, result => {
-      assert.ok(Array.isArray(result.prompts), 'prompts/list should return prompts');
-      assert.ok(result.prompts.length > 0, 'prompts/list should return at least one prompt');
-    });
-    await assertRpcResultWithParams('prompts/get', sessionId, {
-      name: 'find_hotels_in_city',
-      arguments: { city: 'London', country_code: 'GB' },
-    }, result => {
-      assert.ok(Array.isArray(result.messages), 'prompts/get should return messages');
-      assert.ok(result.messages.length > 0, 'prompts/get should return at least one message');
-    });
     await assertRpcResultWithParams('tools/call', sessionId, {
       name: 'get_stats',
       arguments: {},
     }, result => {
       assert.ok(Array.isArray(result.content), 'tools/call should return content');
-      assert.notEqual(result.isError, true, 'get_stats should not return an MCP tool error');
+      assert.equal(result.isError, true, 'anonymous get_stats calls should be rejected');
     });
     await assertRpcResultWithParams('tools/call', sessionId, {
       name: 'search_hotels_ui',

@@ -156,7 +156,7 @@
       <button class="scroll-arrow scroll-arrow-left hidden" id="scroll-left">&#8249;</button>
       <div class="nearby-scroll" id="nearby-scroll">
         {{#each results}}
-        <a class="nearby-card" href="{{preview_url}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
+        <a class="nearby-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}">
           {{#if photo_url}}
           <img class="nearby-thumb" src="{{photo_url}}" alt="" loading="lazy">
           {{else}}
@@ -237,7 +237,6 @@
       card.href = poi.resource_uri || '#';
       card.setAttribute('data-osm-id', poi.osm_id);
       card.setAttribute('data-resource-uri', poi.resource_uri || '');
-      card.setAttribute('data-preview-url', poi.preview_url || '');
 
       var thumbHtml = photoUrl
         ? '<img class="nearby-thumb" src="' + escapeHtml(photoUrl) + '" alt="" loading="lazy">'
@@ -309,11 +308,8 @@
         card.addEventListener('click', function(e) {
           e.preventDefault();
           var resourceUri = this.getAttribute('data-resource-uri');
-          var previewUrl = this.getAttribute('data-preview-url');
           if (window.openai && window.openai.readResource) {
             window.openai.readResource(resourceUri);
-          } else if (previewUrl) {
-            window.open(previewUrl, '_blank');
           }
         });
       });

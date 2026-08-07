@@ -1,4 +1,3 @@
-import { versionInfo } from './version.js';
 import { fetchNearbyForPOI, renderPOIPreview } from './poi-view-utils.js';
 
 export const MCP_APP_HTML_MIME_TYPE = 'text/html;profile=mcp-app';
@@ -12,26 +11,7 @@ export function getResourcesConfig(widgetDomain) {
   const buildWidgetMeta = (frameDomains = []) => buildOpenAIWidgetMeta(widgetDomain, frameDomains);
 
   return {
-    resources: [
-      {
-        uri: 'info://version',
-        name: 'Server Version',
-        description: 'Returns server version info including git commit hash',
-        mimeType: 'application/json',
-      },
-      {
-        uri: 'info://random-poi',
-        name: 'Random POI Preview',
-        description: 'Returns a link to view a random POI in the browser',
-        mimeType: 'application/json',
-      },
-      {
-        uri: 'samples://queries',
-        name: 'Sample Queries',
-        description: 'Example queries to help you get started with the travel MCP server. Includes sample searches for hotels, restaurants, and attractions in New York City.',
-        mimeType: 'application/json',
-      },
-    ],
+    resources: [],
     resourceTemplates: [
       {
         uriTemplate: 'ui://widget/poi-details.html',
@@ -102,27 +82,6 @@ export async function handleReadResource(uri, db, render) {
     _meta: buildOpenAIWidgetMeta(widgetDomain, frameDomains),
   });
 
-  if (uri === 'info://version') {
-    return {
-      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(versionInfo, null, 2) }],
-    };
-  }
-
-  if (uri === 'info://random-poi') {
-    const serverBaseUrl = await db.getServerBaseUrl();
-    const baseUrl = serverBaseUrl ? serverBaseUrl.replace(/\/$/, '') : '';
-    const previewUrl = `${baseUrl}/preview/poi/random`;
-    return {
-      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify({ url: previewUrl }, null, 2) }],
-    };
-  }
-
-  if (uri === 'samples://queries') {
-    return {
-      contents: [{ uri, mimeType: 'application/json', text: JSON.stringify(buildSampleQueries(), null, 2) }],
-    };
-  }
-
   if (uri === 'ui://widget/poi-details.html') {
     return {
       contents: [buildHtmlContent(render('poi-details', {}))],
@@ -171,102 +130,4 @@ export async function handleReadResource(uri, db, render) {
   }
 
   throw new Error(`Unknown resource: ${uri}`);
-}
-
-function buildSampleQueries() {
-  return {
-    description: 'Example queries to help you get started with the travel MCP server',
-    workflow_tips: [
-      {
-        pattern: 'Find [chain/brand] near [landmark]',
-        description: 'To find a chain restaurant or hotel near a landmark, use a two-step approach',
-        steps: [
-          'Step 1: Use search_pois to find the landmark and get its coordinates',
-          'Step 2: Use search_restaurants or search_hotels with those coordinates + query for the brand name',
-        ],
-        example: {
-          query: 'Find Starbucks near Empire State Building',
-          step1: { tool: 'search_pois', args: { query: 'Empire State Building', city_name: 'New York', country_code: 'US' } },
-          step1_result: 'Returns POI with osm_latitude: 40.748, osm_longitude: -73.985',
-          step2: { tool: 'search_restaurants', args: { latitude: 40.748, longitude: -73.985, radius_km: 1, query: 'Starbucks' } },
-          step2_result: 'Returns all Starbucks locations within 1km of Empire State Building',
-        },
-      },
-      {
-        pattern: 'Find [type] near [landmark]',
-        description: 'Same two-step approach works for any type of place near any landmark',
-        examples: [
-          'Hotels near Central Park -> search_pois("Central Park") -> search_hotels(lat/long)',
-          'Italian restaurants near Times Square -> search_pois("Times Square") -> search_restaurants(lat/long, query="Italian")',
-          'Museums near Eiffel Tower -> search_pois("Eiffel Tower") -> search_pois(lat/long, poi_type="museum")',
-        ],
-      },
-    ],
-    examples: [
-      {
-        category: 'Hotels',
-        description: 'Search for hotels in a city',
-        tool: 'search_hotels',
-        example_query: 'Find hotels in New York, US',
-        example_args: { city_name: 'New York', country_code: 'US', limit: 10 },
-        notable_result: 'The Conrad New York Downtown on Vesey Street is a luxury hotel in Lower Manhattan.',
-      },
-      {
-        category: 'Hotel Chains',
-        description: 'Search for a specific hotel brand',
-        tool: 'search_hotels',
-        example_query: 'Find Marriott hotels in Manhattan',
-        example_args: { city_name: 'New York', country_code: 'US', query: 'Marriott', limit: 10 },
-        note: 'The query parameter works with brand names like Marriott, Hilton, Holiday Inn, etc.',
-      },
-      {
-        category: 'Restaurants',
-        description: 'Search for restaurants near a location',
-        tool: 'search_restaurants',
-        example_query: 'Find restaurants near Rockefeller Center in Manhattan',
-        example_args: { latitude: 40.7587, longitude: -73.9787, radius_km: 0.5, limit: 10 },
-        notable_result: 'The Rainbow Room at 30 Rockefeller Plaza is an iconic fine dining restaurant in Midtown Manhattan.',
-      },
-      {
-        category: 'Chain Restaurants',
-        description: 'Search for a chain restaurant brand near coordinates',
-        tool: 'search_restaurants',
-        example_query: 'Find Starbucks near Empire State Building (after getting coordinates)',
-        example_args: { latitude: 40.748, longitude: -73.985, radius_km: 1, query: 'Starbucks', limit: 10 },
-        note: 'The query parameter works with chain brands like Starbucks, McDonald\'s, Chipotle, Subway, etc.',
-      },
-      {
-        category: 'Attractions',
-        description: 'Search for points of interest and tourist attractions',
-        tool: 'search_pois',
-        example_query: 'Find tourist attractions in New York, US',
-        example_args: { city_name: 'New York', country_code: 'US', limit: 10 },
-        notable_result: 'The Statue of Liberty on Liberty Island is one of the most famous attractions in New York.',
-      },
-      {
-        category: 'Landmarks (for coordinates)',
-        description: 'Get coordinates of a landmark to use in subsequent searches',
-        tool: 'search_pois',
-        example_query: 'Find Empire State Building to get its coordinates',
-        example_args: { query: 'Empire State Building', city_name: 'New York', country_code: 'US' },
-        note: 'Results include osm_latitude and osm_longitude - use these for nearby searches.',
-      },
-      {
-        category: 'Cities',
-        description: 'Search for cities in a country or region',
-        tool: 'search_cities',
-        example_query: 'Find cities in New York state, US',
-        example_args: { country_code: 'US', state: 'New York', limit: 10 },
-        notable_result: 'New York City is the most populous city in the United States.',
-      },
-      {
-        category: 'POI Details',
-        description: 'Get detailed information about a specific point of interest',
-        tool: 'get_poi_details',
-        example_query: 'Get details for a specific hotel or restaurant',
-        example_args: { osm_id: 123456789 },
-        note: 'Use an osm_id from search results to get full details including address, phone, website, and hours.',
-      },
-    ],
-  };
 }

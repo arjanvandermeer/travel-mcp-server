@@ -70,6 +70,40 @@ async function withClient({ user, taskManager }, callback) {
 }
 
 describe('MCP maintenance task handlers', () => {
+  it('only advertises tools available to the current session', async () => {
+    await withClient({ taskManager: createTaskManager() }, async (client) => {
+      const tools = await client.listTools();
+      const names = new Set(tools.tools.map(tool => tool.name));
+      assert.ok(names.has('search_pois'));
+      assert.ok(!names.has('add_favorite'));
+      assert.ok(!names.has('start_enrichment_task'));
+    });
+
+    const user = { id: 1, email: 'user@example.com', config: {} };
+    await withClient({ user, taskManager: createTaskManager() }, async (client) => {
+      const tools = await client.listTools();
+      const names = new Set(tools.tools.map(tool => tool.name));
+      assert.ok(names.has('add_favorite'));
+      assert.ok(!names.has('start_enrichment_task'));
+    });
+
+    const admin = { id: 2, email: 'admin@example.com', config: { role: 'admin' } };
+    await withClient({ user: admin, taskManager: createTaskManager() }, async (client) => {
+      const tools = await client.listTools();
+      const names = new Set(tools.tools.map(tool => tool.name));
+      assert.ok(names.has('add_favorite'));
+      assert.ok(names.has('start_enrichment_task'));
+    });
+  });
+
+  it('rejects a tool call that is not available to the session', async () => {
+    await withClient({ taskManager: createTaskManager() }, async (client) => {
+      const result = await client.callTool({ name: 'start_enrichment_task', arguments: {} });
+      assert.equal(result.isError, true);
+      assert.match(result.content[0].text, /Authentication required/);
+    });
+  });
+
   it('does not expose maintenance tasks to anonymous sessions', async () => {
     await withClient({ taskManager: createTaskManager() }, async (client) => {
       const tasks = await client.request({ method: 'tasks/list', params: {} }, ListTasksResultSchema);

@@ -16,7 +16,6 @@ export const SEARCH_LIMIT_MAX = 100;
 export const SEARCH_RADIUS_DEFAULT_KM = 50;
 export const SEARCH_RADIUS_MAX_KM = 50;
 export const CITY_SEARCH_RADIUS_MAX_KM = 1000;
-export const MAP_POI_LIMIT_MAX = 500;
 
 // --- Nearby POI defaults ---
 export const NEARBY_RADIUS_DEFAULT_KM = 1.5;
@@ -25,18 +24,11 @@ export const NEARBY_LIMIT_DEFAULT = 10;
 export const NEARBY_LIMIT_MAX = 20;
 
 // --- Auth ---
-export const AUTH_PENDING_CLEANUP_INTERVAL_MS = 5 * 60 * 1000;   // 5 minutes
-export const AUTH_CHALLENGE_TTL_MS = 10 * 60 * 1000;              // 10 minutes
-export const AUTH_PENDING_MAX_SIZE = 10000;
-export const AUTH_SESSION_COOKIE_MAX_AGE_S = 7 * 24 * 60 * 60;    // 7 days
 export const AUTH_TOKEN_MIN_LENGTH = 10;
 
 // --- Cache TTLs ---
 export const OAUTH_INTROSPECTION_CACHE_TTL_MS = 5 * 60 * 1000;    // 5 minutes
 export const CONFIG_CACHE_TTL_MS = 5 * 60 * 1000;                 // 5 minutes
-export const HOMEPAGE_CACHE_TTL_MS = 15 * 60 * 1000;              // 15 minutes
-export const HOMEPAGE_CACHE_MAX_SIZE = 50;
-export const COUNTRIES_CACHE_TTL_MS = 60 * 60 * 1000;             // 1 hour
 
 // --- Session ---
 export const SESSION_MAX_AGE_MS = 30 * 60 * 1000;                 // 30 minutes

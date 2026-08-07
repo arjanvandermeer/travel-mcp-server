@@ -13,7 +13,6 @@ import { accommodationTypes, fetchNearbyForPOI, foodTypes, getNearbyTypes, rende
 import { sanitizePoiExternalUrlsArray } from './url-utils.js';
 import { isAdminUser } from './maintenance-tasks.js';
 
-export { getPromptMessages, promptsConfig } from './prompts-config.js';
 export { getResourcesConfig, handleReadResource } from './resources-config.js';
 export { accommodationTypes, attractionTypes, fetchNearbyForPOI, foodTypes, getNearbyTitle, getNearbyTypes, isOpenNow, renderNearbyWidget, renderPOIPreview } from './poi-view-utils.js';
 
@@ -23,6 +22,26 @@ export const geonamesRefreshToolNames = new Set(['refresh_geonames', 'load_geona
 export const maintenanceTaskToolNames = new Set([
   ...geonamesRefreshToolNames,
   'start_enrichment_task',
+  'start_ai_place_summary_task',
+  'start_homepage_harvest_task',
+]);
+
+export const accountToolNames = new Set([
+  'whoami',
+  'get_user_preferences',
+  'set_user_preferences',
+  'add_favorite',
+  'remove_favorite',
+  'list_favorites',
+]);
+
+export const adminToolNames = new Set([
+  'get_stats',
+  'refresh_geonames',
+  'load_geonames_country',
+  'list_enrichment_tasks',
+  'start_enrichment_task',
+  'stop_enrichment_task',
   'start_ai_place_summary_task',
   'start_homepage_harvest_task',
 ]);
@@ -180,109 +199,6 @@ const baseToolsConfig = [
     },
   },
   {
-    name: 'compare_hotels',
-    description: 'Compare 2-5 hotels side by side by OSM ID. Returns ratings, price level, amenities, city-center distance when available, nearby restaurant count, walkability proxy, differences, and standout features.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        osm_ids: {
-          type: 'array',
-          items: { type: 'number' },
-          minItems: 2,
-          maxItems: 5,
-          description: 'Two to five hotel OSM IDs to compare.',
-        },
-      },
-      required: ['osm_ids'],
-    },
-  },
-  {
-    name: 'get_neighborhood_score',
-    description: 'Score neighborhood livability around a hotel OSM ID or coordinates. Counts nearby restaurants, cafes, bars, supermarkets, pharmacies, and transit stops, then returns a 0-100 score with category breakdown.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        osm_id: {
-          type: 'number',
-          description: 'Hotel or accommodation OSM ID to score around. If provided, latitude/longitude are ignored.',
-        },
-        latitude: {
-          type: 'number',
-          description: 'Latitude coordinate. Required with longitude when osm_id is not provided.',
-        },
-        longitude: {
-          type: 'number',
-          description: 'Longitude coordinate. Required with latitude when osm_id is not provided.',
-        },
-        radius_km: {
-          type: 'number',
-          description: 'Neighborhood radius in kilometers (default: 1.5, max: 5).',
-          default: 1.5,
-        },
-      },
-    },
-  },
-  {
-    name: 'build_itinerary',
-    description: 'Build a deterministic day-by-day itinerary from a hotel OSM ID. Groups nearby attractions and restaurants geographically using PostGIS clustering and returns structured daily stops.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        hotel_osm_id: {
-          type: 'number',
-          description: 'Hotel or accommodation OSM ID to use as the itinerary base.',
-        },
-        interests: {
-          type: 'array',
-          items: { type: 'string', enum: ['museums', 'history', 'landmarks', 'family', 'local_food', 'nightlife', 'shopping'] },
-          description: 'Optional interests used to bias candidate POI types.',
-        },
-        days: {
-          type: 'number',
-          description: 'Number of itinerary days (default: 3, max: 7).',
-          default: 3,
-        },
-        radius_km: {
-          type: 'number',
-          description: 'Candidate search radius around the hotel in kilometers (default: 8, max: 25).',
-          default: 8,
-        },
-      },
-      required: ['hotel_osm_id'],
-    },
-  },
-  {
-    name: 'plan_dining',
-    description: 'Plan city dining across multiple days. Suggests breakfast, lunch, and dinner restaurants while balancing dietary filters, budget, cuisine variety, geography, and opening-hours availability.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        city_name: { type: 'string', description: 'City name to plan dining in.' },
-        country_code: { type: 'string', description: 'Optional 2-letter country code.' },
-        state: { type: 'string', description: 'Optional state/province code or name.' },
-        days: { type: 'number', description: 'Number of dining days (default: 3, max: 14).', default: 3 },
-        dietary: {
-          type: 'array',
-          items: { type: 'string', enum: ['vegan', 'vegetarian', 'pescatarian', 'pescetarian', 'halal', 'kosher', 'gluten_free'] },
-          description: 'Optional dietary restrictions. Multiple values use AND logic.',
-        },
-        budget: {
-          type: 'string',
-          enum: ['cheap', 'inexpensive', 'moderate', 'midrange', 'expensive', 'luxury'],
-          description: 'Budget preference used to balance Google Places price levels.',
-          default: 'moderate',
-        },
-        variety_preference: {
-          type: 'string',
-          enum: ['low', 'balanced', 'high'],
-          description: 'How strongly to avoid repeated cuisines.',
-          default: 'balanced',
-        },
-      },
-      required: ['city_name'],
-    },
-  },
-  {
     name: 'search_restaurants',
     description: 'Search for food & drink (restaurants, cafes, bars, fast food, coffee shops, etc.). Returns JSON results with coordinates, ratings, cuisine, and details. REQUIRES either location (city_name or coordinates) OR query. Valid combinations: (1) query only - global name search, (2) city_name + country_code, (3) city_name + country_code + state, (4) lat/long - search near coordinates, (5) query + any location - combine name filter with location. Supports cuisine filtering (e.g., "thai", "italian"), dietary restrictions (e.g., "vegan", "halal"), and open_now to find currently open places. WORKFLOW TIP: To find a chain restaurant near a landmark, first use search_pois to get the landmark coordinates, then use search_restaurants with those lat/long coordinates and query.',
     inputSchema: {
@@ -409,62 +325,6 @@ const baseToolsConfig = [
       ui: { resourceUri: 'ui://widget/search-results.html' },
       'openai/toolInvocation/invoking': 'Searching...',
       'openai/toolInvocation/invoked': 'Results ready.',
-    },
-  },
-  {
-    name: 'get_dining_budget',
-    description: 'Estimate per-person dining costs for a city using Google Places restaurant price-level data. Optionally filter by cuisine. Returns sample size, data quality, price-level distribution, and USD low/median/high estimates when enough data exists.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        city_name: { type: 'string', description: 'City name to estimate dining costs for.' },
-        country_code: { type: 'string', description: 'Optional 2-letter country code (e.g., "FR", "TH").' },
-        state: { type: 'string', description: 'Optional state/province code or full name.' },
-        cuisine: {
-          oneOf: [
-            { type: 'string' },
-            { type: 'array', items: { type: 'string' } },
-          ],
-          description: 'Optional cuisine filter. Examples: "thai", ["italian", "pizza"].',
-        },
-      },
-      required: ['city_name'],
-    },
-  },
-  {
-    name: 'find_food_districts',
-    description: 'Find restaurant-dense food districts in a city using spatial clustering. Returns cluster centroid, restaurant count, top cuisines, price levels where available, and a district name based on nearest landmark or city fallback.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        city_name: {
-          type: 'string',
-          description: 'City name to search in.',
-        },
-        country_code: {
-          type: 'string',
-          description: 'Optional 2-letter country code to disambiguate the city.',
-        },
-        state: {
-          type: 'string',
-          description: 'Optional state/province code or full name.',
-        },
-        radius_km: {
-          type: 'number',
-          description: 'Optional search radius around the city center. Defaults from city population.',
-        },
-        min_restaurants: {
-          type: 'number',
-          description: 'Minimum restaurants required in a cluster (default: 5, min used by query: 3).',
-          default: 5,
-        },
-        limit: {
-          type: 'number',
-          description: 'Maximum districts to return (default: 10, max: 100).',
-          default: 10,
-        },
-      },
-      required: ['city_name'],
     },
   },
   {
@@ -870,10 +730,12 @@ const baseToolsConfig = [
  * Get tools configuration with dynamic widget domain for UI tools
  * Adds CSP and domain to any tool that has ui.resourceUri
  * @param {string} widgetDomain - Full URL from server_base_url config
+ * @param {object} [options]
+ * @param {object|null} [options.user] - Current authenticated MCP user
  * @returns {Array} - Tools config with CSP/domain added to UI tools
  */
-export function getToolsConfig(widgetDomain) {
-  return baseToolsConfig.map(tool => {
+export function getToolsConfig(widgetDomain, { user = null } = {}) {
+  return baseToolsConfig.filter(tool => isToolAvailableToUser(tool.name, user)).map(tool => {
     // If tool has ui.resourceUri, add CSP and domain
     if (tool._meta?.ui?.resourceUri) {
       const csp = {
@@ -905,6 +767,25 @@ export function getToolsConfig(widgetDomain) {
 }
 
 /**
+ * Keep MCP tool discovery and execution under the same authorization policy.
+ * Search and widget tools are public; personal tools need a signed-in user;
+ * maintenance operations are restricted to the configured admin role.
+ */
+export function isToolAvailableToUser(name, user = null) {
+  if (adminToolNames.has(name)) return isAdminUser(user);
+  if (accountToolNames.has(name)) return !!user;
+  return baseToolsConfig.some(tool => tool.name === name);
+}
+
+export function getToolAccessError(name, user = null) {
+  if (adminToolNames.has(name)) {
+    return user ? 'Admin role required for this tool.' : 'Authentication required for this tool.';
+  }
+  if (accountToolNames.has(name)) return 'Authentication required for this tool.';
+  return 'Unknown tool.';
+}
+
+/**
  * Helper to build content response for search results
  *
  * Returns both:
@@ -924,180 +805,6 @@ export function buildSearchResponse(pois) {
       results,
       count: results.length,
     },
-  };
-}
-
-function extractDisplayName(poi) {
-  const displayName = poi.google_display_name;
-  if (displayName?.text) return displayName.text;
-  if (typeof displayName === 'string') {
-    try {
-      return JSON.parse(displayName).text || displayName;
-    } catch (_error) {
-      return displayName;
-    }
-  }
-  return poi.google_name || poi.osm_name || poi.name || `OSM ${poi.osm_id}`;
-}
-
-function tagIsPositive(value) {
-  return value !== undefined && value !== null && value !== false && String(value).toLowerCase() !== 'no';
-}
-
-function extractHotelAmenities(poi) {
-  const tags = poi.osm_tags || {};
-  const amenityMap = {
-    wifi: ['internet_access'],
-    pool: ['swimming_pool'],
-    parking: ['parking'],
-    breakfast: ['breakfast'],
-    air_conditioning: ['air_conditioning'],
-    pet_friendly: ['pets'],
-    restaurant: ['restaurant'],
-    spa: ['spa'],
-    gym: ['fitness_centre'],
-    bar: ['bar'],
-    elevator: ['elevator'],
-    wheelchair_access: ['wheelchair'],
-  };
-
-  const amenities = new Set();
-  for (const [label, keys] of Object.entries(amenityMap)) {
-    if (keys.some(key => tagIsPositive(tags[key]))) {
-      amenities.add(label);
-    }
-  }
-
-  for (const [key, value] of Object.entries(poi.google_amenities || {})) {
-    if (tagIsPositive(value)) amenities.add(key);
-  }
-  if (tagIsPositive(poi.osm_wheelchair) || tagIsPositive(poi.google_accessibility?.wheelchairAccessibleEntrance)) {
-    amenities.add('wheelchair_access');
-  }
-
-  return [...amenities].sort();
-}
-
-function walkabilityFromNearbyCount(count) {
-  if (count >= 10) return 'excellent';
-  if (count >= 5) return 'good';
-  if (count >= 2) return 'fair';
-  return 'limited';
-}
-
-function uniqueComparableValues(hotels, field) {
-  return new Set(hotels.map(hotel => JSON.stringify(hotel[field] ?? null)));
-}
-
-function buildHotelComparisonSummary(hotels) {
-  const differences = [];
-  for (const field of ['star_rating', 'google_rating', 'price_level', 'amenities', 'distance_to_city_center_km', 'nearby_restaurant_count', 'walkability_proxy']) {
-    if (uniqueComparableValues(hotels, field).size > 1) {
-      differences.push({
-        field,
-        values: Object.fromEntries(hotels.map(hotel => [hotel.osm_id, hotel[field] ?? null])),
-      });
-    }
-  }
-
-  const ratings = hotels.map(h => Number(h.google_rating)).filter(Number.isFinite);
-  const stars = hotels.map(h => Number(h.star_rating)).filter(Number.isFinite);
-  const highestRating = ratings.length > 0 ? Math.max(...ratings) : null;
-  const highestStars = stars.length > 0 ? Math.max(...stars) : null;
-  const highestNearby = Math.max(...hotels.map(h => h.nearby_restaurant_count));
-  const walkabilityRank = { limited: 1, fair: 2, good: 3, excellent: 4 };
-  const bestWalkabilityRank = Math.max(...hotels.map(h => walkabilityRank[h.walkability_proxy] || 0));
-  const uniqueAmenities = new Map();
-  for (const hotel of hotels) {
-    for (const amenity of hotel.amenities) {
-      const owners = hotels.filter(other => other.amenities.includes(amenity));
-      if (owners.length === 1) uniqueAmenities.set(hotel.osm_id, [...(uniqueAmenities.get(hotel.osm_id) || []), amenity]);
-    }
-  }
-
-  const standoutSummary = [];
-  const withStandouts = hotels.map(hotel => {
-    const standoutFeatures = [];
-    if (highestRating !== null && Number(hotel.google_rating) === highestRating) standoutFeatures.push('highest_google_rating');
-    if (highestStars !== null && Number(hotel.star_rating) === highestStars) standoutFeatures.push('highest_star_rating');
-    if (hotel.nearby_restaurant_count === highestNearby) standoutFeatures.push('most_nearby_restaurants');
-    if ((walkabilityRank[hotel.walkability_proxy] || 0) === bestWalkabilityRank) {
-      standoutFeatures.push('best_walkability_proxy');
-    }
-    const hotelUniqueAmenities = uniqueAmenities.get(hotel.osm_id) || [];
-    if (hotelUniqueAmenities.length > 0) {
-      standoutFeatures.push(`unique_amenities:${hotelUniqueAmenities.join(',')}`);
-    }
-    for (const feature of standoutFeatures) {
-      standoutSummary.push({ osm_id: hotel.osm_id, name: hotel.name, feature });
-    }
-    return { ...hotel, standout_features: standoutFeatures };
-  });
-
-  return { hotels: withStandouts, differences, standout_summary: standoutSummary };
-}
-
-async function buildHotelComparison(osmIds, db, userId = null) {
-  const uniqueIds = [...new Set((osmIds || []).map(id => Number(id)).filter(Number.isFinite))];
-  if (uniqueIds.length < 2 || uniqueIds.length > 5) {
-    return { error: 'compare_hotels requires 2-5 unique numeric osm_ids' };
-  }
-
-  const details = await Promise.all(uniqueIds.map(id => db.getPOIDetails(id, null, userId)));
-  const missing = uniqueIds.filter((_id, index) => !details[index]);
-  if (missing.length > 0) {
-    return { error: `Hotel not found for osm_id(s): ${missing.join(', ')}` };
-  }
-
-  const nonHotels = details.filter(poi => !accommodationTypes.includes(poi.poi_type));
-  if (nonHotels.length > 0) {
-    return { error: `compare_hotels only accepts accommodation POIs. Non-hotel osm_id(s): ${nonHotels.map(p => p.osm_id).join(', ')}` };
-  }
-
-  const cityCache = new Map();
-  const rows = [];
-  for (const poi of details) {
-    const lat = poi.osm_latitude ?? poi.latitude;
-    const lon = poi.osm_longitude ?? poi.longitude;
-    let nearbyRestaurants = [];
-    if (lat !== undefined && lon !== undefined && db.searchPOIsNearCoordinates) {
-      nearbyRestaurants = await db.searchPOIsNearCoordinates(lat, lon, 1.5, foodTypes, 20, userId, [poi.osm_id]);
-    }
-
-    let distanceToCityCenterKm = null;
-    const cityKey = `${poi.city || ''}:${poi.country_code || ''}`;
-    if (poi.city && db.getCityByName && db.calculateDistance) {
-      if (!cityCache.has(cityKey)) {
-        cityCache.set(cityKey, await db.getCityByName(poi.city, poi.country_code));
-      }
-      const city = cityCache.get(cityKey);
-      if (city?.latitude !== undefined && city?.longitude !== undefined && lat !== undefined && lon !== undefined) {
-        distanceToCityCenterKm = Number(db.calculateDistance(lat, lon, city.latitude, city.longitude).toFixed(2));
-      }
-    }
-
-    rows.push({
-      osm_id: poi.osm_id,
-      name: extractDisplayName(poi),
-      city: poi.city || null,
-      country_code: poi.country_code || null,
-      star_rating: poi.osm_stars ? Number(poi.osm_stars) : null,
-      google_rating: poi.google_rating ?? null,
-      google_review_count: poi.google_review_count ?? null,
-      price_level: poi.google_price_level || null,
-      amenities: extractHotelAmenities(poi),
-      distance_to_city_center_km: distanceToCityCenterKm,
-      nearby_restaurant_count: nearbyRestaurants.length,
-      walkability_proxy: walkabilityFromNearbyCount(nearbyRestaurants.length),
-    });
-  }
-
-  const summary = buildHotelComparisonSummary(rows);
-  return {
-    hotel_count: summary.hotels.length,
-    hotels: summary.hotels,
-    differences: summary.differences,
-    standout_summary: summary.standout_summary,
   };
 }
 
@@ -1148,7 +855,7 @@ function resolveAccommodationTypes(value) {
  * @param {string} name - Tool name
  * @param {object} args - Tool arguments
  * @param {object} db - Database instance
- * @param {object} options - Optional settings (e.g., previewUrlBase for HTTP server)
+ * @param {object} options - Optional handler dependencies and task configuration.
  * @returns {object} - MCP response content
  */
 export async function executeToolHandler(name, args, db, options = {}) {
@@ -1241,110 +948,6 @@ export async function executeToolHandler(name, args, db, options = {}) {
       return { content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }] };
     }
 
-    case 'compare_hotels': {
-      const comparison = await buildHotelComparison(args.osm_ids, db, options.user?.id);
-      if (comparison.error) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: comparison.error }, null, 2) }],
-        };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(comparison, null, 2) }],
-        structuredContent: comparison,
-      };
-    }
-
-    case 'get_neighborhood_score': {
-      if (!args.osm_id && (args.latitude === undefined || args.longitude === undefined)) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: 'get_neighborhood_score requires either osm_id or latitude and longitude' }, null, 2) }],
-        };
-      }
-      if (args.latitude !== undefined || args.longitude !== undefined) {
-        const coords = validateCoordinates(args.latitude, args.longitude);
-        if (!coords.valid) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: JSON.stringify({ error: coords.error }, null, 2) }],
-          };
-        }
-        args.latitude = coords.lat;
-        args.longitude = coords.lon;
-      }
-
-      const score = await db.getNeighborhoodScore({
-        osmId: args.osm_id,
-        latitude: args.latitude,
-        longitude: args.longitude,
-        radiusKm: validateRadiusKm(args.radius_km, 1.5, 5),
-      });
-      if (!score) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: 'Source POI not found', osm_id: args.osm_id }, null, 2) }],
-        };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(score, null, 2) }],
-        structuredContent: score,
-      };
-    }
-
-    case 'build_itinerary': {
-      if (!args.hotel_osm_id) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: 'hotel_osm_id is required' }, null, 2) }],
-        };
-      }
-      const itinerary = await db.buildItinerary({
-        hotelOsmId: args.hotel_osm_id,
-        interests: args.interests || [],
-        days: validateLimit(args.days, 3, 7),
-        radiusKm: validateRadiusKm(args.radius_km, 8, 25),
-      });
-      if (!itinerary) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: 'Hotel not found', hotel_osm_id: args.hotel_osm_id }, null, 2) }],
-        };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(itinerary, null, 2) }],
-        structuredContent: itinerary,
-      };
-    }
-
-    case 'plan_dining': {
-      if (!args.city_name) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: 'city_name is required' }, null, 2) }],
-        };
-      }
-      const plan = await db.planDining({
-        cityName: args.city_name,
-        countryCode: args.country_code,
-        state: args.state,
-        days: validateLimit(args.days, 3, 14),
-        dietary: args.dietary || [],
-        budget: args.budget || 'moderate',
-        varietyPreference: args.variety_preference || 'balanced',
-      });
-      if (!plan) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: 'City not found', city_name: args.city_name }, null, 2) }],
-        };
-      }
-      return {
-        content: [{ type: 'text', text: JSON.stringify(plan, null, 2) }],
-        structuredContent: plan,
-      };
-    }
-
     case 'search_restaurants':
     case 'search_restaurants_ui': {
       if (args.occasion && !restaurantOccasions.includes(args.occasion)) {
@@ -1387,57 +990,6 @@ export async function executeToolHandler(name, args, db, options = {}) {
         return buildSearchResponse(pois);
       }
       return { content: [{ type: 'text', text: JSON.stringify(pois, null, 2) }] };
-    }
-
-    case 'get_dining_budget': {
-      try {
-        const budget = await db.getDiningBudget({
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          state: args.state,
-          cuisine: args.cuisine,
-        });
-        if (!budget) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: JSON.stringify({ error: 'City not found' }, null, 2) }],
-          };
-        }
-        return { content: [{ type: 'text', text: JSON.stringify(budget, null, 2) }] };
-      } catch (error) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
-        };
-      }
-    }
-
-    case 'find_food_districts': {
-      try {
-        const districts = await db.findFoodDistricts({
-          cityName: args.city_name,
-          countryCode: args.country_code,
-          state: args.state,
-          radiusKm: validateRadiusKm(args.radius_km, 15, SEARCH_RADIUS_MAX_KM),
-          minRestaurants: args.min_restaurants,
-          limit: validateLimit(args.limit, 10, 100),
-        });
-        if (!districts) {
-          return {
-            isError: true,
-            content: [{ type: 'text', text: JSON.stringify({ error: 'City not found' }, null, 2) }],
-          };
-        }
-        return {
-          content: [{ type: 'text', text: JSON.stringify(districts, null, 2) }],
-          structuredContent: districts,
-        };
-      } catch (error) {
-        return {
-          isError: true,
-          content: [{ type: 'text', text: JSON.stringify({ error: error.message }, null, 2) }],
-        };
-      }
     }
 
     case 'search_pois':

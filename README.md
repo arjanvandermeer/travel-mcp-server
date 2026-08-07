@@ -15,7 +15,6 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 - **Personal favorites** — bookmark POIs with notes, filtered by location or type
 - **Rich detail views** — structured JSON or rendered HTML pages via MCP resource templates
 - **Dual transport** — stdio (Claude Desktop) and Streamable HTTP (ChatGPT, MCP Inspector, web clients)
-- **[Local SLM agent](slm/README.md)** — offline travel assistant powered by Ollama (Qwen 3.5), with tool calling against the REST API or MCP — great for demos, model evaluation, and prompt tuning
 
 ## Engineering Highlights
 
@@ -49,13 +48,7 @@ All search tools enforce a max of 100 results. Search/detail/nearby tools have `
 |------|-------------|
 | `search_cities` | Search 165K+ cities by name, country, or coordinates |
 | `search_hotels` / `_ui` | Hotels, hostels, B&Bs — by name, city, or location |
-| `compare_hotels` | Compare 2-5 hotels by OSM ID, including ratings, amenities, location signals, and standout differences |
-| `get_neighborhood_score` | Score amenities around a hotel or coordinate pair |
-| `build_itinerary` | Build deterministic day plans from a hotel base and interest set |
 | `search_restaurants` / `_ui` | Restaurants, cafes, bars — with optional type filter |
-| `plan_dining` | Build multi-day dining plans with budget, cuisine variety, and dietary filters |
-| `get_dining_budget` | Estimate city dining costs from enriched restaurant price-level data |
-| `find_food_districts` | Find restaurant-dense city districts using spatial clustering |
 | `search_pois` / `_ui` | Universal search across all 30+ POI categories |
 | `get_poi_details` / `_ui` | Full POI info, triggers Google Places enrichment |
 | `get_nearby_pois` / `_ui` | Find hotels near restaurants or vice versa |
@@ -70,7 +63,7 @@ All search tools enforce a max of 100 results. Search/detail/nearby tools have `
 ## Architecture
 
 ```
-Claude Desktop / ChatGPT / Web Browser
+Claude Desktop / ChatGPT / REST clients
          │
          ▼
 ┌─────────────────────────────┐
@@ -100,7 +93,6 @@ Claude Desktop / ChatGPT / Web Browser
 | [doc/http-transport.md](doc/http-transport.md) | Streamable HTTP server setup |
 | [doc/openapi.yaml](doc/openapi.yaml) | OpenAPI 3.1 REST API specification, also served at `/openapi.yaml` |
 | [doc/future-travel-integrations.md](doc/future-travel-integrations.md) | Wikidata and route-planning integration decisions |
-| [slm/README.md](slm/README.md) | Local SLM agent with Ollama (usage, test suite, integration guide) |
 | [GitHub Issues](https://github.com/arjanvandermeer/travel-mcp-server/issues) | Planned improvements and known issues |
 
 ## Data Sources

@@ -7,12 +7,6 @@ import { sendJson } from '../api-router.js';
 import { CITY_SEARCH_RADIUS_MAX_KM, SEARCH_RADIUS_MAX_KM } from '../config.js';
 import { parseStrictInteger, validateCoordinates, validateLimit, validateRadiusKm } from '../validation.js';
 
-function parsePositiveInt(value, defaultValue, maxValue) {
-  const parsed = parseStrictInteger(value);
-  if (parsed === null || parsed <= 0) return defaultValue;
-  return Math.min(parsed, maxValue);
-}
-
 function parseNonNegativeInt(value, defaultValue, maxValue) {
   const parsed = parseStrictInteger(value);
   if (parsed === null || parsed < 0) return defaultValue;
@@ -37,16 +31,6 @@ function parseBooleanParam(value) {
 }
 
 export function registerSearchRoutes(router) {
-  router.get('/api/v1/search/cities/random', async (req, res, { db, query }) => {
-    const minPoiCount = parsePositiveInt(query.min_pois, 25, 1000);
-    const minPopulation = parsePositiveInt(query.min_population, 50000, 10000000);
-    const city = await db.getRandomCityWithData({ minPoiCount, minPopulation });
-    if (!city) {
-      return sendJson(res, 404, { error: 'No loaded cities available' });
-    }
-    sendJson(res, 200, { city });
-  });
-
   router.get('/api/v1/search/cities', async (req, res, { db, query }) => {
     const countryCode = query.country_code;
     const state = query.state || null;

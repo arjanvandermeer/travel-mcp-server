@@ -19,10 +19,9 @@ export function removeNullFields(obj) {
 }
 
 /**
- * Add MCP resource and browser preview URLs to POI response payloads.
+ * Add MCP resource URIs to POI response payloads.
  */
 export function addResourceUris(pois, baseUrl) {
-  const base = baseUrl ? baseUrl.replace(/\/$/, '') : '';
   let uiHost = '';
 
   if (baseUrl) {
@@ -37,7 +36,6 @@ export function addResourceUris(pois, baseUrl) {
     return pois.map(poi => ({
       ...poi,
       resource_uri: `ui://${uiHost}/poi/${poi.osm_id}`,
-      preview_url: `${base}/preview/poi/${poi.osm_id}`,
     }));
   }
 
@@ -45,7 +43,6 @@ export function addResourceUris(pois, baseUrl) {
     return {
       ...pois,
       resource_uri: `ui://${uiHost}/poi/${pois.osm_id}`,
-      preview_url: `${base}/preview/poi/${pois.osm_id}`,
     };
   }
 

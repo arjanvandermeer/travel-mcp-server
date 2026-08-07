@@ -34,20 +34,20 @@ Response:
   "endpoints": {
     "mcp": "/mcp",
     "health": "/health",
-    "preview": "/preview/poi/{osm_id}"
+    "rest": "/api/v1/*"
   }
 }
 ```
 
 ### OpenAPI Specification
 
-The REST API used by the web frontend is documented in [openapi.yaml](openapi.yaml) and served by the HTTP process:
+The REST API is documented in [openapi.yaml](openapi.yaml) and served by the HTTP process:
 
 ```bash
 curl http://localhost:3000/openapi.yaml
 ```
 
-The spec covers the public `/api/v1/*` routes, `/auth/*` web auth routes, optional bearer/session authentication, and favorites endpoints that require authentication.
+The spec covers city and POI search, POI details and nearby results, and favorites endpoints that require Bearer authentication.
 
 ## Endpoints
 
@@ -56,9 +56,6 @@ Health check endpoint. Returns server status and available endpoints.
 
 ### `/mcp`
 Streamable HTTP endpoint for MCP protocol communication. Clients should connect to this endpoint using the MCP SDK's Streamable HTTP client transport.
-
-### `GET /`
-Serves the browser frontend from `web/index.html`.
 
 ## Using with MCP Clients
 
@@ -101,18 +98,12 @@ The HTTP server provides the same tools as the stdio version:
 
 1. **search_cities** - Search for cities by name
 2. **search_hotels** - Search for hotels by name/location
-3. **compare_hotels** - Compare 2-5 hotels side by side
-4. **get_neighborhood_score** - Score nearby amenities around a hotel or coordinates
-5. **build_itinerary** - Build day plans from a hotel base
-6. **search_restaurants** - Search for restaurants by name/location
-7. **plan_dining** - Build a dining plan for a city
-8. **get_dining_budget** - Estimate city dining costs from price-level data
-9. **find_food_districts** - Find restaurant-dense city areas
-10. **search_pois** - Search for points of interest
-11. **get_poi_details** - Get detailed POI information with Google Places enrichment
-12. **get_nearby_pois** - Find nearby complementary POIs
-13. **whoami**, **get_user_preferences**, **set_user_preferences**, **add_favorite**, **remove_favorite**, **list_favorites** - Authenticated user features
-14. **get_stats** - Get database statistics
+3. **search_restaurants** - Search for restaurants by name/location
+4. **search_pois** - Search for points of interest
+5. **get_poi_details** - Get detailed POI information with Google Places enrichment
+6. **get_nearby_pois** - Find nearby complementary POIs
+7. **whoami**, **get_user_preferences**, **set_user_preferences**, **add_favorite**, **remove_favorite**, **list_favorites** - Authenticated user features
+8. Admin-only maintenance tools are visible only to authenticated administrators.
 
 ## CORS Support
 

@@ -4,8 +4,6 @@ import {
   CallToolRequestSchema,
   GetTaskPayloadRequestSchema,
   GetTaskRequestSchema,
-  GetPromptRequestSchema,
-  ListPromptsRequestSchema,
   ListResourceTemplatesRequestSchema,
   ListResourcesRequestSchema,
   ListTasksRequestSchema,
@@ -17,12 +15,12 @@ import { defaultMaintenanceTaskManager, isAdminUser } from './maintenance-tasks.
 import { render } from './templates/index.js';
 import {
   executeToolHandler,
-  getPromptMessages,
+  getToolAccessError,
   getResourcesConfig,
   getToolsConfig,
   handleReadResource,
+  isToolAvailableToUser,
   maintenanceTaskToolNames,
-  promptsConfig,
 } from './tools-config.js';
 import { getVersionString } from './version.js';
 
@@ -45,7 +43,6 @@ export function createTravelMCPServer({
       capabilities: {
         tools: {},
         resources: {},
-        prompts: {},
         tasks: {
           list: {},
           cancel: {},
@@ -60,7 +57,7 @@ export function createTravelMCPServer({
   server.setRequestHandler(ListToolsRequestSchema, async () => {
     log('INFO', 'ListTools request received');
     const widgetDomain = await db.getServerBaseUrl() || 'http://localhost';
-    return { tools: getToolsConfig(widgetDomain) };
+    return { tools: getToolsConfig(widgetDomain, { user: userRef.current }) };
   });
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
@@ -71,6 +68,9 @@ export function createTravelMCPServer({
 
     return telemetry.withTransaction(`mcp.tool.${name}`, 'mcp.request', async () => {
       try {
+        if (!isToolAvailableToUser(name, userRef.current)) {
+          throw new Error(getToolAccessError(name, userRef.current));
+        }
         if (isTaskRequest && !maintenanceTaskToolNames.has(name)) {
           throw new Error(`Task creation is not supported for tool: ${name}`);
         }
@@ -122,17 +122,6 @@ export function createTravelMCPServer({
         contents: [{ uri, mimeType: 'text/plain', text: `Error: ${error.message}` }],
       };
     }
-  });
-
-  server.setRequestHandler(ListPromptsRequestSchema, async () => {
-    log('INFO', 'ListPrompts request received');
-    return { prompts: promptsConfig };
-  });
-
-  server.setRequestHandler(GetPromptRequestSchema, async (request) => {
-    const { name, arguments: args } = request.params;
-    log('INFO', `GetPrompt request received: ${name}`, args);
-    return getPromptMessages(name, args);
   });
 
   server.setRequestHandler(ListTasksRequestSchema, async () => {

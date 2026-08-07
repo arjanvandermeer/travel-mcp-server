@@ -226,7 +226,7 @@
     {{#if results}}
     <div class="results-list">
       {{#each results}}
-      <a class="result-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-poi-type="{{poi_type}}" data-lat="{{or latitude osm_latitude}}" data-lng="{{or longitude osm_longitude}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
+      <a class="result-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-poi-type="{{poi_type}}" data-lat="{{or latitude osm_latitude}}" data-lng="{{or longitude osm_longitude}}" data-resource-uri="{{resource_uri}}">
         {{#if photo_url}}
         <img class="card-thumb" src="{{photo_url}}" alt="">
         {{/if}}
@@ -346,7 +346,6 @@
       card.setAttribute('data-lat', poi.latitude || poi.osm_latitude || '');
       card.setAttribute('data-lng', poi.longitude || poi.osm_longitude || '');
       card.setAttribute('data-resource-uri', poi.resource_uri || '');
-      card.setAttribute('data-preview-url', poi.preview_url || '');
 
       var thumbHtml = photoUrl ? '<img class="card-thumb" src="' + escapeHtml(photoUrl) + '" alt="">' : '';
 
@@ -554,17 +553,13 @@
         card.addEventListener('click', function(e) {
           e.preventDefault();
           var resourceUri = this.getAttribute('data-resource-uri');
-          var previewUrl = this.getAttribute('data-preview-url');
           var osmId = this.getAttribute('data-osm-id');
 
-          console.log('Card clicked:', { osmId: osmId, resourceUri: resourceUri, previewUrl: previewUrl });
+          console.log('Card clicked:', { osmId: osmId, resourceUri: resourceUri });
 
           // If OpenAI bridge is available, request the POI detail resource
           if (window.openai && window.openai.readResource) {
             window.openai.readResource(resourceUri);
-          } else if (previewUrl) {
-            // Fallback: open preview URL in new tab
-            window.open(previewUrl, '_blank');
           }
         });
         card.addEventListener('mouseenter', function() {

@@ -539,7 +539,7 @@ describe('renderNearbyWidget', () => {
   it('should render with nearby results', () => {
     const source = makePOI({ poi_type: 'hotel', osm_name: 'Grand Hotel' });
     const nearby = [
-      { osm_id: 999, name: 'Thai Kitchen', poi_type: 'restaurant', google_rating: 4.5, distance_km: 0.3, preview_url: '/preview/poi/999' },
+      { osm_id: 999, name: 'Thai Kitchen', poi_type: 'restaurant', google_rating: 4.5, distance_km: 0.3, resource_uri: 'ui://travel.example.com/poi/999' },
     ];
     const html = renderNearbyWidget(source, nearby, render);
 
@@ -579,7 +579,7 @@ describe('renderNearbyWidget', () => {
   it('should render scroll arrows when there are results', () => {
     const source = makePOI({ poi_type: 'hotel', osm_name: 'Grand Hotel' });
     const nearby = [
-      { osm_id: 999, name: 'Thai Kitchen', poi_type: 'restaurant', google_rating: 4.5, distance_km: 0.3, preview_url: '/preview/poi/999' },
+      { osm_id: 999, name: 'Thai Kitchen', poi_type: 'restaurant', google_rating: 4.5, distance_km: 0.3, resource_uri: 'ui://travel.example.com/poi/999' },
     ];
     const html = renderNearbyWidget(source, nearby, render);
 
@@ -654,7 +654,7 @@ describe('renderPOIPreview nearby section', () => {
   it('should show nearby section when nearbyPois provided', () => {
     const poi = makePOI();
     const nearby = [
-      { osm_id: 888, name: 'Cafe Latte', poi_type: 'cafe', distance_km: 0.5, preview_url: '/preview/poi/888' },
+      { osm_id: 888, name: 'Cafe Latte', poi_type: 'cafe', distance_km: 0.5, resource_uri: 'ui://travel.example.com/poi/888' },
     ];
     const html = renderPOIPreview(poi, render, nearby, 'Nearby Restaurants & Cafes');
     const body = getBody(html);
@@ -675,7 +675,7 @@ describe('renderPOIPreview nearby section', () => {
   it('should render card with rating and distance', () => {
     const poi = makePOI();
     const nearby = [
-      { osm_id: 777, name: 'Spice Garden', poi_type: 'restaurant', google_rating: 4.2, distance_km: 0.8, preview_url: '/preview/poi/777' },
+      { osm_id: 777, name: 'Spice Garden', poi_type: 'restaurant', google_rating: 4.2, distance_km: 0.8, resource_uri: 'ui://travel.example.com/poi/777' },
     ];
     const html = renderPOIPreview(poi, render, nearby, 'Nearby Restaurants & Cafes');
     const body = getBody(html);

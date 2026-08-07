@@ -542,7 +542,7 @@
         <button class="scroll-arrow scroll-arrow-left hidden">&#8249;</button>
         <div class="nearby-scroll">
           {{#each nearby_pois}}
-          <a class="nearby-card" href="{{preview_url}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}" data-preview-url="{{preview_url}}">
+          <a class="nearby-card" href="{{resource_uri}}" data-osm-id="{{osm_id}}" data-resource-uri="{{resource_uri}}">
             {{#if photo_url}}
             <img class="nearby-thumb" src="{{photo_url}}" alt="" loading="lazy">
             {{else}}
@@ -665,17 +665,8 @@
           card.addEventListener('click', function(e) {
             e.preventDefault();
             var resourceUri = this.getAttribute('data-resource-uri');
-            var previewUrl = this.getAttribute('data-preview-url');
             if (window.openai && window.openai.readResource) {
               window.openai.readResource(resourceUri);
-            } else if (previewUrl) {
-              // If inside an iframe (SPA), navigate the parent page so its state updates
-              var osmIdMatch = previewUrl.match(/\/preview\/poi\/(\d+)/);
-              if (window.parent !== window && osmIdMatch) {
-                window.parent.location.href = '/poi/' + osmIdMatch[1];
-              } else {
-                window.location.href = previewUrl;
-              }
             }
           });
         });

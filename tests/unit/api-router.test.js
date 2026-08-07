@@ -5,7 +5,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert';
 import { EventEmitter } from 'node:events';
-import { ApiRouter, sendJson, parseBody, parseCookies } from '../../src/api-router.js';
+import { ApiRouter, sendJson, parseBody } from '../../src/api-router.js';
 import { fakeReq, fakeRes } from '../mocks/http-helpers.js';
 
 // Variant of fakeReq that supports a raw string body (for parseBody tests)
@@ -138,34 +138,6 @@ describe('ApiRouter', () => {
     await router.handle(req, res, { user: { id: 1, email: 'test@test.com' } });
 
     assert.deepStrictEqual(capturedUser, { id: 1, email: 'test@test.com' });
-  });
-});
-
-describe('parseCookies', () => {
-  it('should parse cookie header', () => {
-    const req = { headers: { cookie: 'session=abc123; theme=dark' } };
-    const cookies = parseCookies(req);
-    assert.strictEqual(cookies.session, 'abc123');
-    assert.strictEqual(cookies.theme, 'dark');
-  });
-
-  it('should return empty object when no cookies', () => {
-    const req = { headers: {} };
-    const cookies = parseCookies(req);
-    assert.deepStrictEqual(cookies, {});
-  });
-
-  it('should handle encoded cookie values', () => {
-    const req = { headers: { cookie: 'name=hello%20world' } };
-    const cookies = parseCookies(req);
-    assert.strictEqual(cookies.name, 'hello world');
-  });
-
-  it('should skip malformed cookie values', () => {
-    const req = { headers: { cookie: 'session=%E0%A4%A; theme=dark' } };
-    const cookies = parseCookies(req);
-    assert.strictEqual(cookies.session, undefined);
-    assert.strictEqual(cookies.theme, 'dark');
   });
 });
 

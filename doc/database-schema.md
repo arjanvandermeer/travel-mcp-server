@@ -314,7 +314,7 @@ CREATE TABLE app_config (
 - `google_places_enabled` - Enable/disable enrichment (default: true)
 - `google_places_cache_hours` - Cache duration (default: 168 = 7 days)
 - `google_api_daily_limit` - Daily API call limit (default: 100)
-- `server_base_url` - Base URL for preview URLs
+- `server_base_url` - Public base URL used to construct MCP widget resource URIs
 - `oauth_issuer` - OAuth provider URL for token introspection
 
 ### google_api_usage
@@ -622,69 +622,6 @@ Hotel search results and hotel POI details include `stay_quality_score`, `stay_q
 | Walkability proxy | 5 | Nearby restaurant count, capped at 10 venues |
 
 Missing rating, review, or star fields are omitted from the denominator instead of treated as zero, so sparse records can still receive a low-confidence score. Amenity and nearby-dining components are treated as zero when no matching data is present because those signals come from local POI data rather than optional Google enrichment.
-
-### Neighborhood livability scores
-
-`get_neighborhood_score` scores the area around an accommodation `osm_id` or an explicit latitude/longitude pair. It uses a default 1.5 km radius, capped at 5 km, and returns a 0-100 score plus per-category counts and component scores.
-
-| Category | POI types | Target for full category score | Weight |
-|----------|-----------|--------------------------------|--------|
-| Restaurants | `restaurant`, `fast_food`, `food_court` | 8 | 25 |
-| Cafes | `cafe` | 4 | 15 |
-| Bars and pubs | `bar`, `pub`, `nightclub` | 3 | 10 |
-| Supermarkets | `supermarket` | 2 | 15 |
-| Pharmacies | `pharmacy` | 2 | 15 |
-| Transit stops | `bus_stop`, `train_station`, `subway_station`, `tram_stop`, `transit_station` | 4 | 20 |
-
-The category scores are capped at 100 before applying weights. Transit and pharmacy categories depend on the corresponding OSM mappings being imported, so older datasets may understate those signals until refreshed.
-
-### Itinerary builder
-
-`build_itinerary` accepts a hotel `osm_id`, optional interests, and a day count. It resolves the hotel from `osm_pois`, fetches nearby candidates with `ST_DWithin`, clusters candidates with `ST_ClusterKMeans`, then returns deterministic day plans with ordered stops.
-
-Supported interests map to POI type groups:
-
-| Interest | POI types |
-|----------|-----------|
-| `museums` | `museum`, `gallery`, `artwork` |
-| `history` | `monument`, `memorial`, `castle`, `ruins`, `archaeological_site` |
-| `landmarks` | `attraction`, `viewpoint`, `place_of_worship` |
-| `family` | `zoo`, `theme_park`, `attraction` |
-| `local_food` | `restaurant`, `cafe`, `food_court`, `fast_food` |
-| `nightlife` | `bar`, `pub`, `nightclub` |
-| `shopping` | `shopping_mall`, `department_store`, `supermarket` |
-
-The tool always includes default food types so each day can include meal stops when nearby data exists. Days are capped at 7 and candidate radius is capped at 25 km.
-
-### Dining planner
-
-`plan_dining` accepts a city, day count, dietary filters, budget, and cuisine-variety preference. It resolves the city, fetches food candidates with `ST_DWithin`, applies dietary tag filters, clusters candidates with `ST_ClusterKMeans`, and returns breakfast/lunch/dinner slots per day.
-
-Budget preferences map to Google Places price levels:
-
-| Budget | Price levels |
-|--------|--------------|
-| `cheap` / `inexpensive` | `PRICE_LEVEL_INEXPENSIVE` |
-| `moderate` | `PRICE_LEVEL_INEXPENSIVE`, `PRICE_LEVEL_MODERATE` |
-| `midrange` | `PRICE_LEVEL_MODERATE` |
-| `expensive` | `PRICE_LEVEL_MODERATE`, `PRICE_LEVEL_EXPENSIVE` |
-| `luxury` | `PRICE_LEVEL_EXPENSIVE`, `PRICE_LEVEL_VERY_EXPENSIVE` |
-
-Meal slots target local times of 09:00, 12:30, and 19:30. The response includes whether opening-hours data was available for each selected restaurant, but venues without hours are retained because OSM/Google hours coverage is incomplete.
-
-### Restaurant price levels and dining budgets
-
-Restaurant price filters use Google Places `price_level` values after the initial indexed OSM search has been enriched:
-
-| Tool value | Google Places value |
-|------------|---------------------|
-| `0` / `free` | `PRICE_LEVEL_FREE` |
-| `1` / `inexpensive` | `PRICE_LEVEL_INEXPENSIVE` |
-| `2` / `moderate` | `PRICE_LEVEL_MODERATE` |
-| `3` / `expensive` | `PRICE_LEVEL_EXPENSIVE` |
-| `4` / `very_expensive` | `PRICE_LEVEL_VERY_EXPENSIVE` |
-
-`get_dining_budget` aggregates active Google Places mappings by city, optional cuisine, and price level. It returns sample size, a data-quality label, the price-level distribution, and USD per-person low/median/high estimates when at least 5 mapped venues have price data.
 
 ### Restaurant occasions
 

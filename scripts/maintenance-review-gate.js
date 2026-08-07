@@ -3,7 +3,7 @@
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 
-const CODE_IMPACTING_PATH_RE = /^(\.github\/workflows\/|cloudflare-oauth-worker\/|data\/|package\.json$|package-lock\.json$|scripts\/|slm\/|src\/|tests\/|web\/)/;
+const CODE_IMPACTING_PATH_RE = /^(\.github\/workflows\/|cloudflare-oauth-worker\/|data\/|package\.json$|package-lock\.json$|scripts\/|src\/|tests\/)/;
 
 export function getReviewDate(reviewTimestamp) {
   if (!reviewTimestamp) return null;

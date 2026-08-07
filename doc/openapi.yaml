@@ -2,30 +2,23 @@ openapi: 3.1.0
 info:
   title: Travel MCP HTTP API
   version: 1.1.0
-  description: REST endpoints served by the Travel MCP HTTP process for the web frontend and API clients.
+  description: REST endpoints served by the Travel MCP HTTP process for travel search and authenticated favorites.
 servers:
   - url: http://localhost:3000
     description: Local development server
   - url: https://travel.arjanvandermeer.com
     description: Production server
 tags:
-  - name: Auth
   - name: Discovery
   - name: Search
   - name: Places
   - name: Favorites
-  - name: Maps
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       description: Bearer token accepted by the HTTP server.
-    sessionCookie:
-      type: apiKey
-      in: cookie
-      name: session
-      description: Web session cookie set by the OAuth callback.
   schemas:
     Error:
       type: object
@@ -114,119 +107,6 @@ paths:
             application/yaml:
               schema:
                 type: string
-  /auth/login:
-    get:
-      tags: [Auth]
-      summary: Start the OAuth PKCE login flow.
-      responses:
-        '302':
-          description: Redirects to the configured OAuth provider.
-        '500':
-          description: OAuth is not configured or login failed.
-  /auth/callback:
-    get:
-      tags: [Auth]
-      summary: Complete OAuth login and set the session cookie.
-      parameters:
-        - name: code
-          in: query
-          schema:
-            type: string
-        - name: state
-          in: query
-          schema:
-            type: string
-      responses:
-        '302':
-          description: Redirects to the web app after setting the session cookie.
-        '400':
-          description: Missing or invalid OAuth callback parameters.
-        '500':
-          description: Token exchange failed.
-  /auth/logout:
-    get:
-      tags: [Auth]
-      summary: Clear the web session cookie.
-      responses:
-        '302':
-          description: Redirects to the web app after clearing the session cookie.
-  /auth/me:
-    get:
-      tags: [Auth]
-      summary: Return the current authenticated user, or authenticated false.
-      security:
-        - bearerAuth: []
-        - sessionCookie: []
-        - {}
-      responses:
-        '200':
-          description: Current authentication state.
-  /api/v1/homepage:
-    get:
-      tags: [Discovery]
-      summary: Return random homepage discovery data.
-      security:
-        - bearerAuth: []
-        - sessionCookie: []
-        - {}
-      responses:
-        '200':
-          description: Country, city, and hotel discovery data.
-        '503':
-          description: No data available.
-  /api/v1/countries:
-    get:
-      tags: [Discovery]
-      summary: List countries with loaded POI data.
-      responses:
-        '200':
-          description: Countries with imported data.
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  type: object
-                  additionalProperties: true
-  /api/v1/states:
-    get:
-      tags: [Discovery]
-      summary: List states for a loaded country.
-      parameters:
-        - name: country_code
-          in: query
-          required: true
-          schema:
-            type: string
-            minLength: 2
-            maxLength: 2
-      responses:
-        '200':
-          description: States for the requested country.
-        '400':
-          description: country_code is missing or invalid.
-  /api/v1/search/cities/random:
-    get:
-      tags: [Search]
-      summary: Return a random loaded city matching quality thresholds.
-      parameters:
-        - name: min_pois
-          in: query
-          schema:
-            type: integer
-            default: 25
-            maximum: 1000
-        - name: min_population
-          in: query
-          schema:
-            type: integer
-            default: 50000
-            maximum: 10000000
-      responses:
-        '200':
-          description: Random city.
-        '404':
-          description: No loaded cities available.
   /api/v1/search/cities:
     get:
       tags: [Search]
@@ -281,7 +161,6 @@ paths:
       summary: Search POIs by name, city, coordinates, type, cuisine, or dietary filters.
       security:
         - bearerAuth: []
-        - sessionCookie: []
         - {}
       parameters:
         - name: q
@@ -354,100 +233,12 @@ paths:
                 $ref: '#/components/schemas/SearchResults'
         '400':
           description: q, city_name, or complete coordinates are required.
-  /api/v1/autocomplete:
-    get:
-      tags: [Search]
-      summary: Return fast POI suggestions for type-ahead.
-      parameters:
-        - name: q
-          in: query
-          schema:
-            type: string
-            minLength: 2
-        - name: country_code
-          in: query
-          schema:
-            type: string
-        - name: city_geoname_id
-          in: query
-          schema:
-            type: integer
-        - name: poi_type
-          in: query
-          schema:
-            type: string
-        - name: poi_types
-          in: query
-          schema:
-            type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 10
-            maximum: 50
-      responses:
-        '200':
-          description: Suggestions, or an empty array for short queries.
-        '500':
-          description: Autocomplete is temporarily unavailable.
-  /api/v1/map/pois:
-    get:
-      tags: [Maps]
-      summary: Return POIs inside a map bounding box.
-      security:
-        - bearerAuth: []
-        - sessionCookie: []
-        - {}
-      parameters:
-        - name: sw_lat
-          in: query
-          required: true
-          schema:
-            type: number
-        - name: sw_lng
-          in: query
-          required: true
-          schema:
-            type: number
-        - name: ne_lat
-          in: query
-          required: true
-          schema:
-            type: number
-        - name: ne_lng
-          in: query
-          required: true
-          schema:
-            type: number
-        - name: types
-          in: query
-          schema:
-            type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 200
-            maximum: 500
-        - name: min_rating
-          in: query
-          schema:
-            type: number
-      responses:
-        '200':
-          description: POIs in the bounding box.
-        '400':
-          description: Bounding box coordinates are invalid.
-        '500':
-          description: Map places are temporarily unavailable.
   /api/v1/poi/{osm_id}:
     get:
       tags: [Places]
       summary: Return full POI details.
       security:
         - bearerAuth: []
-        - sessionCookie: []
         - {}
       parameters:
         - name: osm_id
@@ -472,7 +263,6 @@ paths:
       summary: Return nearby POIs for a source place.
       security:
         - bearerAuth: []
-        - sessionCookie: []
         - {}
       parameters:
         - name: osm_id
@@ -505,39 +295,12 @@ paths:
           description: POI not found.
         '422':
           description: Source POI has no coordinates.
-  /api/v1/cities/{country_code}/{city_name}/overview:
-    get:
-      tags: [Discovery]
-      summary: Return a city overview for the web city pulse surface.
-      security:
-        - bearerAuth: []
-        - sessionCookie: []
-        - {}
-      parameters:
-        - name: country_code
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: city_name
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: City counts, top places, and suggested map focus.
-        '400':
-          description: country_code and city_name are required.
-        '404':
-          description: City not found.
   /api/v1/favorites:
     get:
       tags: [Favorites]
       summary: List the authenticated user's favorites.
       security:
         - bearerAuth: []
-        - sessionCookie: []
       parameters:
         - name: poi_types
           in: query
@@ -559,7 +322,6 @@ paths:
       summary: Add a POI to the authenticated user's favorites.
       security:
         - bearerAuth: []
-        - sessionCookie: []
       requestBody:
         required: true
         content:
@@ -589,7 +351,6 @@ paths:
       summary: Update notes for a favorite.
       security:
         - bearerAuth: []
-        - sessionCookie: []
       parameters:
         - name: osm_id
           in: path
@@ -620,7 +381,6 @@ paths:
       summary: Remove a favorite.
       security:
         - bearerAuth: []
-        - sessionCookie: []
       parameters:
         - name: osm_id
           in: path

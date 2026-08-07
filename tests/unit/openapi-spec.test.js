@@ -31,7 +31,7 @@ function registeredRoutes() {
 
 function documentedApiRoutes() {
   const routes = [];
-  const pathBlocks = openapi.matchAll(/^  (\/(?:api\/v1|auth)\/[^:\n]*):\n([\s\S]*?)(?=^  \/|^components:)/gm);
+  const pathBlocks = openapi.matchAll(/^  (\/api\/v1\/[^:\n]*):\n([\s\S]*?)(?=^  \/|^components:)/gm);
   for (const block of pathBlocks) {
     const routePath = block[1];
     const methods = block[2].matchAll(/^\s{4}(get|post|patch|delete):/gm);
@@ -60,7 +60,7 @@ describe('OpenAPI spec', () => {
     }
   });
 
-  it('does not advertise unimplemented API or auth routes', () => {
+  it('does not advertise unimplemented API routes', () => {
     const implemented = new Set(registeredRoutes().map(route => `${route.method} ${route.path}`));
     const advertisedButMissing = documentedApiRoutes()
       .map(route => `${route.method} ${route.path}`)
@@ -69,9 +69,9 @@ describe('OpenAPI spec', () => {
     assert.deepStrictEqual(advertisedButMissing, []);
   });
 
-  it('documents auth schemes and protected favorites operations', () => {
+  it('documents bearer authentication and protected favorites operations', () => {
     assert.match(openapi, /bearerAuth:/);
-    assert.match(openapi, /sessionCookie:/);
+    assert.doesNotMatch(openapi, /sessionCookie:/);
 
     for (const method of ['get', 'post']) {
       const block = operationBlock(openapi, '/api/v1/favorites', method);

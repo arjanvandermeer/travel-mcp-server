@@ -30,7 +30,7 @@ describe('removeNullFields', () => {
 });
 
 describe('addResourceUris', () => {
-  it('adds resource and preview URLs to POI arrays', () => {
+  it('adds resource URIs to POI arrays', () => {
     const result = addResourceUris(
       [{ osm_id: 'node/123', name: 'Cafe' }],
       'https://travel.example.com/'
@@ -40,7 +40,6 @@ describe('addResourceUris', () => {
       osm_id: 'node/123',
       name: 'Cafe',
       resource_uri: 'ui://travel.example.com/poi/node/123',
-      preview_url: 'https://travel.example.com/preview/poi/node/123',
     }]);
   });
 
@@ -51,7 +50,6 @@ describe('addResourceUris', () => {
     );
 
     assert.strictEqual(result.resource_uri, 'ui://travel.example.com/poi/way/456');
-    assert.strictEqual(result.preview_url, 'https://travel.example.com/preview/poi/way/456');
   });
 
   it('returns non-POI values unchanged', () => {

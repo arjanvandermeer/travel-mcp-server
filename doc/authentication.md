@@ -4,7 +4,7 @@ This document describes the authentication system for the travel-mcp-server.
 
 ## Why Authenticate?
 
-Authentication is **completely optional**. The server works fully without authentication, and anonymous users have access to all tools and features.
+Authentication is optional for public travel search. It is required for personal data features such as preferences and favorites, and for administration tools.
 
 However, authentication enables:
 
@@ -12,7 +12,7 @@ However, authentication enables:
 2. **User Identification** - Track which user made requests (useful for debugging and analytics in Sentry)
 3. **User Features** - Store favorites, preferences, and personalized recommendations
 
-**Key Design Principle**: Authentication is transparent. If you don't provide a token, or provide an invalid token, the server simply treats you as anonymous. No errors, no access denied - just default rate limits.
+**Key Design Principle**: Missing or invalid credentials fall back to anonymous public search. Account and administrator operations reject callers without the required identity or role.
 
 ## Authentication Options
 
@@ -129,7 +129,7 @@ curl -X POST https://<mcp-server-url>/mcp \
 | Database error | Anonymous session (logged) |
 | Valid token | Authenticated session |
 
-The server never returns 401/403 errors for auth issues - it gracefully falls back to anonymous access.
+Public search gracefully falls back to anonymous access. Favorites REST routes return `401` without a valid bearer token; MCP account and administrator tools report the corresponding authorization error.
 
 ### Checking Authentication Status
 
@@ -241,7 +241,6 @@ The following auth/session state is intentionally process-local:
 
 | Store | File | Purpose | Failure behavior |
 |-------|------|---------|------------------|
-| `pendingAuth` | `src/api/auth.js` | Short-lived PKCE verifier/state for `/auth/login` -> `/auth/callback` web login | Restart or routing to another process invalidates the login state; the user must retry login |
 | `sessions` | `src/index-http.js` | Streamable HTTP MCP session ID -> transport/server/user reference | Restart or routing to another process drops the MCP session; the client must create or reinitialize a session |
 | `introspectionCache` | `src/index-http.js` | Token -> user cache for OAuth/database token validation | Cache miss is safe and revalidates against the database or OAuth introspection endpoint |
 
@@ -249,15 +248,14 @@ Operational requirements:
 
 1. Run one HTTP MCP process per public `server_base_url`.
 2. If a reverse proxy is present, route all requests for a given deployment to that process.
-3. If multiple processes are introduced, use sticky sessions for `/mcp` keyed by `mcp-session-id`, and route `/auth/callback` to the same process that handled `/auth/login`.
+3. If multiple processes are introduced, use sticky sessions for `/mcp` keyed by `mcp-session-id`.
 4. Treat the OAuth introspection cache as an optimization only; the database and OAuth worker remain the sources of truth.
 
 Before horizontal scaling, redesign these boundaries explicitly:
 
-1. Move PKCE pending auth state to a shared store with TTL and one-time consume semantics.
-2. Either keep MCP Streamable HTTP sessions sticky, or replace the in-process `sessions` map with a transport/session strategy that supports cross-process routing.
-3. Keep introspection caches per-process or move them to a shared cache only if revocation latency, TTL, and invalidation behavior are documented.
-4. Add integration coverage that exercises login callback routing, MCP session reuse, auth upgrade on an existing session, and token cache expiry across the chosen state boundary.
+1. Either keep MCP Streamable HTTP sessions sticky, or replace the in-process `sessions` map with a transport/session strategy that supports cross-process routing.
+2. Keep introspection caches per-process or move them to a shared cache only if revocation latency, TTL, and invalidation behavior are documented.
+3. Add integration coverage that exercises MCP session reuse, auth upgrade on an existing session, and token cache expiry across the chosen state boundary.
 
 ### Prerequisites
 
@@ -562,7 +560,6 @@ authentication is required.
 2. **State Parameter**: Prevents CSRF attacks
 3. **Token Rotation**: Refresh tokens are rotated on each use
 4. **Short-lived Codes**: Authorization codes expire in 5 minutes
-5. **Cookie Flags**: Web session cookies are `HttpOnly`, `SameSite=Lax`, and `Secure` on HTTPS
 
 ### Troubleshooting
 

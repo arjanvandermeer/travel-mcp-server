@@ -33,10 +33,9 @@ Suggested code-impacting paths:
 - `package.json`
 - `package-lock.json`
 - `scripts/**`
-- `slm/**`
 - `src/**`
 - `tests/**`
-- `web/**`
+- `src/templates/**` and MCP widget resources
 
 Suggested low-signal paths to ignore for triggering:
 
@@ -115,9 +114,8 @@ Review these areas:
 - Validation, config, telemetry, templates, and shared libs under `src/`
 - Import and maintenance scripts under `src/` and `scripts/`
 - Schema and migrations under `data/`
-- Frontend under `web/`
+- MCP App widgets under `src/templates/`
 - OAuth worker under `cloudflare-oauth-worker/`
-- Local SLM agent under `slm/`
 - Tests under `tests/`
 - CI workflows under `.github/`
 - Existing documentation under `README.md`, `doc/getting-started.md`, and `doc/`

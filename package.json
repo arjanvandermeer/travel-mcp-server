@@ -41,8 +41,6 @@
     "config": "node scripts/manage-config.js",
     "lint": "eslint src/ scripts/",
     "lint:fix": "eslint src/ scripts/ --fix",
-    "agent": "node slm/ollama-agent.js",
-    "test:agent": "node slm/test-ollama-agent.js",
     "prepare": "husky || true"
   },
   "keywords": [

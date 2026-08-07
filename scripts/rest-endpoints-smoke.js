@@ -92,27 +92,12 @@ async function smokeRestEndpoints() {
     assert.ok(Array.isArray(json.authorization_servers), 'protected resource metadata should include authorization_servers');
   });
 
-  await assertJsonRoute({ path: '/api/v1/countries', expectedStatuses: [200] }, json => {
-    assert.ok(Array.isArray(json), 'countries should return an array');
-  });
-  await assertJsonRoute({ path: '/api/v1/states?country_code=GB', expectedStatuses: [200] }, json => {
-    assert.ok(Array.isArray(json), 'states should return an array');
-  });
-  await assertJsonRoute({ path: '/api/v1/search/cities/random?min_pois=1&min_population=1', expectedStatuses: [200, 404] });
   await assertJsonRoute({ path: '/api/v1/search/cities?country_code=GB&q=London&limit=1', expectedStatuses: [200] }, json => {
     assert.ok(Array.isArray(json.results), 'city search should return results');
   });
   await assertJsonRoute({ path: '/api/v1/search/pois?q=__mcp_rest_smoke_no_match__&limit=1', expectedStatuses: [200] }, json => {
     assert.ok(Array.isArray(json.results), 'POI search should return results');
   });
-  await assertJsonRoute({ path: '/api/v1/autocomplete?q=zz&limit=1', expectedStatuses: [200] }, json => {
-    assert.ok(Array.isArray(json.suggestions), 'autocomplete should return suggestions');
-  });
-  await assertJsonRoute({ path: '/api/v1/homepage', expectedStatuses: [200, 503] });
-  await assertJsonRoute({ path: '/api/v1/map/pois?sw_lat=0&sw_lng=0&ne_lat=0.1&ne_lng=0.1&limit=1', expectedStatuses: [200] }, json => {
-    assert.ok(Array.isArray(json.results), 'map POIs should return results');
-  });
-  await assertJsonRoute({ path: '/api/v1/cities/ZZ/Nowhere/overview', expectedStatuses: [404] });
   await assertJsonRoute({ path: '/api/v1/poi/0', expectedStatuses: [404] });
   await assertJsonRoute({ path: '/api/v1/poi/0/nearby', expectedStatuses: [404] });
 
@@ -121,19 +106,7 @@ async function smokeRestEndpoints() {
   await assertJsonRoute({ method: 'PATCH', path: '/api/v1/favorites/0', body: { notes: 'smoke' }, expectedStatuses: [401] });
   await assertJsonRoute({ method: 'DELETE', path: '/api/v1/favorites/0', expectedStatuses: [401] });
 
-  await assertJsonRoute({ path: '/auth/me', expectedStatuses: [200] }, json => {
-    assert.equal(json.authenticated, false);
-  });
-  await request({ path: '/auth/logout', expectedStatuses: [302] });
-  await request({ path: '/auth/callback', expectedStatuses: [400] });
-  await request({ path: '/auth/login', expectedStatuses: [302, 500] });
-
-  await request({ path: '/preview/poi/random', expectedStatuses: [200, 404] });
-  await request({ path: '/preview/poi/0', expectedStatuses: [404] });
-  await request({ path: '/preview/poi/0/nearby', expectedStatuses: [404] });
-  await request({ path: '/', expectedStatuses: [200] });
-  await request({ path: '/web/js/app.js', expectedStatuses: [200, 404] });
-  await request({ method: 'OPTIONS', path: '/api/v1/countries', expectedStatuses: [200] });
+  await request({ method: 'OPTIONS', path: '/api/v1/search/pois', expectedStatuses: [200] });
   await assertJsonRoute({ method: 'POST', path: '/api/v1/unknown-rest-smoke', expectedStatuses: [404] });
 }
 
@@ -145,8 +118,8 @@ async function main() {
     cwd: new URL('..', import.meta.url),
     env: {
       ...process.env,
-      DATABASE_URL: process.env.DATABASE_URL || defaultDatabaseUrl(),
-      NODE_ENV: process.env.NODE_ENV || 'test',
+      DATABASE_URL: process.env.REST_SMOKE_DATABASE_URL || defaultDatabaseUrl(),
+      NODE_ENV: 'test',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });

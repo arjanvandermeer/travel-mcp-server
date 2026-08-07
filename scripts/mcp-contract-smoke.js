@@ -31,32 +31,19 @@ async function main() {
     assert.equal(appTool?._meta?.ui?.resourceUri, 'ui://widget/search-results.html');
 
     const resources = await client.listResources();
-    assert.ok(resources.resources.some(resource => resource.uri === 'info://version'));
+    assert.deepEqual(resources.resources, []);
 
     const templates = await client.listResourceTemplates();
     assert.ok(templates.resourceTemplates.some(template => template.uriTemplate === 'ui://widget/search-results.html'));
     assert.ok(templates.resourceTemplates.every(template => template.mimeType === MCP_APP_HTML_MIME_TYPE));
-
-    const versionResource = await client.readResource({ uri: 'info://version' });
-    assert.ok(versionResource.contents.some(content => content.uri === 'info://version'));
 
     const appResource = await client.readResource({ uri: 'ui://widget/search-results.html' });
     assert.equal(appResource.contents.length, 1);
     assert.equal(appResource.contents[0].mimeType, MCP_APP_HTML_MIME_TYPE);
     assert.ok(appResource.contents[0].text.includes('<html'));
 
-    const prompts = await client.listPrompts();
-    assert.ok(prompts.prompts.length > 0, 'prompts/list should return prompts');
-
-    const prompt = await client.getPrompt({
-      name: 'find_hotels_in_city',
-      arguments: { city: 'London', country_code: 'GB' },
-    });
-    assert.ok(prompt.messages.length > 0, 'prompts/get should return messages');
-
-    const stats = await client.callTool({ name: 'get_stats', arguments: {} });
-    assert.notEqual(stats.isError, true, 'get_stats should not return a tool error');
-    assert.ok(Array.isArray(stats.content), 'tools/call should return content');
+    assert.ok(!tools.tools.some(tool => tool.name === 'get_stats'), 'anonymous tools/list must hide admin tools');
+    assert.ok(!tools.tools.some(tool => tool.name === 'add_favorite'), 'anonymous tools/list must hide account tools');
 
     const appResult = await client.callTool({
       name: 'search_hotels_ui',

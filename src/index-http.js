@@ -16,25 +16,15 @@ import './sentry-init.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { TravelDatabase } from './database.js';
 import * as telemetry from './telemetry.js';
-import { render } from './templates/index.js';
-import { renderPOIPreview, renderNearbyWidget, getNearbyTypes, fetchNearbyForPOI } from './tools-config.js';
 import { createTravelMCPServer } from './mcp-server-factory.js';
 import { versionInfo } from './version.js';
 import http from 'http';
 import crypto from 'crypto';
 import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
-import { ApiRouter, parseCookies } from './api-router.js';
-import { registerCountryRoutes } from './api/countries.js';
+import { ApiRouter } from './api-router.js';
 import { registerSearchRoutes } from './api/search.js';
-import { registerAutocompleteRoutes } from './api/autocomplete.js';
 import { registerPOIRoutes } from './api/poi.js';
 import { registerFavoritesRoutes } from './api/favorites.js';
-import { registerAuthRoutes } from './api/auth.js';
-import { registerHomepageRoutes } from './api/homepage.js';
-import { registerMapRoutes } from './api/map.js';
-import { registerCityOverviewRoutes } from './api/city-overview.js';
 import {
   SESSION_MAX_AGE_MS,
   SESSION_CLEANUP_INTERVAL_MS,
@@ -44,9 +34,7 @@ import {
   AUTH_TOKEN_MIN_LENGTH,
   OAUTH_INTROSPECTION_CACHE_TTL_MS,
 } from './config.js';
-import { getStaticHeaders, obfuscateEmail, renderWebIndex } from './http-static-utils.js';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+import { obfuscateEmail } from './log-utils.js';
 
 let db;
 try {
@@ -391,34 +379,12 @@ async function main() {
     console.warn('Failed to initialize telemetry:', err.message);
   }
 
-  // Set up API router for /api/v1/* and /auth/* routes
+  // Set up the public REST API.
   const apiRouter = new ApiRouter();
-  registerCountryRoutes(apiRouter);
   registerSearchRoutes(apiRouter);
-  registerAutocompleteRoutes(apiRouter);
   registerPOIRoutes(apiRouter);
   registerFavoritesRoutes(apiRouter);
-  registerAuthRoutes(apiRouter);
-  registerHomepageRoutes(apiRouter);
-  registerMapRoutes(apiRouter);
-  registerCityOverviewRoutes(apiRouter);
-
-  // Static file MIME types
-  const MIME_TYPES = {
-    '.html': 'text/html',
-    '.css': 'text/css',
-    '.js': 'application/javascript',
-    '.json': 'application/json',
-    '.yaml': 'application/yaml',
-    '.yml': 'application/yaml',
-    '.svg': 'image/svg+xml',
-    '.png': 'image/png',
-    '.jpg': 'image/jpeg',
-    '.ico': 'image/x-icon',
-  };
-
-  const WEB_DIR = path.join(__dirname, '..', 'web');
-  const OPENAPI_SPEC_PATH = path.join(__dirname, '..', 'doc', 'openapi.yaml');
+  const openApiSpecUrl = new URL('../doc/openapi.yaml', import.meta.url);
 
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -443,12 +409,15 @@ async function main() {
     }
 
     if ((req.method === 'GET' || req.method === 'HEAD') && pathname === '/openapi.yaml') {
-      res.writeHead(200, getStaticHeaders(MIME_TYPES['.yaml']));
+      res.writeHead(200, {
+        'Content-Type': 'application/yaml',
+        'Cache-Control': 'no-store, max-age=0',
+      });
       if (req.method === 'HEAD') {
         res.end();
         return;
       }
-      fs.createReadStream(OPENAPI_SPEC_PATH).pipe(res);
+      fs.createReadStream(openApiSpecUrl).pipe(res);
       return;
     }
 
@@ -468,7 +437,7 @@ async function main() {
         endpoints: {
           mcp: '/mcp',
           health: '/health',
-          preview: '/preview/poi/{osm_id}',
+          rest: '/api/v1/*',
         },
       }));
       return;
@@ -488,158 +457,12 @@ async function main() {
       return;
     }
 
-    // Random POI preview endpoint
-    if (pathname === '/preview/poi/random') {
-      try {
-        let poi = await db.getRandomPOI();
-        if (!poi) {
-          res.writeHead(404, { 'Content-Type': 'text/html' });
-          res.end('<h1>No POIs found</h1>');
-          return;
-        }
-        const user = await getUserFromRequest(req);
-        if (user) {
-          [poi] = await db.addFavoriteStatus([poi], user.id);
-        }
-        const { nearbyPois, nearbyTitle } = await fetchNearbyForPOI(poi, db, user?.id);
-        const html = renderPOIPreview(poi, render, nearbyPois, nearbyTitle);
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(html);
-      } catch (err) {
-        console.error('Error rendering random POI:', err);
-        telemetry.captureException(err, { context: 'preview_random_poi' });
-        res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end('<h1>Internal Server Error</h1>');
-      }
-      return;
-    }
-
-    // Nearby POIs preview endpoint
-    const nearbyMatch = pathname.match(/^\/preview\/poi\/(\d+)\/nearby$/);
-    if (nearbyMatch) {
-      try {
-        const osmId = parseInt(nearbyMatch[1], 10);
-        const sourcePoi = await db.getPOIDetails(osmId);
-        if (!sourcePoi) {
-          res.writeHead(404, { 'Content-Type': 'text/html' });
-          res.end(`<h1>POI not found</h1><p>OSM ID: ${osmId}</p>`);
-          return;
-        }
-
-        const url = new URL(req.url, `http://${req.headers.host}`);
-        const typesParam = url.searchParams.get('types');
-        const radiusParam = parseFloat(url.searchParams.get('radius')) || 1.5;
-        const limitParam = parseInt(url.searchParams.get('limit'), 10) || 5;
-
-        const resultTypes = typesParam
-          ? typesParam.split(',').map(t => t.trim())
-          : getNearbyTypes(sourcePoi.poi_type);
-
-        const nearbyPois = await db.searchPOIsNearCoordinates(
-          sourcePoi.osm_latitude,
-          sourcePoi.osm_longitude,
-          Math.min(radiusParam, 10),
-          resultTypes,
-          Math.min(limitParam, 20),
-          null,
-          [sourcePoi.osm_id],
-        );
-
-        const html = renderNearbyWidget(sourcePoi, nearbyPois, render);
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(html);
-      } catch (err) {
-        console.error('Error rendering nearby POIs:', err);
-        telemetry.captureException(err, { context: 'preview_nearby_pois' });
-        res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end('<h1>Internal Server Error</h1>');
-      }
-      return;
-    }
-
-    const poiPreviewMatch = pathname.match(/^\/preview\/poi\/(\d+)$/);
-    if (poiPreviewMatch) {
-      try {
-        const osmId = parseInt(poiPreviewMatch[1], 10);
-        let poi = await db.getPOIDetails(osmId);
-        if (!poi) {
-          res.writeHead(404, { 'Content-Type': 'text/html' });
-          res.end(`<h1>POI not found</h1><p>OSM ID: ${osmId}</p>`);
-          return;
-        }
-        const user = await getUserFromRequest(req);
-        if (user) {
-          [poi] = await db.addFavoriteStatus([poi], user.id);
-        }
-        const { nearbyPois: poiNearby, nearbyTitle: poiNearbyTitle } = await fetchNearbyForPOI(poi, db, user?.id);
-        const html = renderPOIPreview(poi, render, poiNearby, poiNearbyTitle);
-        res.writeHead(200, { 'Content-Type': 'text/html' });
-        res.end(html);
-      } catch (err) {
-        console.error('Error rendering POI:', err);
-        telemetry.captureException(err, { context: 'preview_poi', osmId: parseInt(poiPreviewMatch[1], 10) });
-        res.writeHead(500, { 'Content-Type': 'text/html' });
-        res.end('<h1>Internal Server Error</h1>');
-      }
-      return;
-    }
-
-    // API routes (/api/v1/* and /auth/*)
-    if (pathname.startsWith('/api/') || pathname.startsWith('/auth/')) {
-      // Extract user from session cookie (web frontend) or Bearer token (API clients)
-      const cookies = parseCookies(req);
-      let user;
-      if (cookies.session) {
-        // Create a fake request with Authorization header for getUserFromRequest
-        const fakeReq = { headers: { authorization: `Bearer ${cookies.session}` } };
-        user = await getUserFromRequest(fakeReq);
-      } else {
-        user = await getUserFromRequest(req);
-      }
-
+    // REST API routes are bearer-token authenticated where required.
+    if (pathname.startsWith('/api/')) {
+      const user = await getUserFromRequest(req);
       const handled = await apiRouter.handle(req, res, { db, user });
       if (handled) return;
       // If no route matched, fall through to 404
-    }
-
-    // Static file serving for web frontend
-    if ((req.method === 'GET' || req.method === 'HEAD') && !pathname.startsWith('/mcp')) {
-      // Serve index.html for SPA routes (no extension = SPA route)
-      let filePath;
-      if (pathname === '/' || !path.extname(pathname)) {
-        filePath = path.join(WEB_DIR, 'index.html');
-      } else {
-        // Prevent directory traversal: resolve full path and verify it's within WEB_DIR
-        filePath = path.resolve(WEB_DIR, pathname.slice(1));
-        if (!filePath.startsWith(WEB_DIR)) {
-          res.writeHead(403);
-          res.end('Forbidden');
-          return;
-        }
-      }
-
-      // Check if file exists
-      try {
-        const stat = fs.statSync(filePath);
-        if (stat.isFile()) {
-          const ext = path.extname(filePath);
-          const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-          res.writeHead(200, getStaticHeaders(contentType));
-          if (req.method === 'HEAD') {
-            res.end();
-            return;
-          }
-          if (path.basename(filePath) === 'index.html') {
-            const measurementId = await db.getConfigCached('google_analytics_measurement_id');
-            res.end(renderWebIndex(filePath, { versionInfo, measurementId }));
-            return;
-          }
-          fs.createReadStream(filePath).pipe(res);
-          return;
-        }
-      } catch {
-        // File not found — fall through to MCP or 404
-      }
     }
 
     // MCP endpoint - handles all MCP requests with multi-session support
@@ -795,16 +618,7 @@ async function main() {
     console.error(`Multi-session support: enabled`);
     console.error(`MCP endpoint: /mcp`);
     console.error(`Health check: /health`);
-    console.error(`Preview: /preview/poi/{osm_id}`);
-    console.error(`Preview random: /preview/poi/random`);
-    console.error(`Web API: /api/v1/*`);
-    console.error(`Web auth: /auth/*`);
-    console.error(`Web frontend: / (serves web/ directory)`);
-
-    // Warm expensive caches in background (countries query is slow on cold DB)
-    db.listCountriesWithData()
-      .then(rows => console.error(`Cache warm-up: ${rows.length} countries loaded`))
-      .catch(err => console.error('Cache warm-up failed (will retry on first request):', err.message));
+    console.error(`REST API: /api/v1/*`);
   });
 }
 
