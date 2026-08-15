@@ -168,6 +168,7 @@
 }
 .carousel-dots span:first-child { background: var(--accent); }
 .dossier-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; padding: 22px; }
+.dossier-grid-single { grid-template-columns: minmax(0, 1fr); }
 .dossier-main, .composer-panel { min-width: 0; }
 .panel-kicker { color: var(--muted); font-size: 12px; font-weight: 750; text-transform: uppercase; }
 .tabs { display: flex; gap: 8px; margin: 18px 0; }

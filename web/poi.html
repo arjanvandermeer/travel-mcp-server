@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Travel</title>
+  <link rel="icon" href="/favicon.ico" sizes="any">
+  <link rel="icon" href="/favicon.png" type="image/png">
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/dossier.css">
+  <script type="module" src="/js/poi-app.js"></script>
+</head>
+<body x-data>
+  <div class="app-shell">
+    <header class="topbar">
+      <nav class="nav-actions" aria-label="Primary">
+        <a class="nav-link active" href="/">Nearby restaurants</a>
+      </nav>
+      <a class="build-chip" href="__APP_COMMIT_URL__" target="_blank" rel="noopener" title="View running build on GitHub">__APP_COMMIT__</a>
+    </header>
+
+    <main class="workspace page-poi">
+      <section class="dossier">
+        <a class="back-button" href="/">Back to nearby restaurants</a>
+        <template x-if="$store.poi.loading">
+          <div class="skeleton-stack dossier-shell"><div class="skeleton block"></div><div class="skeleton block"></div></div>
+        </template>
+        <template x-if="!$store.poi.loading && $store.poi.error">
+          <div class="empty-panel wide">
+            <h1>Place unavailable</h1>
+            <p x-text="$store.poi.error"></p>
+            <a class="secondary-button compact" href="/">Return to nearby restaurants</a>
+          </div>
+        </template>
+        <template x-if="!$store.poi.loading && $store.poi.current">
+          <article class="dossier-shell">
+            <div class="dossier-hero" :style="$store.format.heroStyle($store.poi.current)">
+              <div class="dossier-hero-copy">
+                <div class="eyebrow" x-text="($store.poi.current.google_primary_type_display || $store.poi.current.poi_type || 'Property')"></div>
+                <h1 x-text="$store.poi.current.name || $store.poi.current.osm_name"></h1>
+                <p x-text="$store.format.bestAddress($store.poi.current) || $store.format.placeMeta($store.poi.current)"></p>
+                <div class="hero-pills">
+                  <div class="open-compact hero-open-status" :class="$store.format.openStatusClass($store.poi.current)">
+                    <span x-text="$store.format.openStatus($store.poi.current)"></span>
+                    <small x-show="$store.format.hoursDetail($store.poi.current)" x-text="$store.format.hoursDetail($store.poi.current)"></small>
+                  </div>
+                  <span x-show="$store.format.priceLabel($store.poi.current)" class="price-pill" x-text="$store.format.priceLabel($store.poi.current)"></span>
+                  <span x-show="$store.poi.current.google_rating"><strong x-text="Number($store.poi.current.google_rating).toFixed(1)"></strong> &#9733;</span>
+                  <span x-show="$store.poi.current.google_review_count" x-text="$store.poi.current.google_review_count + ' reviews'"></span>
+                </div>
+              </div>
+              <div class="hero-actions">
+                <a class="hero-icon-button" :href="$store.poi.mapsUrl()" target="_blank" rel="noopener" aria-label="Open in Maps" title="Maps">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 21s7-5.3 7-11.6A7 7 0 0 0 5 9.4C5 15.7 12 21 12 21z"/><circle cx="12" cy="9.4" r="2.4"/></svg>
+                </a>
+                <a class="hero-icon-button" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener" aria-label="Open website" title="Website">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2 2.2 3 5 3 8.5s-1 6.3-3 8.5c-2-2.2-3-5-3-8.5s1-6.3 3-8.5z"/></svg>
+                </a>
+                <a class="hero-icon-button" x-show="$store.poi.phoneUrl()" :href="$store.poi.phoneUrl()" aria-label="Call" title="Call">
+                  <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4.5l2.6 4.7-1.8 1.4c1.1 2.3 2.9 4.1 5.2 5.2l1.4-1.8 4.7 2.6-.8 3.1c-.2.7-.8 1.1-1.5 1-7.4-.8-13.3-6.7-14.1-14.1-.1-.7.3-1.3 1-1.5L7 4.5z"/></svg>
+                </a>
+              </div>
+            </div>
+            <div class="media-carousel" x-show="$store.format.detailPhotos($store.poi.current).length">
+              <button class="carousel-arrow left" type="button" aria-label="Previous photos" @click="$refs.poiPhotoStrip.scrollBy({ left: -320, behavior: 'smooth' })">&lsaquo;</button>
+              <div class="photo-strip" x-ref="poiPhotoStrip">
+                <template x-for="photo in $store.format.detailPhotos($store.poi.current)" :key="photo">
+                  <img class="photo-tile" :src="photo" alt="" loading="lazy">
+                </template>
+              </div>
+              <button class="carousel-arrow right" type="button" aria-label="Next photos" @click="$refs.poiPhotoStrip.scrollBy({ left: 320, behavior: 'smooth' })">&rsaquo;</button>
+              <div class="carousel-dots" aria-hidden="true">
+                <template x-for="photo in $store.format.detailPhotos($store.poi.current)" :key="'dot-' + photo"><span></span></template>
+              </div>
+            </div>
+            <div class="dossier-grid dossier-grid-single">
+              <section class="dossier-main">
+                <div class="copy-block">
+                  <div class="place-contact-box" x-show="$store.format.bestAddress($store.poi.current) || $store.poi.phoneNumber() || $store.poi.websiteUrl()">
+                    <h2 x-text="$store.poi.current.name || $store.poi.current.osm_name || 'Place details'"></h2>
+                    <div class="place-contact-rows">
+                      <a class="place-contact-row" x-show="$store.format.bestAddress($store.poi.current)" :href="$store.poi.mapsUrl()" target="_blank" rel="noopener"><span>Address</span><strong x-text="$store.format.bestAddress($store.poi.current)"></strong></a>
+                      <a class="place-contact-row" x-show="$store.poi.phoneNumber()" :href="$store.poi.phoneUrl()"><span>Phone</span><strong x-text="$store.poi.phoneNumber()"></strong></a>
+                      <a class="place-contact-row place-website-row" x-show="$store.poi.websiteUrl()" :href="$store.poi.websiteUrl()" target="_blank" rel="noopener"><span>Website</span><strong :title="$store.poi.websiteUrl()" x-text="$store.format.websiteLabel($store.poi.current)"></strong></a>
+                    </div>
+                  </div>
+                  <div class="ai-summary-section" x-show="$store.poi.current.ai_homepage_summary || $store.poi.current.ai_review_summary">
+                    <div class="section-heading"><span>AI summary</span><strong x-show="$store.poi.current.ai_homepage_summary && $store.poi.current.ai_review_summary">Website + reviews</strong></div>
+                    <div class="ai-summary-grid">
+                      <article class="ai-summary-card" x-show="$store.poi.current.ai_homepage_summary"><span>Homepage</span><p x-text="$store.poi.current.ai_homepage_summary"></p><a x-show="$store.poi.current.ai_homepage_url" :href="$store.poi.current.ai_homepage_url" target="_blank" rel="noopener">Source website</a></article>
+                      <article class="ai-summary-card" x-show="$store.poi.current.ai_review_summary"><span>Reviews</span><p x-text="$store.poi.current.ai_review_summary"></p></article>
+                    </div>
+                  </div>
+                  <div class="review-section" x-show="$store.format.reviewCards($store.poi.current).length">
+                    <div class="section-heading"><span>Reviews</span><strong x-text="$store.format.reviewCards($store.poi.current).length + ' shown'"></strong></div>
+                    <div class="review-carousel-shell">
+                      <button class="carousel-arrow left" type="button" aria-label="Previous reviews" @click="$refs.poiReviewStrip.scrollBy({ left: -280, behavior: 'smooth' })">&lsaquo;</button>
+                      <div class="review-strip" x-ref="poiReviewStrip">
+                        <template x-for="review in $store.format.reviewCards($store.poi.current)" :key="review.author + review.text"><article class="review-card"><div class="review-card-top"><strong x-text="review.author"></strong><span x-text="review.ratingStars"></span></div><p x-text="review.text"></p><small x-show="review.relativeTime" x-text="review.relativeTime"></small></article></template>
+                      </div>
+                      <button class="carousel-arrow right" type="button" aria-label="Next reviews" @click="$refs.poiReviewStrip.scrollBy({ left: 280, behavior: 'smooth' })">&rsaquo;</button>
+                    </div>
+                    <div class="carousel-dots" aria-hidden="true"><template x-for="review in $store.format.reviewCards($store.poi.current)" :key="'review-dot-' + review.author + review.text"><span></span></template></div>
+                  </div>
+                  <div class="inline-loading" x-show="$store.poi.isEnriching()" aria-live="polite"><span class="tiny-spinner" aria-hidden="true"></span><span>Refreshing place details</span></div>
+                </div>
+              </section>
+            </div>
+            <div class="dossier-data-footer"><button class="secondary-button compact" @click="$store.poi.dataOpen = true">Data</button></div>
+            <div class="data-modal-backdrop" x-show="$store.poi.dataOpen" x-transition @click.self="$store.poi.dataOpen = false">
+              <section class="data-modal" role="dialog" aria-modal="true" aria-label="Raw place data">
+                <div class="data-modal-header"><h2>Raw place data</h2><button class="close-button" @click="$store.poi.dataOpen = false">&times;</button></div>
+                <pre class="data-pane" x-text="$store.poi.rawJson()"></pre>
+              </section>
+            </div>
+          </article>
+        </template>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

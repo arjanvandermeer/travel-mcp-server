@@ -68,7 +68,7 @@ function renderHomepage() {
 }
 
 function renderPoiPage() {
-  const file = new URL('../web/index.html', import.meta.url);
+  const file = new URL('../web/poi.html', import.meta.url);
   const html = fs.readFileSync(file, 'utf8');
   const currentAssetVersion = assetVersion();
   const commitLabel = versionInfo.gitCommitShort || versionInfo.version || 'local';
@@ -79,7 +79,7 @@ function renderPoiPage() {
   return html
     .replace('href="/css/style.css"', `href="/css/style.css?v=${currentAssetVersion}"`)
     .replace('href="/css/dossier.css"', `href="/css/dossier.css?v=${currentAssetVersion}"`)
-    .replace('src="/js/app.js"', `src="/js/app.js?v=${currentAssetVersion}"`)
+    .replace('src="/js/poi-app.js"', `src="/js/poi-app.js?v=${currentAssetVersion}"`)
     .replaceAll('__APP_COMMIT__', commitLabel)
     .replaceAll('__APP_COMMIT_URL__', commitUrl);
 }
@@ -420,6 +420,7 @@ async function main() {
     ['/css/style.css', { file: new URL('../web/css/style.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/css/dossier.css', { file: new URL('../web/css/dossier.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/js/api.js', { file: new URL('../web/js/api.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/js/poi-app.js', { file: new URL('../web/js/poi-app.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/js/app.js', { file: new URL('../web/js/app.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/js/constants.js', { file: new URL('../web/js/constants.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/js/format-store.js', { file: new URL('../web/js/format-store.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
@@ -452,7 +453,7 @@ async function main() {
     }
 
     const homepageAsset = homepageAssets.get(pathname) || (/^\/poi\/\d+$/.test(pathname)
-      ? { file: new URL('../web/index.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0', isPoiPage: true }
+      ? { file: new URL('../web/poi.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0', isPoiPage: true }
       : null);
     if ((req.method === 'GET' || req.method === 'HEAD') && homepageAsset) {
       const headers = {
