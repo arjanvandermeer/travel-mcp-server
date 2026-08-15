@@ -455,15 +455,18 @@ async function main() {
       ? { file: new URL('../web/index.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0', isPoiPage: true }
       : null);
     if ((req.method === 'GET' || req.method === 'HEAD') && homepageAsset) {
-      res.writeHead(200, {
+      const headers = {
         'Content-Type': homepageAsset.contentType,
         'Cache-Control': homepageAsset.cacheControl,
-        'Content-Security-Policy': homepageAsset.isPoiPage
-          ? "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
-          : "default-src 'self'; connect-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
         'Referrer-Policy': 'same-origin',
         'X-Content-Type-Options': 'nosniff',
-      });
+      };
+      if (homepageAsset.contentType.startsWith('text/html')) {
+        headers['Content-Security-Policy'] = homepageAsset.isPoiPage
+          ? "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+          : "default-src 'self'; connect-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
+      }
+      res.writeHead(200, headers);
       if (req.method === 'HEAD') {
         res.end();
         return;
