@@ -95,8 +95,8 @@ h2 {
 
 .restaurant-link {
   display: grid;
-  grid-template-columns: 88px minmax(0, 1fr) auto;
-  gap: 8px 16px;
+  grid-template-columns: 112px minmax(0, 1fr) auto;
+  gap: 8px 18px;
   color: inherit;
   text-decoration: none;
 }
@@ -109,8 +109,8 @@ h2 {
 .restaurant-photo,
 .restaurant-photo-fallback {
   grid-row: span 2;
-  width: 88px;
-  height: 88px;
+  width: 112px;
+  height: 112px;
   border-radius: 4px;
 }
 
@@ -132,6 +132,20 @@ h2 {
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.35;
+}
+
+.restaurant-rating {
+  grid-column: 2;
+  margin: -1px 0 0;
+  color: #7c4d00;
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+}
+
+.restaurant-rating-star {
+  color: #d58d00;
+  font-size: 1rem;
 }
 
 .restaurant-meta {
@@ -195,10 +209,10 @@ h2 {
   }
 
   .restaurant-link {
-    grid-template-columns: 72px minmax(0, 1fr) auto;
+    grid-template-columns: 88px minmax(0, 1fr) auto;
     gap: 6px 12px;
   }
 
   .restaurant-photo,
-  .restaurant-photo-fallback { width: 72px; height: 72px; }
+  .restaurant-photo-fallback { width: 88px; height: 88px; }
 }

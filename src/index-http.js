@@ -56,19 +56,30 @@ function authCacheKey(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function assetVersion() {
+  return encodeURIComponent([versionInfo.gitCommitShort || versionInfo.version, versionInfo.buildTime].filter(Boolean).join('-'));
+}
+
+function renderHomepage() {
+  const file = new URL('../public/index.html', import.meta.url);
+  return fs.readFileSync(file, 'utf8')
+    .replace('href="/home.css"', `href="/home.css?v=${assetVersion()}"`)
+    .replace('src="/home.js"', `src="/home.js?v=${assetVersion()}"`);
+}
+
 function renderPoiPage() {
   const file = new URL('../web/index.html', import.meta.url);
   const html = fs.readFileSync(file, 'utf8');
-  const assetVersion = encodeURIComponent([versionInfo.gitCommitShort || versionInfo.version, versionInfo.buildTime].filter(Boolean).join('-'));
+  const currentAssetVersion = assetVersion();
   const commitLabel = versionInfo.gitCommitShort || versionInfo.version || 'local';
   const commitUrl = versionInfo.gitCommit
     ? `https://github.com/arjanvandermeer/travel-mcp-server/commit/${versionInfo.gitCommit}`
     : 'https://github.com/arjanvandermeer/travel-mcp-server';
 
   return html
-    .replace('href="/css/style.css"', `href="/css/style.css?v=${assetVersion}"`)
-    .replace('href="/css/dossier.css"', `href="/css/dossier.css?v=${assetVersion}"`)
-    .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`)
+    .replace('href="/css/style.css"', `href="/css/style.css?v=${currentAssetVersion}"`)
+    .replace('href="/css/dossier.css"', `href="/css/dossier.css?v=${currentAssetVersion}"`)
+    .replace('src="/js/app.js"', `src="/js/app.js?v=${currentAssetVersion}"`)
     .replaceAll('__APP_COMMIT__', commitLabel)
     .replaceAll('__APP_COMMIT_URL__', commitUrl);
 }
@@ -403,7 +414,7 @@ async function main() {
   registerFavoritesRoutes(apiRouter);
   const openApiSpecUrl = new URL('../doc/openapi.yaml', import.meta.url);
   const homepageAssets = new Map([
-    ['/', { file: new URL('../public/index.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0' }],
+    ['/', { file: new URL('../public/index.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0', isHomepage: true }],
     ['/home.css', { file: new URL('../public/home.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/home.js', { file: new URL('../public/home.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/css/style.css', { file: new URL('../web/css/style.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
@@ -459,6 +470,10 @@ async function main() {
       }
       if (homepageAsset.isPoiPage) {
         res.end(renderPoiPage());
+        return;
+      }
+      if (homepageAsset.isHomepage) {
+        res.end(renderHomepage());
         return;
       }
       fs.createReadStream(homepageAsset.file).pipe(res);

@@ -2,6 +2,7 @@ const PAGE_SIZE = 25;
 const SEARCH_RADIUS_KM = 10;
 
 const locationStatus = document.querySelector('#location-status');
+const restaurantsHeading = document.querySelector('#restaurants-heading');
 const restaurantList = document.querySelector('#restaurant-list');
 const loadStatus = document.querySelector('#load-status');
 const retryButton = document.querySelector('#retry-location');
@@ -24,8 +25,7 @@ function formatDistance(distanceKm) {
 }
 
 function restaurantMeta(poi) {
-  const details = [poi.osm_cuisine, poi.city].filter(Boolean);
-  return details.join(' / ');
+  return poi.osm_cuisine || '';
 }
 
 function validImageUrl(value) {
@@ -39,8 +39,6 @@ function validImageUrl(value) {
 
 function restaurantBadges(poi) {
   const badges = [];
-  const rating = Number(poi.google_rating);
-  if (Number.isFinite(rating)) badges.push(`${rating.toFixed(1)} rating`);
   if (poi.google_price_level) {
     const prices = {
       PRICE_LEVEL_INEXPENSIVE: '$',
@@ -54,6 +52,39 @@ function restaurantBadges(poi) {
   if (isOpen === true) badges.push('Open now');
   if (isOpen === false) badges.push('Closed now');
   return badges;
+}
+
+function appendRating(link, poi) {
+  const rating = Number(poi.google_rating);
+  if (!Number.isFinite(rating) || rating <= 0) return;
+
+  const ratingElement = document.createElement('span');
+  ratingElement.className = 'restaurant-rating';
+  ratingElement.setAttribute('aria-label', `Rated ${rating.toFixed(1)} out of 5`);
+  const star = document.createElement('span');
+  star.className = 'restaurant-rating-star';
+  star.setAttribute('aria-hidden', 'true');
+  star.textContent = '★';
+  ratingElement.append(star, ` ${rating.toFixed(1)}`);
+  if (poi.google_review_count) ratingElement.append(` (${poi.google_review_count})`);
+  link.append(ratingElement);
+}
+
+async function loadAreaName() {
+  const params = new URLSearchParams({
+    latitude: String(state.latitude),
+    longitude: String(state.longitude),
+    limit: '1',
+  });
+  try {
+    const response = await fetch(`/api/v1/search/cities?${params}`, { headers: { Accept: 'application/json' } });
+    if (!response.ok) return;
+    const payload = await response.json();
+    const city = payload.results?.[0]?.name;
+    if (city) restaurantsHeading.textContent = `Restaurants near ${city}`;
+  } catch {
+    // The restaurant search remains useful when the optional location label fails.
+  }
 }
 
 function appendRestaurants(restaurants) {
@@ -84,6 +115,7 @@ function appendRestaurants(restaurants) {
     name.className = 'restaurant-name';
     name.textContent = poi.name || 'Unnamed restaurant';
     link.append(name);
+    appendRating(link, poi);
 
     const distance = formatDistance(poi.distance_km);
     if (distance) {
@@ -180,6 +212,7 @@ function requestLocation() {
   }
 
   locationStatus.textContent = 'Finding your location...';
+  restaurantsHeading.textContent = 'Restaurants near you';
   retryButton.hidden = true;
   loadStatus.textContent = '';
   restaurantList.replaceChildren();
@@ -192,6 +225,7 @@ function requestLocation() {
     state.longitude = position.coords.longitude;
     state.started = true;
     locationStatus.textContent = 'Location found.';
+    loadAreaName();
     loadNextPage();
   }, handleLocationError, {
     enableHighAccuracy: false,
