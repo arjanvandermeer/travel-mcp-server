@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#0f2d2e">
+    <title>Nearby Restaurants</title>
+    <link rel="stylesheet" href="/home.css">
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="masthead">
+        <p class="eyebrow">Travel</p>
+        <h1>Nearby restaurants</h1>
+        <p id="location-status" class="location-status" aria-live="polite">Finding your location...</p>
+      </header>
+
+      <section aria-labelledby="restaurants-heading">
+        <div class="section-heading">
+          <h2 id="restaurants-heading">Restaurants</h2>
+          <button id="retry-location" class="icon-button" type="button" aria-label="Use my location again" title="Use my location again" hidden>
+            <span aria-hidden="true">&#8635;</span>
+          </button>
+        </div>
+        <div id="restaurant-list" class="restaurant-list" aria-live="polite"></div>
+        <div id="load-status" class="load-status" aria-live="polite"></div>
+        <div id="scroll-sentinel" aria-hidden="true"></div>
+      </section>
+    </main>
+    <script type="module" src="/home.js"></script>
+  </body>
+</html>

@@ -385,6 +385,11 @@ async function main() {
   registerPOIRoutes(apiRouter);
   registerFavoritesRoutes(apiRouter);
   const openApiSpecUrl = new URL('../doc/openapi.yaml', import.meta.url);
+  const homepageAssets = new Map([
+    ['/', { file: new URL('../public/index.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0' }],
+    ['/home.css', { file: new URL('../public/home.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/home.js', { file: new URL('../public/home.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+  ]);
 
   const httpServer = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://localhost');
@@ -405,6 +410,23 @@ async function main() {
     if (req.method === 'OPTIONS') {
       res.writeHead(200);
       res.end();
+      return;
+    }
+
+    const homepageAsset = homepageAssets.get(pathname);
+    if ((req.method === 'GET' || req.method === 'HEAD') && homepageAsset) {
+      res.writeHead(200, {
+        'Content-Type': homepageAsset.contentType,
+        'Cache-Control': homepageAsset.cacheControl,
+        'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+        'Referrer-Policy': 'same-origin',
+        'X-Content-Type-Options': 'nosniff',
+      });
+      if (req.method === 'HEAD') {
+        res.end();
+        return;
+      }
+      fs.createReadStream(homepageAsset.file).pipe(res);
       return;
     }
 
