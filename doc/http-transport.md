@@ -54,6 +54,13 @@ The spec covers city and POI search, POI details and nearby results, and favorit
 ### `GET /health`
 Health check endpoint. Returns server status and available endpoints.
 
+### Public Browser Pages
+
+- `GET /` provides a geolocation-based nearby-restaurant list.
+- `GET /poi/:osmId` provides a full read-only POI dossier.
+
+The pages use the same public REST API as other clients. Their static assets are explicitly allowlisted in `src/index-http.js`; HTML is not cached and references build-versioned assets. See [public-web.md](public-web.md) for browser behavior, security policy, and release verification.
+
 ### `/mcp`
 Streamable HTTP endpoint for MCP protocol communication. Clients should connect to this endpoint using the MCP SDK's Streamable HTTP client transport.
 
@@ -115,6 +122,8 @@ The HTTP server includes CORS headers to allow browser-based clients:
 - `Access-Control-Expose-Headers: mcp-session-id`
 
 ## Deployment
+
+The production EC2 host uses `ec2-pull-deploy.timer` to inspect `main` every minute. It deploys only after the GitHub Actions `CI` workflow succeeds, runs `npm ci`, restarts `travel-mcp-server.service`, health-checks the local service, and rolls back a failed release. The deployer refuses a dirty EC2 checkout. See [public-web.md](public-web.md#deployment) for the release sequence and production verification commands.
 
 ### Docker
 

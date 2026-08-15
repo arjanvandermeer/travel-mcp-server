@@ -12,6 +12,7 @@ This document names the authoritative layers in the Travel MCP Server and the re
 | Enrichment | `src/google-places.js`, `src/google-places-matching.js`, enrichment methods on `TravelDatabase` | Owns Google Places matching, quota accounting, cache status, place details, photos, and mapping state. |
 | Auth worker | Cloudflare OAuth issuer documented in `doc/authentication.md` | Owns Google OAuth login, PKCE, dynamic client registration, token issuance, and introspection responses. |
 | MCP widgets | Handlebars templates in `src/templates/`, `src/resources-config.js`, `src/poi-view-utils.js` | Owns rendered MCP App widgets and resource templates used by ChatGPT integrations. |
+| Public web | `public/index.html`, `public/home.*`, `web/poi.html`, `web/js/poi-app.js`, static-asset routing in `src/index-http.js` | Owns the nearby-restaurant homepage and direct read-only POI dossier. It consumes the public REST API only. |
 | Data import | `scripts/import-*.js`, `scripts/refresh-imports.js`, `scripts/optimize-db.js`, `data/schema.sql` | Owns GeoNames/OSM ingestion, source refresh state, import history, and database optimization. |
 
 Keep cross-layer dependencies pointed downward: transports call tool/API handlers, handlers call `TravelDatabase`, and database methods call external clients such as Google Places. Avoid importing transport or UI concerns into database modules.
@@ -33,6 +34,14 @@ Keep cross-layer dependencies pointed downward: transports call tool/API handler
 3. The route module in `src/api/` validates query/body input and calls `TravelDatabase`.
 4. Optional auth context is resolved from bearer tokens when a route needs user-specific data.
 5. JSON is returned with route-level HTTP status handling.
+
+### Public Web Request
+
+1. `GET /` is served from `public/index.html`; its client calls the public nearby-search REST route after geolocation is available.
+2. A restaurant card links to `GET /poi/:osmId`.
+3. `src/index-http.js` serves `web/poi.html` for numeric POI IDs and cache-busts its page-specific CSS and JavaScript references.
+4. `web/js/poi-app.js` parses the path and calls `GET /api/v1/poi/:osmId`.
+5. The dossier renders the returned POI or an explicit failure state. It must not depend on the legacy general-purpose web route store.
 
 ### Token Introspection
 

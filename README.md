@@ -13,7 +13,8 @@ An MCP server for travel information, powered by GeoNames city data, OpenStreetM
 - **Flexible search** — by name (fuzzy matching), city, coordinates with radius, or any combination
 - **OAuth 2.1 authentication** — Google sign-in via Cloudflare Worker, with PKCE and auto-provisioning
 - **Personal favorites** — bookmark POIs with notes, filtered by location or type
-- **Rich detail views** — structured JSON or rendered HTML pages via MCP resource templates
+- **Public restaurant discovery** — a geolocation-based nearby restaurant list with progressively loaded results and direct POI links
+- **Rich detail views** — structured JSON, MCP App widgets, and a direct read-only POI dossier at `/poi/:osmId`
 - **Dual transport** — stdio (Claude Desktop) and Streamable HTTP (ChatGPT, MCP Inspector, web clients)
 
 ## Engineering Highlights
@@ -22,7 +23,7 @@ This codebase is actively maintained as a practical AI-assisted engineering proj
 
 - **Reliable enrichment scheduling** — Google Places enrichment now uses a generic `next_enrichment_at` schedule for quota pauses, errors, not-found retries, and 180-day refreshes of active data.
 - **Search-triggered background enrichment** — displayed POIs can queue enrichment automatically, processed serially in oldest-due order to avoid quota spikes and duplicate work.
-- **Mobile-first web UI iteration** — the homepage has been reshaped around city discovery, combinable Stay/Eat/See filters, persisted feed preferences, and compact navigation.
+- **Small public web surface** — the homepage loads nearby restaurants from the REST API, while direct POI links use an isolated dossier client rather than a general-purpose SPA router.
 - **Operational guardrails** — CI-oriented checks, npm audit capture, Actions log monitoring, and a recurring code-audit workflow are documented and wired into the repository.
 - **Repository hygiene** — unused files, obsolete planning docs, naming inconsistencies, and code-sprawl risks are tracked through GitHub issues and cleanup commits.
 
@@ -91,6 +92,7 @@ Claude Desktop / ChatGPT / REST clients
 | [doc/osm-import-system.md](doc/osm-import-system.md) | OpenStreetMap import workflow |
 | [doc/google-places.md](doc/google-places.md) | Google Places API integration |
 | [doc/http-transport.md](doc/http-transport.md) | Streamable HTTP server setup |
+| [doc/public-web.md](doc/public-web.md) | Public homepage, direct POI dossier, browser security, and deployment verification |
 | [doc/openapi.yaml](doc/openapi.yaml) | OpenAPI 3.1 REST API specification, also served at `/openapi.yaml` |
 | [doc/future-travel-integrations.md](doc/future-travel-integrations.md) | Wikidata and route-planning integration decisions |
 | [GitHub Issues](https://github.com/arjanvandermeer/travel-mcp-server/issues) | Planned improvements and known issues |
