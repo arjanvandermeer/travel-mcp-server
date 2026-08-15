@@ -89,11 +89,41 @@ h2 {
 }
 
 .restaurant {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px 20px;
-  padding: 18px 0;
+  padding: 12px 0;
   border-bottom: 1px solid #d9dfdb;
+}
+
+.restaurant-link {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr) auto;
+  gap: 8px 16px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.restaurant-link:focus-visible .restaurant-name {
+  outline: 3px solid #7cc9bb;
+  outline-offset: 4px;
+}
+
+.restaurant-photo,
+.restaurant-photo-fallback {
+  grid-row: span 2;
+  width: 88px;
+  height: 88px;
+  border-radius: 4px;
+}
+
+.restaurant-photo {
+  display: block;
+  object-fit: cover;
+  background: #dce5df;
+}
+
+.restaurant-photo-fallback {
+  background:
+    linear-gradient(135deg, transparent 45%, rgba(255, 255, 255, 0.28) 45% 55%, transparent 55%),
+    #1d7268;
 }
 
 .restaurant-name {
@@ -105,7 +135,7 @@ h2 {
 }
 
 .restaurant-meta {
-  grid-column: 1;
+  grid-column: 2;
   margin: 3px 0 0;
   color: #5b6765;
   font-size: 0.9rem;
@@ -114,11 +144,39 @@ h2 {
 
 .restaurant-distance {
   align-self: center;
+  grid-column: 3;
+  grid-row: 1;
   color: #176d63;
   font-size: 0.875rem;
   font-variant-numeric: tabular-nums;
   font-weight: 700;
   white-space: nowrap;
+}
+
+.restaurant-badges {
+  grid-column: 2 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.restaurant-badge {
+  padding: 3px 7px;
+  color: #48615a;
+  background: #e5eeea;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  line-height: 1.2;
+}
+
+.restaurant-badge.is-open {
+  color: #0d6a37;
+  background: #dff3e5;
+}
+
+.restaurant-badge.is-closed {
+  color: #9c3024;
+  background: #f9e3df;
 }
 
 .load-status { min-height: 28px; padding-top: 18px; }
@@ -131,4 +189,16 @@ h2 {
 
 @media (max-width: 480px) {
   .page-shell { width: min(100% - 24px, 720px); padding-top: 32px; }
+
+  .restaurant {
+    padding: 10px 0;
+  }
+
+  .restaurant-link {
+    grid-template-columns: 72px minmax(0, 1fr) auto;
+    gap: 6px 12px;
+  }
+
+  .restaurant-photo,
+  .restaurant-photo-fallback { width: 72px; height: 72px; }
 }

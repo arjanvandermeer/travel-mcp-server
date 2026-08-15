@@ -56,6 +56,23 @@ function authCacheKey(token) {
   return crypto.createHash('sha256').update(token).digest('hex');
 }
 
+function renderPoiPage() {
+  const file = new URL('../web/index.html', import.meta.url);
+  const html = fs.readFileSync(file, 'utf8');
+  const assetVersion = encodeURIComponent([versionInfo.gitCommitShort || versionInfo.version, versionInfo.buildTime].filter(Boolean).join('-'));
+  const commitLabel = versionInfo.gitCommitShort || versionInfo.version || 'local';
+  const commitUrl = versionInfo.gitCommit
+    ? `https://github.com/arjanvandermeer/travel-mcp-server/commit/${versionInfo.gitCommit}`
+    : 'https://github.com/arjanvandermeer/travel-mcp-server';
+
+  return html
+    .replace('href="/css/style.css"', `href="/css/style.css?v=${assetVersion}"`)
+    .replace('href="/css/dossier.css"', `href="/css/dossier.css?v=${assetVersion}"`)
+    .replace('src="/js/app.js"', `src="/js/app.js?v=${assetVersion}"`)
+    .replaceAll('__APP_COMMIT__', commitLabel)
+    .replaceAll('__APP_COMMIT_URL__', commitUrl);
+}
+
 function getClientKey(req) {
   const forwarded = req.headers['x-forwarded-for'];
   if (typeof forwarded === 'string' && forwarded.trim()) {
@@ -389,6 +406,16 @@ async function main() {
     ['/', { file: new URL('../public/index.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0' }],
     ['/home.css', { file: new URL('../public/home.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/home.js', { file: new URL('../public/home.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/css/style.css', { file: new URL('../web/css/style.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/css/dossier.css', { file: new URL('../web/css/dossier.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/js/api.js', { file: new URL('../web/js/api.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/js/app.js', { file: new URL('../web/js/app.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/js/constants.js', { file: new URL('../web/js/constants.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/js/format-store.js', { file: new URL('../web/js/format-store.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/js/map-utils.js', { file: new URL('../web/js/map-utils.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/js/proximity.js', { file: new URL('../web/js/proximity.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
+    ['/favicon.ico', { file: new URL('../web/favicon.ico', import.meta.url), contentType: 'image/x-icon', cacheControl: 'public, max-age=86400' }],
+    ['/favicon.png', { file: new URL('../web/favicon.png', import.meta.url), contentType: 'image/png', cacheControl: 'public, max-age=86400' }],
   ]);
 
   const httpServer = http.createServer(async (req, res) => {
@@ -413,17 +440,25 @@ async function main() {
       return;
     }
 
-    const homepageAsset = homepageAssets.get(pathname);
+    const homepageAsset = homepageAssets.get(pathname) || (/^\/poi\/\d+$/.test(pathname)
+      ? { file: new URL('../web/index.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0', isPoiPage: true }
+      : null);
     if ((req.method === 'GET' || req.method === 'HEAD') && homepageAsset) {
       res.writeHead(200, {
         'Content-Type': homepageAsset.contentType,
         'Cache-Control': homepageAsset.cacheControl,
-        'Content-Security-Policy': "default-src 'self'; connect-src 'self'; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
+        'Content-Security-Policy': homepageAsset.isPoiPage
+          ? "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+          : "default-src 'self'; connect-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'",
         'Referrer-Policy': 'same-origin',
         'X-Content-Type-Options': 'nosniff',
       });
       if (req.method === 'HEAD') {
         res.end();
+        return;
+      }
+      if (homepageAsset.isPoiPage) {
+        res.end(renderPoiPage());
         return;
       }
       fs.createReadStream(homepageAsset.file).pipe(res);

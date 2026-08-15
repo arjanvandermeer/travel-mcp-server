@@ -1,0 +1,1161 @@
+import Alpine from 'https://cdn.jsdelivr.net/npm/alpinejs@3/dist/module.esm.js';
+import { apiDelete, apiGet, apiPatch, apiPost } from './api.js?v=pdp-cache-20260517';
+import { LAYERS } from './constants.js?v=pdp-cache-20260517';
+import { createFormatStore, cssUrl, safeHttpUrl } from './format-store.js?v=pdp-cache-20260517';
+import { markerIcon } from './map-utils.js?v=pdp-cache-20260517';
+import { groupFavoritesByProximity } from './proximity.js?v=pdp-cache-20260517';
+
+const DISCOVERY_MIN_POIS = 25;
+const LOCATION_SEARCH_RADII_KM = [50, 150, 500, 1000];
+const HOME_FEED_PAGE_SIZE = 12;
+const HOME_FEED_PREFERENCE_KEY = 'travel.home.feedCategories';
+const ENRICHMENT_POLL_INTERVAL_MS = 5000;
+const ENRICHMENT_POLL_MAX_MS = 5 * 60 * 1000;
+const DEFAULT_CITY_FALLBACK = Object.freeze({
+  label: 'London, UK',
+  cityName: 'London',
+  countryCode: 'GB',
+  state: null,
+});
+
+function debounce(fn, ms) {
+  let timer;
+  return (...args) => {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn(...args), ms);
+  };
+}
+
+function defaultHomeFeedKeys() {
+  return ['dining'];
+}
+
+function readHomeFeedPreference() {
+  try {
+    const raw = window.localStorage?.getItem(HOME_FEED_PREFERENCE_KEY);
+    if (!raw) return defaultHomeFeedKeys();
+    const keys = JSON.parse(raw);
+    if (!Array.isArray(keys)) return defaultHomeFeedKeys();
+    const validKeys = new Set(LAYERS.map(category => category.key));
+    const activeKeys = keys.filter(key => validKeys.has(key));
+    return activeKeys.length ? activeKeys : [];
+  } catch {
+    return defaultHomeFeedKeys();
+  }
+}
+
+function writeHomeFeedPreference(keys) {
+  try {
+    window.localStorage?.setItem(HOME_FEED_PREFERENCE_KEY, JSON.stringify(keys));
+  } catch {
+    // Storage can be blocked in private modes; keep the in-memory preference working.
+  }
+}
+
+async function findDefaultCityFallback() {
+  const searches = [
+    { q: DEFAULT_CITY_FALLBACK.cityName, country_code: DEFAULT_CITY_FALLBACK.countryCode, limit: 10 },
+  ];
+
+  for (const params of searches) {
+    const data = await apiGet('/api/v1/search/cities', params);
+    const cities = data.results || [];
+    const preferred = cities.find(city =>
+      String(city.name || city.ascii_name || '').toLowerCase() === DEFAULT_CITY_FALLBACK.cityName.toLowerCase() &&
+      (!DEFAULT_CITY_FALLBACK.state || String(city.state_name || '').toLowerCase() === DEFAULT_CITY_FALLBACK.state.toLowerCase())
+    );
+    if (preferred || cities[0]) return preferred || cities[0];
+  }
+  return null;
+}
+
+Alpine.store('auth', {
+  checked: false,
+  authenticated: false,
+  user: null,
+  async check() {
+    try {
+      const data = await apiGet('/auth/me');
+      this.authenticated = data.authenticated;
+      this.user = data.authenticated ? data : null;
+    } catch {
+      this.authenticated = false;
+      this.user = null;
+    }
+    this.checked = true;
+  },
+  login() { window.location.href = '/auth/login'; },
+  logout() { window.location.href = '/auth/logout'; },
+});
+
+Alpine.store('route', {
+  page: 'home',
+  poiOsmId: null,
+  _lastPath: '',
+  _lastPulsePath: '',
+  _booted: false,
+  boot() {
+    if (this._booted) return;
+    this._booted = true;
+    if (!this.normalizeHashRoute()) this.handleRoute();
+    window.addEventListener('popstate', () => this.handleRoute());
+    window.addEventListener('hashchange', () => {
+      if (this.normalizeHashRoute()) return;
+      this.handleRoute();
+    });
+  },
+  pathFor(page, osmId = null) {
+    if (page === 'poi') return `/poi/${encodeURIComponent(osmId)}`;
+    if (page === 'atlas') return '/map';
+    if (page === 'composer') return '/composer';
+    return '/';
+  },
+  poiPath(osmId) {
+    return this.pathFor('poi', osmId);
+  },
+  locationPath(countryCode, cityName) {
+    if (!countryCode || !cityName) return this.pathFor('home');
+    return `/location/${encodeURIComponent(String(countryCode).toUpperCase())}/${encodeURIComponent(cityName)}`;
+  },
+  setLocation(city, mode = 'replace') {
+    const path = this.locationPath(city?.country_code, city?.name);
+    this._lastPulsePath = path;
+    if (window.location.pathname === path && !window.location.hash) return;
+    if (mode === 'push') history.pushState({}, '', path);
+    else history.replaceState({}, '', path);
+  },
+  navigate(path) {
+    if (window.location.pathname === path && !window.location.hash) {
+      this.handleRoute();
+      return;
+    }
+    history.pushState({}, '', path);
+    this.handleRoute();
+  },
+  normalizeHashRoute() {
+    const hash = window.location.hash || '';
+    if (!hash.startsWith('#/')) return false;
+    const target = hash.startsWith('#/poi/')
+      ? this.pathFor('poi', hash.replace('#/poi/', ''))
+      : hash === '#/composer'
+        ? this.pathFor('composer')
+        : hash === '#/atlas'
+          ? this.pathFor('atlas')
+          : this.pathFor('home');
+    history.replaceState({}, '', target);
+    this.handleRoute();
+    return true;
+  },
+  handleRoute() {
+    const pathname = window.location.pathname.replace(/\/+$/, '') || '/';
+    if (pathname === this._lastPath) return;
+    this._lastPath = pathname;
+    const poiMatch = pathname.match(/^\/poi\/([^/]+)$/);
+    const locationMatch = pathname.match(/^\/location\/([^/]+)\/([^/]+)$/);
+    if (poiMatch) {
+      this.page = 'poi';
+      this.poiOsmId = decodeURIComponent(poiMatch[1]);
+      Alpine.store('poi').load(this.poiOsmId);
+      return;
+    }
+    this.poiOsmId = null;
+    if (locationMatch) {
+      this.page = 'home';
+      this._lastPulsePath = this.locationPath(decodeURIComponent(locationMatch[1]), decodeURIComponent(locationMatch[2]));
+      Alpine.store('discovery').loadLocation(decodeURIComponent(locationMatch[1]), decodeURIComponent(locationMatch[2]));
+      return;
+    }
+    this.page = pathname === '/composer' ? 'composer' : ['/map', '/atlas'].includes(pathname) ? 'atlas' : 'home';
+    if (this.page === 'atlas') Alpine.store('atlas').activate();
+  },
+  goHome() {
+    this.navigate(this._lastPulsePath || this.pathFor('home'));
+  },
+  goAtlas() { this.navigate(this.pathFor('atlas')); },
+  goComposer() { this.navigate(this.pathFor('composer')); },
+});
+
+Alpine.store('format', createFormatStore());
+
+Alpine.store('discovery', {
+  loading: false,
+  error: '',
+  source: 'loading',
+  locationState: 'idle',
+  coords: null,
+  country: null,
+  city: null,
+  hotels: [],
+  overview: null,
+  feedCategories: LAYERS,
+  activeFeedKeys: readHomeFeedPreference(),
+  feedItems: {
+    accommodation: [],
+    dining: [],
+    attractions: [],
+  },
+  feedOffsets: {
+    accommodation: 0,
+    dining: 0,
+    attractions: 0,
+  },
+  feedHasMore: {
+    accommodation: true,
+    dining: true,
+    attractions: true,
+  },
+  feedLoading: false,
+  placeSearchOpen: false,
+  placeSearchQuery: '',
+  placeSearchLoading: false,
+  placeSearchError: '',
+  placeOpenNow: false,
+  heroImageUrl: '',
+  heroImageCredit: '',
+  locationError: '',
+  _loadKey: '',
+  async load() {
+    if (Alpine.store('route').page !== 'home' || this.city || this.loading) return;
+    await this.useLocation();
+  },
+  async useLocation() {
+    this.loading = true;
+    this.error = '';
+    this.locationError = '';
+    this.locationState = 'requesting';
+    this.source = 'local';
+
+    if (!window.isSecureContext) {
+      this.locationState = 'blocked';
+      this.locationError = 'Browser location requires a secure context. Use http://localhost:3001 instead of an IP address, or serve the app over HTTPS.';
+      console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
+      await this.loadDefaultCity({ historyMode: 'replace' });
+      return;
+    }
+
+    if (!navigator.geolocation) {
+      this.locationState = 'unsupported';
+      this.locationError = 'This browser does not expose the Geolocation API.';
+      console.warn('[City Pulse] Geolocation unavailable:', this.locationError);
+      await this.loadDefaultCity({ historyMode: 'replace' });
+      return;
+    }
+
+    try {
+      const position = await new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 9000,
+          maximumAge: 300000,
+        });
+      });
+      const { latitude, longitude } = position.coords;
+      this.coords = { latitude, longitude };
+      this.locationState = 'resolved';
+      await this.loadNearestCity(latitude, longitude);
+    } catch (err) {
+      this.locationState = 'unavailable';
+      this.locationError = this.describeLocationError(err);
+      console.warn('[City Pulse] Geolocation failed:', this.locationError, err);
+      await this.loadDefaultCity({ historyMode: 'replace' });
+      return;
+    }
+    this.loading = false;
+  },
+  describeLocationError(err) {
+    if (!err || typeof err.code !== 'number') return 'Location was not available.';
+    if (err.code === 1) return 'Location permission is blocked or was denied for this site.';
+    if (err.code === 2) return 'The browser could not determine your current position.';
+    if (err.code === 3) return 'Location lookup timed out before the browser returned coordinates.';
+    return err.message || 'Location was not available.';
+  },
+  async loadNearestCity(latitude, longitude) {
+    let nearest = null;
+    for (const radiusKm of LOCATION_SEARCH_RADII_KM) {
+      const data = await apiGet('/api/v1/search/cities', {
+        latitude,
+        longitude,
+        radius_km: radiusKm,
+        min_pois: DISCOVERY_MIN_POIS,
+        limit: 1,
+      });
+      [nearest] = data.results || [];
+      if (nearest) break;
+    }
+
+    if (!nearest) {
+      console.info('[City Pulse] No loaded city with enough POIs near coordinates; loading default city.');
+      await this.loadDefaultCity({ historyMode: 'replace' });
+      return;
+    }
+
+    this.city = nearest;
+    this.country = { code: nearest.country_code, name: nearest.country_name || nearest.country_code };
+    await this.loadOverview();
+    await this.loadHeroImage();
+    Alpine.store('route').setLocation(this.city, 'replace');
+  },
+  async loadLocation(countryCode, cityName) {
+    const loadKey = `location:${String(countryCode).toUpperCase()}:${cityName}`;
+    if (this.loading && this._loadKey === loadKey) return;
+    this._loadKey = loadKey;
+    this.loading = true;
+    this.error = '';
+    this.locationError = '';
+    this.locationState = 'resolved';
+    this.source = 'location';
+    try {
+      const data = await apiGet('/api/v1/search/cities', {
+        q: cityName,
+        country_code: countryCode,
+        limit: 10,
+      });
+      const cities = data.results || [];
+      const normalizedName = String(cityName).replaceAll('-', ' ').toLowerCase();
+      const city = cities.find(item => String(item.name || item.ascii_name || '').toLowerCase() === normalizedName) || cities[0];
+      if (!city) throw new Error(`${cityName} is not available in the loaded travel database.`);
+      this.country = { code: city.country_code, name: city.country_name || city.country_code };
+      this.city = city;
+      this.hotels = [];
+      this.overview = null;
+      await this.loadOverview();
+      await this.loadHeroImage();
+    } catch (err) {
+      console.warn('[City Pulse] City search failed; loading default city:', err);
+      await this.loadDefaultCity({ historyMode: 'replace' });
+    }
+    this.loading = false;
+  },
+  async loadDefaultCity({ historyMode = 'replace' } = {}) {
+    const loadKey = 'default-city';
+    if (this.loading && this._loadKey === loadKey) return;
+    this._loadKey = loadKey;
+    this.loading = true;
+    this.error = '';
+    this.source = 'default';
+    try {
+      const city = await findDefaultCityFallback();
+      if (!city) throw new Error(`${DEFAULT_CITY_FALLBACK.label} is not available in the loaded travel database.`);
+      this.country = { code: city.country_code, name: city.country_name || city.country_code };
+      this.city = city;
+      this.hotels = [];
+      this.overview = null;
+      await this.loadOverview();
+      await this.loadHeroImage();
+      Alpine.store('route').setLocation(this.city, historyMode);
+    } catch (err) {
+      this.error = err.message || `${DEFAULT_CITY_FALLBACK.label} is unavailable right now.`;
+    }
+    this.loading = false;
+  },
+  async loadRandomCity({ historyMode = 'push', force = false } = {}) {
+    const loadKey = 'random';
+    if (!force && this.loading && this._loadKey === loadKey) return;
+    this._loadKey = loadKey;
+    this.loading = true;
+    this.error = '';
+    this.source = 'random';
+    try {
+      const data = await apiGet('/api/v1/search/cities/random', {
+        min_pois: DISCOVERY_MIN_POIS,
+        min_population: 50000,
+      });
+      const city = data.city;
+      if (!city) throw new Error('No loaded cities are available in the travel database.');
+      this.country = { code: city.country_code, name: city.country_name || city.country_code };
+      this.city = city;
+      this.hotels = [];
+      this.overview = null;
+      await this.loadOverview();
+      await this.loadHeroImage();
+      Alpine.store('route').setLocation(this.city, historyMode);
+    } catch (err) {
+      this.error = err.message || 'City discovery is unavailable right now.';
+    }
+    this.loading = false;
+  },
+  async loadOverview() {
+    const countryCode = this.country?.code || this.city?.country_code;
+    if (!countryCode || !this.city?.name) return;
+    try {
+      this.overview = await apiGet(`/api/v1/cities/${encodeURIComponent(countryCode)}/${encodeURIComponent(this.city.name)}/overview`);
+      this.hotels = this.overview?.top?.stays || this.hotels || [];
+      this.resetFeedFromOverview();
+    } catch {
+      this.overview = null;
+      this.resetFeedFromOverview();
+    }
+  },
+  resetFeedFromOverview() {
+    const top = this.overview?.top || {};
+    this.feedItems = {
+      accommodation: [...(top.stays || [])],
+      dining: [...(top.food || [])],
+      attractions: [...(top.attractions || [])],
+    };
+    this.feedOffsets = Object.fromEntries(this.feedCategories.map(category => [
+      category.key,
+      this.feedItems[category.key]?.length || 0,
+    ]));
+    this.feedHasMore = Object.fromEntries(this.feedCategories.map(category => [
+      category.key,
+      (this.feedItems[category.key]?.length || 0) >= 8,
+    ]));
+  },
+  async loadHeroImage() {
+    this.heroImageUrl = '';
+    this.heroImageCredit = '';
+    if (!this.city?.name) return;
+
+    const titleCandidates = [...new Set([
+      this.city.name,
+      this.city.ascii_name,
+    ].filter(Boolean))];
+
+    for (const title of titleCandidates) {
+      const image = await this.fetchWikipediaHeroImage({ title });
+      if (image) {
+        this.heroImageUrl = image.url;
+        this.heroImageCredit = `Wikipedia: ${image.title}`;
+        return;
+      }
+    }
+
+    const country = this.country?.name || this.city.country_code || '';
+    const searchCandidates = [
+      `"${this.city.name}" ${country}`,
+      `${this.city.name} city ${country}`,
+      `${this.city.name} ${country}`,
+    ].map(candidate => candidate.trim()).filter(Boolean);
+
+    for (const search of searchCandidates) {
+      const image = await this.fetchWikipediaHeroImage({ search });
+      if (image) {
+        this.heroImageUrl = image.url;
+        this.heroImageCredit = `Wikipedia: ${image.title}`;
+        return;
+      }
+    }
+  },
+  async fetchWikipediaHeroImage({ title = '', search = '' } = {}) {
+    const url = new URL('https://en.wikipedia.org/w/api.php');
+    url.searchParams.set('action', 'query');
+    url.searchParams.set('origin', '*');
+    url.searchParams.set('format', 'json');
+    url.searchParams.set('prop', 'pageimages');
+    url.searchParams.set('piprop', 'thumbnail|original|name');
+    url.searchParams.set('pithumbsize', '1800');
+    if (title) {
+      url.searchParams.set('titles', title);
+    } else if (search) {
+      url.searchParams.set('generator', 'search');
+      url.searchParams.set('gsrnamespace', '0');
+      url.searchParams.set('gsrlimit', '3');
+      url.searchParams.set('gsrsearch', search);
+    } else {
+      return null;
+    }
+
+    try {
+      const response = await fetch(url);
+      if (!response.ok) return null;
+      const data = await response.json();
+      const pages = Object.values(data.query?.pages || {}).sort((a, b) => (a.index || 0) - (b.index || 0));
+      for (const page of pages) {
+        const image = this.wikipediaHeroImageFromPage(page);
+        if (image) return image;
+      }
+    } catch {
+      return null;
+    }
+    return null;
+  },
+  wikipediaHeroImageFromPage(page) {
+    const source = page?.original?.source || page?.thumbnail?.source || '';
+    const safeSource = safeHttpUrl(source);
+    if (!safeSource || !page?.title) return null;
+    if (this.isUnsuitableWikipediaHeroImage(page, safeSource)) return null;
+    return { url: safeSource, title: page.title };
+  },
+  isUnsuitableWikipediaHeroImage(page, source) {
+    const imageName = String(page?.pageimage || source).toLowerCase();
+    const title = String(page?.title || '').toLowerCase();
+    const countryName = String(this.country?.name || '').toLowerCase();
+    const countryCode = String(this.country?.code || this.city?.country_code || '').toLowerCase();
+    if (title && (title === countryName || title === countryCode)) return true;
+    return imageName.includes('flag_') ||
+      imageName.includes('flag-of') ||
+      imageName.includes('coat_of_arms') ||
+      imageName.includes('seal_of') ||
+      imageName.endsWith('.svg');
+  },
+  heroStyle() {
+    const url = cssUrl(this.heroImageUrl);
+    if (!url) return '';
+    return `--city-hero: url("${url}")`;
+  },
+  eyebrow() {
+    if (this.locationState === 'requesting') return 'Finding your city';
+    if (this.source === 'location') return 'Location discovery';
+    if (this.source === 'default') return 'Default discovery';
+    return this.source === 'local' ? 'DISCOVER' : 'Random discovery';
+  },
+  cityTitle() {
+    if (this.locationState === 'requesting') return 'Locating you';
+    return this.city?.name ? `${this.city.name} today` : 'Choose a city';
+  },
+  feedCount(key) {
+    const count = this.feedItems[key]?.length || 0;
+    return count ? `${count}` : '0';
+  },
+  isFeedActive(key) {
+    return this.activeFeedKeys.includes(key);
+  },
+  activeFeedItems() {
+    const seen = new Set();
+    return this.activeFeedKeys.flatMap(key => this.feedItems[key] || []).filter(poi => {
+      const id = poi.osm_id || `${poi.poi_type}:${poi.name || poi.osm_name}`;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  },
+  toggleFeed(key) {
+    this.activeFeedKeys = this.isFeedActive(key)
+      ? this.activeFeedKeys.filter(activeKey => activeKey !== key)
+      : [...this.activeFeedKeys, key];
+    writeHomeFeedPreference(this.activeFeedKeys);
+    if (this.isFeedActive(key) && !this.feedItems[key]?.length) this.loadMoreCategory(key);
+  },
+  togglePlaceSearch() {
+    this.placeSearchOpen = !this.placeSearchOpen;
+    this.placeSearchError = '';
+    if (this.placeSearchOpen) {
+      requestAnimationFrame(() => document.getElementById('place-name-search')?.focus());
+    }
+  },
+  async searchPlacesByName() {
+    const query = this.placeSearchQuery.trim();
+    if (!query) {
+      this.placeSearchError = 'Enter a place name to search.';
+      return;
+    }
+    if (!this.city?.name) {
+      this.placeSearchError = 'Choose a city before searching places.';
+      return;
+    }
+
+    this.placeSearchLoading = true;
+    this.placeSearchError = '';
+    try {
+      const responses = await Promise.all(this.feedCategories.map(async category => {
+        const data = await apiGet('/api/v1/search/pois', {
+          q: query,
+          city_name: this.city.name,
+          country_code: this.city.country_code || this.country?.code,
+          poi_types: category.types.join(','),
+          open_now: this.placeOpenNow ? 'true' : undefined,
+          limit: HOME_FEED_PAGE_SIZE * 2,
+        });
+        return [category.key, data.results || []];
+      }));
+
+      const nextItems = { ...this.feedItems };
+      const nextOffsets = { ...this.feedOffsets };
+      const nextHasMore = { ...this.feedHasMore };
+      let totalResults = 0;
+
+      for (const [key, results] of responses) {
+        nextItems[key] = results;
+        nextOffsets[key] = results.length;
+        nextHasMore[key] = false;
+        totalResults += results.length;
+      }
+
+      this.feedItems = nextItems;
+      this.feedOffsets = nextOffsets;
+      this.feedHasMore = nextHasMore;
+      if (!totalResults) this.placeSearchError = `No place matches found for "${query}".`;
+    } catch {
+      this.placeSearchError = 'Place search is unavailable right now.';
+    }
+    this.placeSearchLoading = false;
+  },
+  refreshFeedForOptions() {
+    this.feedItems = { accommodation: [], dining: [], attractions: [] };
+    this.feedOffsets = { accommodation: 0, dining: 0, attractions: 0 };
+    this.feedHasMore = { accommodation: true, dining: true, attractions: true };
+    if (this.placeSearchQuery.trim()) return this.searchPlacesByName();
+    for (const key of this.activeFeedKeys) this.loadMoreCategory(key, { keepLoadingState: true });
+  },
+  canLoadMore() {
+    return Alpine.store('route').page === 'home'
+      && !!this.city?.name
+      && this.activeFeedKeys.length > 0
+      && !this.loading
+      && !this.feedLoading
+      && this.activeFeedKeys.some(key => this.feedHasMore[key] !== false);
+  },
+  async loadMoreFeed() {
+    if (!this.canLoadMore()) return;
+    this.feedLoading = true;
+    for (const key of this.activeFeedKeys) {
+      if (this.feedHasMore[key] !== false) {
+        await this.loadMoreCategory(key, { keepLoadingState: true });
+      }
+    }
+    this.feedLoading = false;
+  },
+  async loadMoreCategory(key, { keepLoadingState = false } = {}) {
+    const category = this.feedCategories.find(item => item.key === key);
+    if (!category || !this.city?.name || this.feedHasMore[key] === false) return;
+
+    if (!keepLoadingState) this.feedLoading = true;
+    try {
+      const data = await apiGet('/api/v1/search/pois', {
+        city_name: this.city.name,
+        country_code: this.city.country_code || this.country?.code,
+        poi_types: category.types.join(','),
+        open_now: this.placeOpenNow ? 'true' : undefined,
+        limit: HOME_FEED_PAGE_SIZE,
+        offset: this.feedOffsets[key] || 0,
+      });
+      const nextItems = data.results || [];
+      const existingIds = new Set((this.feedItems[key] || []).map(poi => poi.osm_id));
+      const uniqueItems = nextItems.filter(poi => !existingIds.has(poi.osm_id));
+      this.feedItems = {
+        ...this.feedItems,
+        [key]: [...(this.feedItems[key] || []), ...uniqueItems],
+      };
+      this.feedOffsets = {
+        ...this.feedOffsets,
+        [key]: (this.feedOffsets[key] || 0) + nextItems.length,
+      };
+      this.feedHasMore = {
+        ...this.feedHasMore,
+        [key]: nextItems.length >= HOME_FEED_PAGE_SIZE,
+      };
+    } catch {
+      this.feedHasMore = { ...this.feedHasMore, [key]: false };
+    }
+    if (!keepLoadingState) this.feedLoading = false;
+  },
+  maybeLoadMore() {
+    if (Alpine.store('route').page !== 'home') return;
+    const distanceFromBottom = document.documentElement.scrollHeight - window.scrollY - window.innerHeight;
+    if (distanceFromBottom < 700) this.loadMoreFeed();
+  },
+});
+
+Alpine.store('search', {
+  query: '',
+  suggestions: [],
+  open: false,
+  highlight: -1,
+  _debounced: null,
+  autocomplete() {
+    if (!this._debounced) {
+      this._debounced = debounce(async () => {
+        if (!this.query || this.query.length < 2) {
+          this.suggestions = [];
+          this.open = false;
+          return;
+        }
+        try {
+          const data = await apiGet('/api/v1/autocomplete', { q: this.query, limit: 12 });
+          this.suggestions = data.suggestions || [];
+          this.open = this.suggestions.length > 0;
+          this.highlight = -1;
+        } catch {
+          this.suggestions = [];
+          this.open = false;
+        }
+      }, 220);
+    }
+    this._debounced();
+  },
+  onKeydown(event) {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      this.commit();
+    } else if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      this.highlight = Math.min(this.highlight + 1, this.suggestions.length - 1);
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      this.highlight = Math.max(this.highlight - 1, -1);
+    } else if (event.key === 'Escape') {
+      this.open = false;
+    }
+  },
+  select(poi) {
+    this.query = poi.name;
+    this.open = false;
+    Alpine.store('atlas').focusPoi(poi);
+    Alpine.store('route').goAtlas();
+  },
+  commit() {
+    if (this.highlight >= 0 && this.suggestions[this.highlight]) return this.select(this.suggestions[this.highlight]);
+    if (this.suggestions[0]) return this.select(this.suggestions[0]);
+    Alpine.store('atlas').textSearch(this.query);
+    Alpine.store('route').goAtlas();
+  },
+});
+
+Alpine.store('atlas', {
+  layers: LAYERS,
+  activeLayers: new Set(['accommodation', 'dining', 'attractions']),
+  map: null,
+  cluster: null,
+  markers: new Map(),
+  places: [],
+  selected: null,
+  loading: false,
+  searchOpen: false,
+  city: null,
+  _lastKey: '',
+  _fetchDebounced: null,
+  _autoLocateAttempted: false,
+  title() {
+    return this.city?.name ? `${this.city.name} map` : 'Map';
+  },
+  contextLine() {
+    return this.city?.country_code ? `${this.city.country_code} · live map places` : 'Search or move the map to discover places.';
+  },
+  activate() {
+    requestAnimationFrame(() => this.initMap());
+  },
+  initMap() {
+    if (!document.getElementById('map')) return;
+    if (this.map) {
+      this.map.invalidateSize();
+      return;
+    }
+    this.map = L.map('map', { center: [20, 0], zoom: 3, zoomControl: false });
+    L.control.zoom({ position: 'bottomright' }).addTo(this.map);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors',
+      maxZoom: 19,
+    }).addTo(this.map);
+    this.cluster = L.markerClusterGroup({ maxClusterRadius: 44, showCoverageOnHover: false, disableClusteringAtZoom: 16 });
+    this.map.addLayer(this.cluster);
+    this._fetchDebounced = debounce(() => this.fetchMapPlaces(), 350);
+    this.map.on('moveend zoomend dragend', () => this.handleViewportChange());
+    this.openAtUserLocation();
+  },
+  handleViewportChange() {
+    this.city = null;
+    this.selected = null;
+    this._lastKey = '';
+    this._fetchDebounced();
+  },
+  openAtUserLocation() {
+    if (this._autoLocateAttempted) {
+      this.seedFromDiscovery();
+      return;
+    }
+    this._autoLocateAttempted = true;
+    if (!navigator.geolocation) {
+      this.seedFromDiscovery();
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      pos => {
+        this.city = null;
+        this.map?.flyTo([pos.coords.latitude, pos.coords.longitude], 14, { duration: 0.8 });
+      },
+      () => this.seedFromDiscovery(),
+      { enableHighAccuracy: false, timeout: 5000, maximumAge: 5 * 60 * 1000 }
+    );
+  },
+  seedFromDiscovery(layer = null) {
+    const discovery = Alpine.store('discovery');
+    this.city = discovery.overview?.city || (discovery.city ? { ...discovery.city, country_code: discovery.country?.code } : null);
+    if (layer) this.activeLayers = new Set([layer]);
+    this.activeLayers = new Set(this.activeLayers);
+    if (this.map && discovery.overview?.suggested_focus) {
+      const f = discovery.overview.suggested_focus;
+      this.map.flyTo([f.latitude, f.longitude], f.zoom || 12, { duration: 0.8 });
+    } else if (this.map && discovery.hotels?.[0]) {
+      this.focusPoi(discovery.hotels[0], false);
+    }
+  },
+  toggleLayer(key) {
+    if (this.activeLayers.has(key)) this.activeLayers.delete(key);
+    else this.activeLayers.add(key);
+    this.activeLayers = new Set(this.activeLayers);
+    this._lastKey = '';
+    this.fetchMapPlaces();
+  },
+  toggleSearch() {
+    this.searchOpen = !this.searchOpen;
+    if (this.searchOpen) {
+      requestAnimationFrame(() => document.getElementById('command-search')?.focus());
+    }
+  },
+  feedCount(key) {
+    const types = this.layers.find(layer => layer.key === key)?.types || [];
+    const typeSet = new Set(types);
+    return this.places.filter(poi => typeSet.has(poi.poi_type)).length;
+  },
+  activeTypes() {
+    return LAYERS.filter(layer => this.activeLayers.has(layer.key)).flatMap(layer => layer.types);
+  },
+  rankPlacesByDistance(places) {
+    if (!this.map) return places;
+    const center = this.map.getCenter();
+    return [...places]
+      .map(poi => ({
+        ...poi,
+        atlas_distance_meters: this.map.distance(center, [poi.latitude, poi.longitude]),
+      }))
+      .sort((a, b) => a.atlas_distance_meters - b.atlas_distance_meters)
+      .map((poi, index) => ({
+        ...poi,
+        atlas_rank: index < 99 ? index + 1 : null,
+      }));
+  },
+  async fetchMapPlaces() {
+    if (!this.map || this.map.getZoom() < 8 || this.activeTypes().length === 0) {
+      this.places = [];
+      this.cluster?.clearLayers();
+      this.markers.clear();
+      return;
+    }
+    const b = this.map.getBounds();
+    const params = {
+      sw_lat: b.getSouth().toFixed(4),
+      sw_lng: b.getWest().toFixed(4),
+      ne_lat: b.getNorth().toFixed(4),
+      ne_lng: b.getEast().toFixed(4),
+      types: this.activeTypes().join(','),
+      limit: 500,
+    };
+    const key = JSON.stringify(params);
+    if (key === this._lastKey) return;
+    this._lastKey = key;
+    this.loading = true;
+    try {
+      const data = await apiGet('/api/v1/map/pois', params);
+      this.places = this.rankPlacesByDistance(data.results || []);
+      this.drawMarkers();
+    } catch {
+      this.places = [];
+      this.drawMarkers();
+    }
+    this.loading = false;
+  },
+  drawMarkers() {
+    this.cluster.clearLayers();
+    this.markers.clear();
+    for (const poi of this.places) {
+      const marker = L.marker([poi.latitude, poi.longitude], { icon: markerIcon(poi, this.selected?.osm_id === poi.osm_id, poi.atlas_rank) });
+      marker.on('click', () => this.select(poi));
+      this.markers.set(poi.osm_id, marker);
+      this.cluster.addLayer(marker);
+    }
+  },
+  select(poi) {
+    this.selected = poi;
+    this.drawMarkers();
+  },
+  preview(poi) {
+    if (!this.selected) this.selected = poi;
+  },
+  focusPoi(poi, select = true) {
+    this.activate();
+    requestAnimationFrame(() => {
+      if (!this.map || !poi.latitude || !poi.longitude) return;
+      this.map.flyTo([poi.latitude, poi.longitude], 15, { duration: 0.8 });
+      if (select) this.selected = poi;
+      this.fetchMapPlaces();
+    });
+  },
+  async textSearch(query) {
+    if (!query) return;
+    this.loading = true;
+    try {
+      const data = await apiGet('/api/v1/search/pois', { q: query, limit: 20 });
+      this.places = this.rankPlacesByDistance(data.results || []);
+      if (this.places[0]) {
+        this.focusPoi(this.places[0]);
+      } else {
+        await this.openDefaultCity();
+      }
+    } catch {
+      this.places = [];
+      await this.openDefaultCity();
+    }
+    this.loading = false;
+  },
+  async openDefaultCity() {
+    try {
+      const city = await findDefaultCityFallback();
+      if (!city || !city.latitude || !city.longitude) throw new Error('Default city unavailable');
+      this.city = city;
+      this.selected = null;
+      this._lastKey = '';
+      if (!this.map) this.activate();
+      if (!this.map) {
+        requestAnimationFrame(() => this.openDefaultCity());
+        return;
+      }
+      this.map.setView([city.latitude, city.longitude], 12);
+      await this.fetchMapPlaces();
+    } catch {
+      this.places = [];
+      this.cluster?.clearLayers();
+      this.markers.clear();
+    }
+  },
+  locate() {
+    navigator.geolocation?.getCurrentPosition(pos => {
+      this.city = null;
+      this.map?.flyTo([pos.coords.latitude, pos.coords.longitude], 14);
+    }, () => {});
+  },
+});
+
+Alpine.store('poi', {
+  current: null,
+  loading: false,
+  enrichmentPolling: false,
+  dataOpen: false,
+  note: '',
+  noteSaved: '',
+  noteEditing: false,
+  _loadId: null,
+  _pollTimer: null,
+  _pollStartedAt: 0,
+  async open(osmId) {
+    Alpine.store('route').navigate(Alpine.store('route').poiPath(osmId));
+  },
+  async load(osmId) {
+    if (this.loading && String(this._loadId) === String(osmId)) return;
+    this.stopEnrichmentPoll();
+    this._loadId = osmId;
+    this.loading = true;
+    try {
+      this.current = await apiGet(`/api/v1/poi/${osmId}`);
+      this.dataOpen = false;
+      this.syncFavoriteNote(this.current);
+      const enrichmentMessage = this.current?._enrichment?.message;
+      if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
+      this.startEnrichmentPollIfNeeded();
+    } catch {
+      this.current = null;
+      this.dataOpen = false;
+    }
+    this.loading = false;
+  },
+  enrichmentLabel() {
+    return this.current?._enrichment?.status || 'base';
+  },
+  enrichmentMessage() {
+    return this.current?._enrichment?.message || '';
+  },
+  isEnriching() {
+    return this.current?._enrichment?.status === 'pending' && this.enrichmentPolling;
+  },
+  startEnrichmentPollIfNeeded() {
+    if (this.current?._enrichment?.status !== 'pending') {
+      this.stopEnrichmentPoll();
+      return;
+    }
+    if (this._pollTimer) return;
+    this.enrichmentPolling = true;
+    this._pollStartedAt = Date.now();
+    this._pollTimer = window.setTimeout(() => this.pollEnrichment(), ENRICHMENT_POLL_INTERVAL_MS);
+  },
+  stopEnrichmentPoll() {
+    if (this._pollTimer) window.clearTimeout(this._pollTimer);
+    this._pollTimer = null;
+    this._pollStartedAt = 0;
+    this.enrichmentPolling = false;
+  },
+  async pollEnrichment() {
+    this._pollTimer = null;
+    const osmId = this.current?.osm_id;
+    if (!osmId || String(this._loadId) !== String(osmId)) {
+      this.stopEnrichmentPoll();
+      return;
+    }
+    if (Date.now() - this._pollStartedAt > ENRICHMENT_POLL_MAX_MS) {
+      console.warn('[Travel] POI enrichment polling timed out after 5 minutes:', osmId);
+      this.stopEnrichmentPoll();
+      return;
+    }
+
+    try {
+      const updated = await apiGet(`/api/v1/poi/${osmId}`);
+      if (String(this._loadId) !== String(osmId)) return;
+      this.current = updated;
+      if (!this.noteEditing) this.syncFavoriteNote(updated);
+      const enrichmentMessage = updated?._enrichment?.message;
+      if (enrichmentMessage) console.info('[Travel] POI enrichment status:', enrichmentMessage);
+      if (updated?._enrichment?.status === 'pending') {
+        this.enrichmentPolling = true;
+        this._pollTimer = window.setTimeout(() => this.pollEnrichment(), ENRICHMENT_POLL_INTERVAL_MS);
+        return;
+      }
+      this.stopEnrichmentPoll();
+    } catch (err) {
+      console.warn('[Travel] POI enrichment poll failed:', err);
+      this.enrichmentPolling = true;
+      this._pollTimer = window.setTimeout(() => this.pollEnrichment(), ENRICHMENT_POLL_INTERVAL_MS);
+    }
+  },
+  mapsUrl() {
+    return Alpine.store('format').bestMapsUrl(this.current || {});
+  },
+  websiteUrl() {
+    return Alpine.store('format').bestWebsite(this.current || {});
+  },
+  phoneNumber() {
+    return Alpine.store('format').bestPhone(this.current || {});
+  },
+  phoneUrl() {
+    const phone = this.phoneNumber();
+    if (!phone) return '';
+    const compactPhone = phone.replace(/[^\d+]/g, '');
+    return /^\+?\d{3,20}$/.test(compactPhone) ? `tel:${compactPhone}` : '';
+  },
+  rawJson() {
+    return JSON.stringify(this.current || {}, null, 2);
+  },
+  syncFavoriteNote(poi) {
+    const savedNote = poi?.favorite_notes || '';
+    this.note = savedNote;
+    this.noteSaved = savedNote;
+    this.noteEditing = !poi?.is_favorite;
+  },
+  favoriteSinceLabel() {
+    return Alpine.store('format').favoriteDate(this.current?.favorite_since);
+  },
+  notePlaceholder() {
+    return this.current?.is_favorite ? 'Click to add private notes' : 'Save this place to keep private notes';
+  },
+  editNote() {
+    if (!Alpine.store('auth').authenticated) {
+      Alpine.store('auth').login();
+      return;
+    }
+    this.noteEditing = true;
+  },
+  async finishNoteEdit() {
+    if (!this.current || !this.noteEditing) return;
+    if (!this.note.trim() && !this.current.is_favorite) {
+      this.noteEditing = false;
+      return;
+    }
+    if (this.note !== this.noteSaved || !this.current.is_favorite) {
+      await Alpine.store('favorites').saveNote(this.current, this.note);
+      this.current.favorite_notes = this.note;
+      this.noteSaved = this.note;
+      if (!this.current.favorite_since) this.current.favorite_since = new Date().toISOString();
+    }
+    this.noteEditing = false;
+  },
+  async toggleFavorite() {
+    if (!this.current) return;
+    if (!this.current.is_favorite) {
+      this.current.favorite_notes = this.note || null;
+    }
+    await Alpine.store('favorites').toggle(this.current);
+    this.syncFavoriteNote(this.current);
+  },
+  async saveComposer() {
+    if (!this.current) return;
+    if (!Alpine.store('auth').authenticated) {
+      Alpine.store('auth').login();
+      return;
+    }
+    await Alpine.store('favorites').saveNote(this.current, this.note);
+    this.noteSaved = this.note;
+    this.noteEditing = false;
+  },
+  async removeFavorite() {
+    if (!this.current?.is_favorite) return;
+    await Alpine.store('favorites').remove(this.current);
+    this.syncFavoriteNote(this.current);
+  },
+});
+
+Alpine.store('favorites', {
+  items: [],
+  loading: false,
+  async load() {
+    if (!Alpine.store('auth').authenticated) return;
+    this.loading = true;
+    try {
+      const data = await apiGet('/api/v1/favorites');
+      this.items = data.favorites || [];
+    } catch {
+      this.items = [];
+    }
+    this.loading = false;
+  },
+  async toggle(poi) {
+    if (!Alpine.store('auth').authenticated) return Alpine.store('auth').login();
+    if (poi.is_favorite) {
+      await apiDelete(`/api/v1/favorites/${poi.osm_id}`);
+      poi.is_favorite = false;
+      poi.favorite_since = null;
+      poi.favorite_notes = null;
+    } else {
+      await apiPost('/api/v1/favorites', { osm_id: poi.osm_id, notes: poi.favorite_notes || null });
+      poi.is_favorite = true;
+      poi.favorite_since = new Date().toISOString();
+    }
+    this.load();
+  },
+  async saveNote(poi, notes) {
+    if (!poi || !Alpine.store('auth').authenticated) return;
+    const osmId = poi.osm_id || poi.poi_osm_id;
+    if (!poi.is_favorite) await apiPost('/api/v1/favorites', { osm_id: osmId, notes });
+    else await apiPatch(`/api/v1/favorites/${osmId}`, { notes });
+    poi.is_favorite = true;
+    poi.favorite_notes = notes;
+    if (!poi.favorite_since) poi.favorite_since = new Date().toISOString();
+  },
+  async remove(poi) {
+    if (!poi || !Alpine.store('auth').authenticated) return;
+    const osmId = poi.osm_id || poi.poi_osm_id;
+    await apiDelete(`/api/v1/favorites/${osmId}`);
+    poi.is_favorite = false;
+    poi.favorite_since = null;
+    poi.favorite_notes = null;
+    this.load();
+  },
+  areas() {
+    return groupFavoritesByProximity(this.items);
+  },
+  columns() {
+    return this.areas();
+  },
+  areaStyle(area = {}) {
+    const url = cssUrl(area.backgroundUrl);
+    if (url) {
+      return `background-image: linear-gradient(90deg, rgba(15,23,42,.88), rgba(15,23,42,.56) 50%, rgba(15,23,42,.18)), url("${url}")`;
+    }
+    return 'background-image: linear-gradient(135deg, #172033, #0f766e 58%, #b45309)';
+  },
+  itemMeta(fav) {
+    const meta = Alpine.store('format').placeMeta(fav);
+    return fav.clusterDistanceLabel ? `${fav.clusterDistanceLabel} · ${meta}` : meta;
+  },
+});
+
+window.Alpine = Alpine;
+
+Alpine.store('route').boot();
+Alpine.start();
+
+queueMicrotask(() => {
+  Alpine.store('auth').check();
+  Alpine.store('discovery').load();
+});
+
+window.addEventListener('scroll', debounce(() => {
+  Alpine.store('discovery').maybeLoadMore();
+}, 160), { passive: true });

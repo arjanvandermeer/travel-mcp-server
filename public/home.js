@@ -28,23 +28,69 @@ function restaurantMeta(poi) {
   return details.join(' / ');
 }
 
+function validImageUrl(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'https:' ? url.href : '';
+  } catch {
+    return '';
+  }
+}
+
+function restaurantBadges(poi) {
+  const badges = [];
+  const rating = Number(poi.google_rating);
+  if (Number.isFinite(rating)) badges.push(`${rating.toFixed(1)} rating`);
+  if (poi.google_price_level) {
+    const prices = {
+      PRICE_LEVEL_INEXPENSIVE: '$',
+      PRICE_LEVEL_MODERATE: '$$',
+      PRICE_LEVEL_EXPENSIVE: '$$$',
+      PRICE_LEVEL_VERY_EXPENSIVE: '$$$$',
+    };
+    badges.push(prices[poi.google_price_level] || 'Price listed');
+  }
+  const isOpen = poi.google_current_opening_hours?.openNow ?? poi.google_opening_hours?.openNow;
+  if (isOpen === true) badges.push('Open now');
+  if (isOpen === false) badges.push('Closed now');
+  return badges;
+}
+
 function appendRestaurants(restaurants) {
   const fragment = document.createDocumentFragment();
   for (const poi of restaurants) {
     const article = document.createElement('article');
     article.className = 'restaurant';
+    const link = document.createElement('a');
+    link.className = 'restaurant-link';
+    link.href = `/poi/${encodeURIComponent(poi.osm_id)}`;
+
+    const imageUrl = validImageUrl(poi.photo_url || poi.primary_photo_url);
+    if (imageUrl) {
+      const photo = document.createElement('img');
+      photo.className = 'restaurant-photo';
+      photo.src = imageUrl;
+      photo.alt = '';
+      photo.loading = 'lazy';
+      link.append(photo);
+    } else {
+      const fallback = document.createElement('div');
+      fallback.className = 'restaurant-photo-fallback';
+      fallback.setAttribute('aria-hidden', 'true');
+      link.append(fallback);
+    }
 
     const name = document.createElement('h3');
     name.className = 'restaurant-name';
     name.textContent = poi.name || 'Unnamed restaurant';
-    article.append(name);
+    link.append(name);
 
     const distance = formatDistance(poi.distance_km);
     if (distance) {
       const distanceElement = document.createElement('span');
       distanceElement.className = 'restaurant-distance';
       distanceElement.textContent = distance;
-      article.append(distanceElement);
+      link.append(distanceElement);
     }
 
     const meta = restaurantMeta(poi);
@@ -52,8 +98,21 @@ function appendRestaurants(restaurants) {
       const metaElement = document.createElement('p');
       metaElement.className = 'restaurant-meta';
       metaElement.textContent = meta;
-      article.append(metaElement);
+      link.append(metaElement);
     }
+    const badges = restaurantBadges(poi);
+    if (badges.length > 0) {
+      const badgesElement = document.createElement('div');
+      badgesElement.className = 'restaurant-badges';
+      for (const badge of badges) {
+        const badgeElement = document.createElement('span');
+        badgeElement.className = `restaurant-badge${badge === 'Open now' ? ' is-open' : badge === 'Closed now' ? ' is-closed' : ''}`;
+        badgeElement.textContent = badge;
+        badgesElement.append(badgeElement);
+      }
+      link.append(badgesElement);
+    }
+    article.append(link);
     fragment.append(article);
   }
   restaurantList.append(fragment);
