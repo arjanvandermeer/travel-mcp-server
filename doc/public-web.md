@@ -29,7 +29,7 @@ The POI page is intentionally not a client-side router. `src/index-http.js` reco
 GET /api/v1/poi/:osmId
 ```
 
-It uses Alpine only for the page's local detail state. It has no dependency on the retired home, map, route, or trip-composer stores. This separation is important: direct links, browser refreshes, and new tabs must always render the dossier rather than falling back to a generic application home state.
+It uses a small same-origin JavaScript module for the page's local detail state. It has no dependency on the retired home, map, route, trip-composer stores, or third-party script CDN. This separation is important: direct links, browser refreshes, and new tabs must always render the dossier rather than falling back to a generic application home state.
 
 The dossier displays available address, contact, Google Places photos and reviews, enrichment status, AI summaries, external Maps/website/call links, and a raw-data modal. It remains readable when optional Google enrichment has not completed. If the detail request fails, it renders an explicit unavailable state instead of a blank document.
 
@@ -42,7 +42,7 @@ HTML documents are sent with `Cache-Control: no-store`. CSS and JavaScript asset
 The public HTML content security policy is route-specific:
 
 - Homepage: same-origin scripts, styles, and connections; HTTPS images are allowed for POI photography.
-- POI dossier: same policy, plus `https://cdn.jsdelivr.net` for the Alpine module import.
+- POI dossier: same-origin scripts, styles, and connections only; HTTPS images are allowed for POI photography.
 
 External URLs shown in the dossier are normalized by `web/js/format-store.js`. Only non-local `http` and `https` URLs are accepted. Telephone links are created only from a compacted, valid telephone number.
 

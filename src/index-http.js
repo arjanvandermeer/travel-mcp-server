@@ -464,7 +464,7 @@ async function main() {
       };
       if (homepageAsset.contentType.startsWith('text/html')) {
         headers['Content-Security-Policy'] = homepageAsset.isPoiPage
-          ? "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://cdn.jsdelivr.net; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+          ? "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
           : "default-src 'self'; connect-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
       }
       res.writeHead(200, headers);
