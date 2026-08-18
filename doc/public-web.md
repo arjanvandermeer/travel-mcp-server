@@ -33,6 +33,14 @@ It uses a small same-origin JavaScript module for the page's local detail state.
 
 The dossier displays available address, contact, Google Places photos and reviews, enrichment status, AI summaries, external Maps/website/call links, and a raw-data modal. It remains readable when optional Google enrichment has not completed. If the detail request fails, it renders an explicit unavailable state instead of a blank document.
 
+## Google Sign-In And Favorites
+
+The dossier header includes a **Continue with Google** button. The browser discovers the configured issuer from `GET /api/v1/auth/config`, dynamically registers a public web client, and uses OAuth 2.1 authorization-code flow with S256 PKCE. The worker redirects back to the original POI URL, where the browser exchanges the code and removes OAuth parameters from the address bar.
+
+Access and refresh tokens are held in `sessionStorage`, never in cookies or page HTML. The browser sends the access token only in an `Authorization: Bearer` header to same-origin routes. On a 401 it tries the OAuth refresh-token grant once; otherwise it clears the session and asks the user to sign in again.
+
+Authenticated users can toggle **Save** on a dossier. The page sends `POST /api/v1/favorites` or `DELETE /api/v1/favorites/:osmId`, and loads `GET /api/v1/poi/:osmId` with the same bearer token so its initial Save/Saved state is correct. The browser profile endpoint intentionally returns only ID, email, name, and picture URL.
+
 ## Asset Delivery And Security
 
 `src/index-http.js` owns the allowlist of public static assets. Add a new browser asset there before referencing it from a public document; the server returns 404 for unlisted files.

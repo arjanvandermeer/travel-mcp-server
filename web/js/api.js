@@ -4,56 +4,58 @@
 
 const BASE = '';  // Same-origin
 
-export async function apiGet(path, params = {}) {
+function requestHeaders(token, headers = {}) {
+  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+}
+
+async function parseResponse(res) {
+  if (res.ok) return res.json();
+  const body = await res.json().catch(() => ({}));
+  const error = new Error(body.message || body.error || `HTTP ${res.status}`);
+  error.status = res.status;
+  error.code = body.code;
+  throw error;
+}
+
+export async function apiGet(path, params = {}, { token } = {}) {
   const url = new URL(path, window.location.origin);
   Object.entries(params).forEach(([k, v]) => {
     if (v != null && v !== '') url.searchParams.set(k, v);
   });
 
-  const res = await fetch(url, { credentials: 'same-origin', cache: 'no-store' });
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body.message || body.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+  const res = await fetch(url, {
+    credentials: 'same-origin',
+    cache: 'no-store',
+    headers: requestHeaders(token),
+  });
+  return parseResponse(res);
 }
 
-export async function apiPost(path, body = {}) {
+export async function apiPost(path, body = {}, { token } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'POST',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: requestHeaders(token, { 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+  return parseResponse(res);
 }
 
-export async function apiPatch(path, body = {}) {
+export async function apiPatch(path, body = {}, { token } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'PATCH',
     credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json' },
+    headers: requestHeaders(token, { 'Content-Type': 'application/json' }),
     body: JSON.stringify(body),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+  return parseResponse(res);
 }
 
-export async function apiDelete(path) {
+export async function apiDelete(path, { token } = {}) {
   const res = await fetch(`${BASE}${path}`, {
     method: 'DELETE',
     credentials: 'same-origin',
+    headers: requestHeaders(token),
   });
-  if (!res.ok) {
-    const data = await res.json().catch(() => ({}));
-    throw new Error(data.message || data.error || `HTTP ${res.status}`);
-  }
-  return res.json();
+  return parseResponse(res);
 }

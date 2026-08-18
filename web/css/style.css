@@ -92,6 +92,10 @@ button { cursor: pointer; }
 .account { position: relative; }
 .account-button { display: flex; align-items: center; gap: 8px; padding: 0 10px; max-width: 220px; }
 .account-button img { width: 24px; height: 24px; border-radius: 50%; }
+.google-sign-in { white-space: nowrap; }
+.google-mark { color: #4285f4; font-size: 18px; font-weight: 850; line-height: 1; }
+.auth-message { display: block; max-width: 220px; margin-top: 4px; color: var(--danger); font-size: 12px; line-height: 1.25; }
+.favorite-button.active { background: var(--accent); border-color: var(--accent); color: white; }
 .account-menu {
   position: absolute;
   right: 0;

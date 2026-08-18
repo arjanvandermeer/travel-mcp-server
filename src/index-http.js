@@ -25,6 +25,7 @@ import { ApiRouter } from './api-router.js';
 import { registerSearchRoutes } from './api/search.js';
 import { registerPOIRoutes } from './api/poi.js';
 import { registerFavoritesRoutes } from './api/favorites.js';
+import { registerAuthRoutes } from './api/auth.js';
 import {
   SESSION_MAX_AGE_MS,
   SESSION_CLEANUP_INTERVAL_MS,
@@ -409,6 +410,7 @@ async function main() {
 
   // Set up the public REST API.
   const apiRouter = new ApiRouter();
+  registerAuthRoutes(apiRouter);
   registerSearchRoutes(apiRouter);
   registerPOIRoutes(apiRouter);
   registerFavoritesRoutes(apiRouter);

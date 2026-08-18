@@ -89,6 +89,22 @@ components:
         - results
         - count
 paths:
+  /api/v1/auth/config:
+    get:
+      tags: [Discovery]
+      summary: Return the public OAuth issuer for the web client.
+      responses:
+        '200':
+          description: OAuth issuer configuration.
+        '503':
+          description: Google sign-in is unavailable.
+  /api/v1/auth/me:
+    get:
+      tags: [Discovery]
+      summary: Return the current browser bearer-token profile when authenticated.
+      responses:
+        '200':
+          description: Anonymous or authenticated browser profile.
   /health:
     get:
       tags: [Discovery]

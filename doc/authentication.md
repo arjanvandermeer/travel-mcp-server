@@ -23,6 +23,8 @@ The server supports two authentication methods:
 | **Phase 1: Token Auth** | Admin-provisioned tokens for specific users | Simple (SQL only) |
 | **Phase 2: OAuth 2.1** | Self-service login via Google for ChatGPT, Claude, etc. | Moderate (requires Cloudflare Worker) |
 
+The public POI dossier also uses Phase 2. It registers a public browser client dynamically and uses authorization-code PKCE; see [public-web.md](public-web.md#google-sign-in-and-favorites).
+
 ---
 
 ## Phase 1: Simple Token Auth
