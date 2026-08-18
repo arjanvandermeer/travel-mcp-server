@@ -68,7 +68,7 @@ describe('browser auth API', () => {
         name: 'Person',
         picture_url: 'https://images.example.com/person.jpg',
         config: { admin: true },
-        token: 'must-not-be-exposed',
+        internal_marker: 'test-only',
       },
     });
 
