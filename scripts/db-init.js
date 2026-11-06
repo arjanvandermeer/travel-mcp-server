@@ -67,6 +67,9 @@ async function initializeDatabase({ reset = false } = {}) {
     await client.connect();
     console.log('✓ Connected to PostgreSQL');
 
+    await client.query("SET lock_timeout = '5s'");
+    await client.query("SET statement_timeout = '120s'");
+
     if (reset) {
       await resetDatabase(client);
     }

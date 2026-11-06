@@ -564,16 +564,6 @@ SELECT
     h.summary_status as ai_homepage_summary_status,
     h.summary_error as ai_homepage_summary_error,
     h.summarized_at as ai_homepage_summarized_at,
-    hh.final_url as homepage_final_url,
-    hh.fetch_status as homepage_fetch_status,
-    hh.http_status as homepage_http_status,
-    hh.title as homepage_title,
-    hh.meta_description as homepage_meta_description,
-    hh.image_urls as homepage_image_urls,
-    hh.content_hash as homepage_content_hash,
-    hh.fetch_error as homepage_fetch_error,
-    hh.fetched_at as homepage_fetched_at,
-    hh.next_fetch_at as homepage_next_fetch_at,
     g.enriched_at as google_enriched_at,
     g.cache_expires_at as google_cache_expires_at,
 
@@ -585,7 +575,19 @@ SELECT
     m.mapping_notes,
     m.mapped_at,
     m.next_enrichment_at,
-    m.last_verified_at
+    m.last_verified_at,
+
+    -- View upgrades may append columns, but must preserve existing column order.
+    hh.final_url as homepage_final_url,
+    hh.fetch_status as homepage_fetch_status,
+    hh.http_status as homepage_http_status,
+    hh.title as homepage_title,
+    hh.meta_description as homepage_meta_description,
+    hh.image_urls as homepage_image_urls,
+    hh.content_hash as homepage_content_hash,
+    hh.fetch_error as homepage_fetch_error,
+    hh.fetched_at as homepage_fetched_at,
+    hh.next_fetch_at as homepage_next_fetch_at
 
 FROM osm_pois p
 LEFT JOIN geonames_cities c ON p.nearest_city_id = c.geoname_id

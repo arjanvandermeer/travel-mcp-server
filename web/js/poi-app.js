@@ -1,5 +1,10 @@
-import { apiDelete, apiGet, apiPost } from './api.js';
-import { createFormatStore, safeHttpUrl } from './format-store.js';
+// Carry the entry module's build version into its dependencies as well.
+const buildVersion = new URL(import.meta.url).searchParams.get('v');
+const moduleQuery = buildVersion ? `?v=${encodeURIComponent(buildVersion)}` : '';
+const [{ apiDelete, apiGet, apiPost }, { createFormatStore, safeHttpUrl }] = await Promise.all([
+  import(`./api.js${moduleQuery}`),
+  import(`./format-store.js${moduleQuery}`),
+]);
 
 const format = createFormatStore();
 const root = document.getElementById('poi-content');

@@ -47,6 +47,8 @@ Authenticated users can toggle **Save** on a dossier. The page sends `POST /api/
 
 HTML documents are sent with `Cache-Control: no-store`. CSS and JavaScript assets receive a build-derived query string in rendered HTML, so a newly deployed page requests the matching bundle rather than a stale one. Static assets can therefore use a short public cache lifetime.
 
+The PDP entry module passes that same build version to its API and formatting module imports. This also invalidates previously cached dependencies, not just the entry script.
+
 The public HTML content security policy is route-specific:
 
 - Homepage: same-origin scripts, styles, and connections; HTTPS images are allowed for POI photography.

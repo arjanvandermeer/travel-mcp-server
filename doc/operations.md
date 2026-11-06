@@ -7,6 +7,8 @@ The service has two separate safety checks after deployment:
 
 EC2 runs `npm run db:init` after dependencies are installed and before restarting the service. `data/schema.sql` is the single non-destructive migration source. Request handlers do not create or alter tables, so schema failures occur at deployment time and trigger its normal rollback path instead of appearing during a user request.
 
+Schema initialization uses a five-second lock timeout and a two-minute statement timeout. Existing view columns must retain their names, types, and order; append new fields at the end of `enriched_pois` so `CREATE OR REPLACE VIEW` can upgrade older deployments without dropping the view or its dependants.
+
 ## Operational Status
 
 Authenticated administrators can call the MCP `get_operational_status` tool. It is read-only and reports:
