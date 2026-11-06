@@ -1,4 +1,8 @@
-import { TYPE_COLORS } from './constants.js';
+const TYPE_COLORS = new Map([
+  ...['hotel', 'guest_house', 'hostel', 'resort', 'motel', 'apartment', 'bed_and_breakfast'].map(type => [type, '#2563eb']),
+  ...['restaurant', 'cafe', 'bar', 'pub', 'fast_food', 'food_court'].map(type => [type, '#dc2626']),
+  ...['attraction', 'monument', 'museum', 'park', 'viewpoint', 'ruins', 'castle', 'zoo', 'theme_park'].map(type => [type, '#15803d']),
+]);
 
 export function safeHttpUrl(value) {
   if (typeof value !== 'string') return '';

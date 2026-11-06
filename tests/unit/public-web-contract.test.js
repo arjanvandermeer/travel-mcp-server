@@ -18,6 +18,7 @@ describe('public web contract', () => {
     assert.match(source, /'\/js\/format-store\.js'/);
     assert.match(source, /getBrowserOAuthIssuer/);
     assert.match(poiDocument, /src="\/js\/poi-app\.js"/);
+    assert.doesNotMatch(read('web/js/format-store.js'), /from '\.\/constants\.js'/);
   });
 
   it('does not retain routes or source files for the retired SPA', () => {
