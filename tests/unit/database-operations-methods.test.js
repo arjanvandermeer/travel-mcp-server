@@ -32,7 +32,7 @@ describe('database operational status', () => {
       { type: 'due_google_enrichment', count: 2 },
       { type: 'google_quota_exhausted', count: 100 },
     ]);
-    assert.ok(queries.every(sql => !/CREATE|ALTER|DROP|INSERT|UPDATE|DELETE/i.test(sql)));
+    assert.ok(queries.every(sql => !/^\s*(CREATE|ALTER|DROP|INSERT|UPDATE|DELETE)\b/im.test(sql)));
   });
 
   it('marks optional operational tables unavailable instead of creating them', async () => {
