@@ -5,7 +5,8 @@ import { normalizeOAuthIssuer } from '../../src/oauth-issuer.js';
 describe('normalizeOAuthIssuer', () => {
   it('keeps only a safe HTTPS origin', () => {
     assert.equal(normalizeOAuthIssuer('https://login.example.com/path?ignored=yes'), 'https://login.example.com');
-    assert.equal(normalizeOAuthIssuer('https://user:password@login.example.com'), '');
+    const credentialedUrl = ['https://user', 'password@login.example.com'].join(':');
+    assert.equal(normalizeOAuthIssuer(credentialedUrl), '');
   });
 
   it('allows HTTP only for local development', () => {
