@@ -1,0 +1,22 @@
+name: Refresh Lockfile
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-fix-lockfile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+      - run: npm audit fix --package-lock-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: audited-package-lock
+          path: package-lock.json
+          if-no-files-found: error
