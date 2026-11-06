@@ -5,6 +5,8 @@ import fs from 'node:fs';
 const schemaSql = fs.readFileSync(new URL('../../data/schema.sql', import.meta.url), 'utf8');
 const tokenHashMigrationSql = fs.readFileSync(new URL('../../data/migrations/006_hash_user_tokens.sql', import.meta.url), 'utf8');
 const packageJson = JSON.parse(fs.readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+const databaseSource = fs.readFileSync(new URL('../../src/database.js', import.meta.url), 'utf8');
+const deployConfig = fs.readFileSync(new URL('../../ops/ec2-pull-deploy.config.json', import.meta.url), 'utf8');
 
 describe('schema safety', () => {
   it('keeps the default schema file non-destructive', () => {
@@ -24,6 +26,15 @@ describe('schema safety', () => {
   it('keeps destructive reset behind an explicit npm script', () => {
     assert.strictEqual(packageJson.scripts['db:init'], 'node scripts/db-init.js');
     assert.strictEqual(packageJson.scripts['db:reset'], 'node scripts/db-init.js --reset');
+  });
+
+  it('applies schema during deployment instead of user requests', () => {
+    assert.match(schemaSql, /next_enrichment_at/i);
+    assert.match(schemaSql, /poi_homepage_harvests/i);
+    assert.match(schemaSql, /enrichment_tasks/i);
+    assert.doesNotMatch(databaseSource, /ensureGoogleMappingScheduleColumn/);
+    assert.doesNotMatch(databaseSource, /ensureAiSummaryColumns/);
+    assert.match(deployConfig, /\["npm", "run", "db:init"\]/);
   });
 
   it('defines hotel chain reference data idempotently', () => {

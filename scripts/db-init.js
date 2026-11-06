@@ -37,6 +37,9 @@ const RESET_TABLES = [
   'osm_google_mappings',
   'google_places',
   'google_api_usage',
+  'enrichment_tasks',
+  'poi_homepage_harvests',
+  'poi_homepage_summaries',
   'import_sources',
   'import_log',
   'imports',
@@ -79,7 +82,7 @@ async function initializeDatabase({ reset = false } = {}) {
     const schemaSql = readFileSync(schemaPath, 'utf-8');
     console.log(`✓ Schema file loaded (${schemaSql.length} characters)`);
 
-    // Execute schema
+    // Apply the versioned, non-destructive schema before any server starts.
     console.log('\nExecuting non-destructive schema...');
     await client.query(schemaSql);
     console.log('✓ Schema initialized successfully');

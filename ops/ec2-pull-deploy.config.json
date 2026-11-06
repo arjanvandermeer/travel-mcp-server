@@ -15,11 +15,12 @@
         "workflow": "CI"
       },
       "install": [
-        ["npm", "ci"]
+        ["npm", "ci"],
+        ["npm", "run", "db:init"]
       ],
       "service": "travel-mcp-server.service",
       "healthCheck": {
-        "command": ["curl", "-fsS", "http://127.0.0.1:3000/health"],
+        "command": ["node", "scripts/release-smoke.js"],
         "retries": 12,
         "delayMs": 5000
       }

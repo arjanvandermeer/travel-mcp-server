@@ -60,6 +60,7 @@ All search tools enforce a max of 100 results. Search/detail/nearby tools have `
 | `get_user_preferences` | Retrieve saved currency, language, and home location |
 | `set_user_preferences` | Save currency, language, and home location |
 | `get_stats` | Database statistics and recent imports |
+| `get_operational_status` | Admin-only data freshness, enrichment, quota, and task health |
 
 ## Architecture
 
@@ -82,6 +83,9 @@ Claude Desktop / ChatGPT / REST clients
 ```
 
 ## Documentation
+
+- [Public web architecture](doc/public-web.md)
+- [Operations and release verification](doc/operations.md)
 
 | Document | Description |
 |----------|-------------|

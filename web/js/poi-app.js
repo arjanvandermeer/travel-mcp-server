@@ -13,7 +13,6 @@ const auth = {
   issuer: '',
   user: null,
   accessToken: '',
-  refreshToken: '',
   expiresAt: 0,
   message: '',
 };
@@ -62,18 +61,15 @@ function callbackUrl() {
 
 function saveTokens(tokens) {
   auth.accessToken = tokens.access_token || '';
-  auth.refreshToken = tokens.refresh_token || '';
   auth.expiresAt = Date.now() + Math.max(0, Number(tokens.expires_in || 0)) * 1000;
   storeJson(authStorageKey, {
     accessToken: auth.accessToken,
-    refreshToken: auth.refreshToken,
     expiresAt: auth.expiresAt,
   });
 }
 
 function clearTokens() {
   auth.accessToken = '';
-  auth.refreshToken = '';
   auth.expiresAt = 0;
   auth.user = null;
   window.sessionStorage.removeItem(authStorageKey);
@@ -84,27 +80,9 @@ async function loadAuthConfig() {
   auth.issuer = config.oauth_issuer;
 }
 
-async function refreshAccessToken() {
-  if (!auth.issuer || !auth.refreshToken) return false;
-  const response = await fetch(`${auth.issuer}/token`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: auth.refreshToken }),
-  });
-  if (!response.ok) {
-    clearTokens();
-    return false;
-  }
-  saveTokens(await response.json());
-  return true;
-}
-
 async function loadCurrentUser() {
   if (!auth.accessToken) return null;
-  let profile = await apiGet('/api/v1/auth/me', {}, { token: auth.accessToken });
-  if (!profile.authenticated && await refreshAccessToken()) {
-    profile = await apiGet('/api/v1/auth/me', {}, { token: auth.accessToken });
-  }
+  const profile = await apiGet('/api/v1/auth/me', {}, { token: auth.accessToken });
   auth.user = profile.authenticated ? profile.user : null;
   if (!auth.user) clearTokens();
   return auth.user;
@@ -211,7 +189,6 @@ async function initializeAuth() {
     const stored = parseStoredJson(authStorageKey);
     if (stored) {
       auth.accessToken = stored.accessToken || '';
-      auth.refreshToken = stored.refreshToken || '';
       auth.expiresAt = Number(stored.expiresAt || 0);
     }
     await completeLoginFromCallback();

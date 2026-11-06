@@ -37,6 +37,7 @@ export const accountToolNames = new Set([
 
 export const adminToolNames = new Set([
   'get_stats',
+  'get_operational_status',
   'refresh_geonames',
   'load_geonames_country',
   'list_enrichment_tasks',
@@ -474,6 +475,14 @@ const baseToolsConfig = [
   {
     name: 'get_stats',
     description: 'Get database statistics including counts of countries, cities, POIs by type, and coverage by region',
+    inputSchema: {
+      type: 'object',
+      properties: {},
+    },
+  },
+  {
+    name: 'get_operational_status',
+    description: 'Admin-only: report data freshness, failed imports from the last seven days, Google Places quota and due enrichment, homepage harvest outcomes, and maintenance task outcomes. This is read-only and does not start or mutate work.',
     inputSchema: {
       type: 'object',
       properties: {},
@@ -1130,6 +1139,19 @@ export async function executeToolHandler(name, args, db, options = {}) {
       const stats = await db.getStats();
       return {
         content: [{ type: 'text', text: JSON.stringify(stats, null, 2) }],
+      };
+    }
+
+    case 'get_operational_status': {
+      if (!options.user) {
+        return taskToolError(options, 'Authentication required. Please provide a valid admin token.');
+      }
+      if (!isAdminUser(options.user)) {
+        return taskToolError(options, 'Admin role required to inspect operational status.');
+      }
+      const status = await db.getOperationalStatus();
+      return {
+        content: [{ type: 'text', text: JSON.stringify(status, null, 2) }],
       };
     }
 

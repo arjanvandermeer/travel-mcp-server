@@ -7,6 +7,7 @@ import { CONFIG_CACHE_TTL_MS, DB_STATEMENT_TIMEOUT_MS, SEARCH_LIMIT_DEFAULT, SEA
 import { addResourceUris, removeNullFields } from './response-utils.js';
 import { databaseUserMethods } from './database-user-methods.js';
 import { databaseImportMethods } from './database-import-methods.js';
+import { databaseOperationsMethods } from './database-operations-methods.js';
 import { coerceOpenAt, isPoiOpenAt } from './lib/opening-hours.js';
 import { sanitizeHttpUrl, sanitizePoiExternalUrls, sanitizePoiExternalUrlsArray } from './url-utils.js';
 import { createOpenRouterPlaceSummarizer, fetchHomepageHarvest } from './openrouter-place-summaries.js';
@@ -199,8 +200,6 @@ export class TravelDatabase {
     // Restart cooldown: Map<osmId, timestamp> - prevents polling from repeatedly
     // re-triggering stale pending enrichments when a background attempt exits quickly.
     this._enrichmentRestartedAt = new Map();
-    this._googleMappingScheduleColumnReady = false;
-    this._aiSummaryColumnsReady = false;
   }
 
   /**
@@ -271,127 +270,6 @@ export class TravelDatabase {
       return;
     }
     await this.googlePlacesReady;
-  }
-
-  async ensureGoogleMappingScheduleColumn() {
-    if (this._googleMappingScheduleColumnReady) return;
-    await this.pool.query(`
-      ALTER TABLE IF EXISTS osm_google_mappings
-      ADD COLUMN IF NOT EXISTS next_enrichment_at TIMESTAMP
-    `);
-    await this.pool.query(`
-      DO $$
-      BEGIN
-        IF EXISTS (
-          SELECT 1 FROM information_schema.columns
-          WHERE table_name = 'osm_google_mappings'
-            AND column_name = 'next_retry_at'
-        ) THEN
-          UPDATE osm_google_mappings
-          SET next_enrichment_at = COALESCE(next_enrichment_at, next_retry_at)
-          WHERE next_retry_at IS NOT NULL;
-        END IF;
-      END $$
-    `);
-    await this.pool.query(`
-      DROP INDEX IF EXISTS idx_osm_google_mappings_next_retry
-    `);
-    await this.pool.query(`
-      ALTER TABLE IF EXISTS osm_google_mappings
-      DROP COLUMN IF EXISTS next_retry_at
-    `);
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_osm_google_mappings_next_enrichment
-      ON osm_google_mappings(next_enrichment_at)
-      WHERE next_enrichment_at IS NOT NULL
-    `);
-    this._googleMappingScheduleColumnReady = true;
-  }
-
-  async ensureAiSummaryColumns() {
-    if (this._aiSummaryColumnsReady) return;
-    await this.pool.query(`
-      ALTER TABLE IF EXISTS google_places
-      ADD COLUMN IF NOT EXISTS ai_review_summary TEXT,
-      ADD COLUMN IF NOT EXISTS ai_review_summary_model VARCHAR(100),
-      ADD COLUMN IF NOT EXISTS ai_review_summary_status VARCHAR(20),
-      ADD COLUMN IF NOT EXISTS ai_review_summary_error TEXT,
-      ADD COLUMN IF NOT EXISTS ai_review_summarized_at TIMESTAMP
-    `);
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS poi_homepage_summaries (
-        id BIGSERIAL PRIMARY KEY,
-        osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
-        original_url VARCHAR(500) NOT NULL,
-        summary TEXT,
-        summary_model VARCHAR(100),
-        summary_status VARCHAR(20),
-        summary_error TEXT,
-        summarized_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (osm_id, original_url)
-      )
-    `);
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_poi_homepage_summaries_osm_id
-      ON poi_homepage_summaries(osm_id)
-    `);
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS poi_homepage_harvests (
-        id BIGSERIAL PRIMARY KEY,
-        osm_id BIGINT NOT NULL REFERENCES osm_pois(osm_id) ON DELETE CASCADE,
-        original_url VARCHAR(500) NOT NULL,
-        final_url VARCHAR(1000),
-        fetch_status VARCHAR(20) NOT NULL DEFAULT 'pending',
-        http_status INTEGER,
-        content_type VARCHAR(200),
-        title TEXT,
-        meta_description TEXT,
-        text_content TEXT,
-        image_urls JSONB DEFAULT '[]'::jsonb,
-        content_hash VARCHAR(64),
-        fetch_error TEXT,
-        fetched_at TIMESTAMP,
-        next_fetch_at TIMESTAMP,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        UNIQUE (osm_id, original_url)
-      )
-    `);
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_poi_homepage_harvests_osm_id
-      ON poi_homepage_harvests(osm_id)
-    `);
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_poi_homepage_harvests_next_fetch
-      ON poi_homepage_harvests(next_fetch_at)
-      WHERE next_fetch_at IS NOT NULL
-    `);
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS enrichment_tasks (
-        task_id VARCHAR(120) PRIMARY KEY,
-        kind VARCHAR(80) NOT NULL,
-        status VARCHAR(30) NOT NULL,
-        status_message TEXT,
-        current_item VARCHAR(200),
-        processed INTEGER DEFAULT 0,
-        succeeded INTEGER DEFAULT 0,
-        failed INTEGER DEFAULT 0,
-        total INTEGER DEFAULT 0,
-        requested_by TEXT,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        completed_at TIMESTAMP,
-        payload JSONB,
-        result JSONB
-      )
-    `);
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_enrichment_tasks_kind_status
-      ON enrichment_tasks(kind, status, updated_at DESC)
-    `);
-    this._aiSummaryColumnsReady = true;
   }
 
   async markGoogleQuotaExceeded(osmId, quota, detail = null) {
@@ -1886,7 +1764,6 @@ export class TravelDatabase {
     const enrichmentKey = getEnrichmentLockKey(osmId);
     if (poi.mapping_status && poi.next_enrichment_at === undefined) {
       try {
-        await this.ensureGoogleMappingScheduleColumn();
         const retryResult = await this.pool.query(
           'SELECT next_enrichment_at FROM osm_google_mappings WHERE osm_id = $1',
           [osmId]
@@ -2321,7 +2198,6 @@ export class TravelDatabase {
       const osmPOI = osmResult.rows[0];
 
       // Check if already mapped
-      await this.ensureGoogleMappingScheduleColumn();
       const existingMapping = await this.pool.query(`
         SELECT
           google_place_id,
@@ -2687,7 +2563,6 @@ export class TravelDatabase {
   }
 
   async getLatestHomepageHarvest(osmId, originalUrl) {
-    await this.ensureAiSummaryColumns();
     const result = await this.pool.query(`
       SELECT
         osm_id,
@@ -2725,7 +2600,6 @@ export class TravelDatabase {
     error = null,
     refreshDays = HOMEPAGE_HARVEST_REFRESH_DAYS_DEFAULT,
   } = {}) {
-    await this.ensureAiSummaryColumns();
     const normalizedImages = Array.isArray(imageUrls)
       ? imageUrls.map(sanitizeHttpUrl).filter(Boolean).slice(0, 20)
       : [];
@@ -2864,7 +2738,6 @@ export class TravelDatabase {
   }
 
   async getPlaceForAiSummary(osmId) {
-    await this.ensureAiSummaryColumns();
     const result = await this.pool.query(`
       SELECT
         p.osm_id,
@@ -3022,7 +2895,6 @@ export class TravelDatabase {
     error = null,
     model = null,
   } = {}) {
-    await this.ensureAiSummaryColumns();
     await this.pool.query(`
       UPDATE google_places
       SET
@@ -3042,7 +2914,6 @@ export class TravelDatabase {
     error = null,
     model = null,
   } = {}) {
-    await this.ensureAiSummaryColumns();
     await this.pool.query(`
       INSERT INTO poi_homepage_summaries (
         osm_id,
@@ -3067,7 +2938,6 @@ export class TravelDatabase {
   }
 
   async getDueAiSummaryEntries(limit = 100) {
-    await this.ensureAiSummaryColumns();
     const result = await this.pool.query(`
       SELECT m.osm_id
       FROM osm_google_mappings m
@@ -3131,7 +3001,6 @@ export class TravelDatabase {
   }
 
   async getDueHomepageHarvestEntries(limit = 100) {
-    await this.ensureAiSummaryColumns();
     const result = await this.pool.query(`
       SELECT m.osm_id
       FROM osm_google_mappings m
@@ -3155,7 +3024,6 @@ export class TravelDatabase {
   }
 
   async recordEnrichmentTask(task) {
-    await this.ensureAiSummaryColumns();
     await this.pool.query(`
       INSERT INTO enrichment_tasks (
         task_id,
@@ -3209,7 +3077,6 @@ export class TravelDatabase {
   }
 
   async listEnrichmentTaskRows({ kind = null, limit = 50 } = {}) {
-    await this.ensureAiSummaryColumns();
     const boundedLimit = Math.min(Math.max(Number.parseInt(String(limit), 10) || 50, 1), 200);
     const params = [];
     let where = '';
@@ -3232,8 +3099,6 @@ export class TravelDatabase {
    * Create or update mapping between OSM POI and Google Place
    */
   async createMapping(osmId, googlePlaceId, metadata = {}) {
-    await this.ensureGoogleMappingScheduleColumn();
-
     const {
       match_confidence = null,
       match_method = null,
@@ -3324,8 +3189,6 @@ export class TravelDatabase {
     if (!Array.isArray(osmIds) || osmIds.length === 0) {
       return;
     }
-
-    await this.ensureGoogleMappingScheduleColumn();
 
     // Skip any POI already being enriched (lock held by getPOIDetails stale handler or null handler).
     // enrichOSMPOI itself enforces skip-if-active and daily quota limits.
@@ -3418,5 +3281,6 @@ export class TravelDatabase {
 
 Object.assign(TravelDatabase.prototype, databaseUserMethods);
 Object.assign(TravelDatabase.prototype, databaseImportMethods);
+Object.assign(TravelDatabase.prototype, databaseOperationsMethods);
 
 export default TravelDatabase;

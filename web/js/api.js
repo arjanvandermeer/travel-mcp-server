@@ -1,5 +1,5 @@
 /**
- * API client — fetch wrapper with cookie auth and JSON parsing
+ * API client — same-origin fetch wrapper with optional bearer auth and JSON parsing.
  */
 
 const BASE = '';  // Same-origin

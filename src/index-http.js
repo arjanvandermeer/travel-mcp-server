@@ -36,6 +36,7 @@ import {
   OAUTH_INTROSPECTION_CACHE_TTL_MS,
 } from './config.js';
 import { obfuscateEmail } from './log-utils.js';
+import { normalizeOAuthIssuer } from './oauth-issuer.js';
 
 let db;
 try {
@@ -83,6 +84,10 @@ function renderPoiPage() {
     .replace('src="/js/poi-app.js"', `src="/js/poi-app.js?v=${currentAssetVersion}"`)
     .replaceAll('__APP_COMMIT__', commitLabel)
     .replaceAll('__APP_COMMIT_URL__', commitUrl);
+}
+
+async function getBrowserOAuthIssuer() {
+  return normalizeOAuthIssuer(await db.getConfigCached('oauth_issuer') || process.env.OAUTH_ISSUER);
 }
 
 function getClientKey(req) {
@@ -423,11 +428,7 @@ async function main() {
     ['/css/dossier.css', { file: new URL('../web/css/dossier.css', import.meta.url), contentType: 'text/css; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/js/api.js', { file: new URL('../web/js/api.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/js/poi-app.js', { file: new URL('../web/js/poi-app.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
-    ['/js/app.js', { file: new URL('../web/js/app.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
-    ['/js/constants.js', { file: new URL('../web/js/constants.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/js/format-store.js', { file: new URL('../web/js/format-store.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
-    ['/js/map-utils.js', { file: new URL('../web/js/map-utils.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
-    ['/js/proximity.js', { file: new URL('../web/js/proximity.js', import.meta.url), contentType: 'text/javascript; charset=utf-8', cacheControl: 'public, max-age=3600' }],
     ['/favicon.ico', { file: new URL('../web/favicon.ico', import.meta.url), contentType: 'image/x-icon', cacheControl: 'public, max-age=86400' }],
     ['/favicon.png', { file: new URL('../web/favicon.png', import.meta.url), contentType: 'image/png', cacheControl: 'public, max-age=86400' }],
   ]);
@@ -458,6 +459,7 @@ async function main() {
       ? { file: new URL('../web/poi.html', import.meta.url), contentType: 'text/html; charset=utf-8', cacheControl: 'no-store, max-age=0', isPoiPage: true }
       : null);
     if ((req.method === 'GET' || req.method === 'HEAD') && homepageAsset) {
+      const oauthIssuer = homepageAsset.isPoiPage ? await getBrowserOAuthIssuer() : '';
       const headers = {
         'Content-Type': homepageAsset.contentType,
         'Cache-Control': homepageAsset.cacheControl,
@@ -466,7 +468,7 @@ async function main() {
       };
       if (homepageAsset.contentType.startsWith('text/html')) {
         headers['Content-Security-Policy'] = homepageAsset.isPoiPage
-          ? "default-src 'self'; connect-src 'self'; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+          ? `default-src 'self'; connect-src 'self'${oauthIssuer ? ` ${oauthIssuer}` : ''}; img-src 'self' https: data:; style-src 'self' 'unsafe-inline'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'`
           : "default-src 'self'; connect-src 'self'; img-src 'self' https:; style-src 'self'; script-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'";
       }
       res.writeHead(200, headers);

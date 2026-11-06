@@ -34,6 +34,7 @@
     "test:mcp-smoke:live": "node scripts/mcp-inspector-smoke.js",
     "test:rest-smoke:live": "node scripts/rest-endpoints-smoke.js",
     "test:smoke:live": "npm run test:mcp-smoke:live && npm run test:rest-smoke:live",
+    "test:release-smoke": "node scripts/release-smoke.js",
     "test:maintenance-gate-smoke": "node scripts/maintenance-review-smoke.js",
     "test:google-place-matching": "node scripts/test-google-place-matching.js",
     "validate:google-mappings": "node scripts/validate-google-mappings.js",

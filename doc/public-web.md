@@ -37,7 +37,7 @@ The dossier displays available address, contact, Google Places photos and review
 
 The dossier header includes a **Continue with Google** button. The browser discovers the configured issuer from `GET /api/v1/auth/config`, dynamically registers a public web client, and uses OAuth 2.1 authorization-code flow with S256 PKCE. The worker redirects back to the original POI URL, where the browser exchanges the code and removes OAuth parameters from the address bar.
 
-Access and refresh tokens are held in `sessionStorage`, never in cookies or page HTML. The browser sends the access token only in an `Authorization: Bearer` header to same-origin routes. On a 401 it tries the OAuth refresh-token grant once; otherwise it clears the session and asks the user to sign in again.
+The browser keeps only the short-lived access token in `sessionStorage`, never in cookies, page HTML, or persistent storage. Refresh tokens returned by the OAuth server are intentionally discarded: a new Google authorization is required after access-token expiry. This bounds the credential value exposed if a same-origin script is compromised. The browser sends the access token only in an `Authorization: Bearer` header to same-origin routes and clears the session on a 401.
 
 Authenticated users can toggle **Save** on a dossier. The page sends `POST /api/v1/favorites` or `DELETE /api/v1/favorites/:osmId`, and loads `GET /api/v1/poi/:osmId` with the same bearer token so its initial Save/Saved state is correct. The browser profile endpoint intentionally returns only ID, email, name, and picture URL.
 
@@ -79,7 +79,7 @@ Pushing `main` starts the required GitHub Actions workflow named `CI`. The EC2 `
 1. Refuses to deploy when the EC2 checkout is dirty.
 2. Fetches `origin/main` and waits for a successful `CI` run for the target SHA.
 3. Checks out that exact SHA, runs `npm ci`, and restarts `travel-mcp-server.service`.
-4. Retries `curl -fsS http://127.0.0.1:3000/health` before recording the deployment as successful.
+4. Retries `node scripts/release-smoke.js` before recording the deployment as successful. The probe validates `/`, a direct numeric PDP, their JavaScript bundles, OAuth discovery, and the corresponding POI REST response.
 5. Rolls back to the previous SHA if installation, restart, or health checking fails, and blocks the failed SHA from another automatic retry.
 
 After CI succeeds, verify a release through the production document and API, for example:
