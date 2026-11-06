@@ -1,5 +1,17 @@
 const PAGE_SIZE = 25;
 const SEARCH_RADIUS_KM = 10;
+const UK_MAJOR_CITIES = Object.freeze([
+  { name: 'London', latitude: 51.5072, longitude: -0.1276 },
+  { name: 'Birmingham', latitude: 52.4862, longitude: -1.8904 },
+  { name: 'Manchester', latitude: 53.4808, longitude: -2.2426 },
+  { name: 'Liverpool', latitude: 53.4084, longitude: -2.9916 },
+  { name: 'Leeds', latitude: 53.8008, longitude: -1.5491 },
+  { name: 'Glasgow', latitude: 55.8642, longitude: -4.2518 },
+  { name: 'Edinburgh', latitude: 55.9533, longitude: -3.1883 },
+  { name: 'Bristol', latitude: 51.4545, longitude: -2.5879 },
+  { name: 'Cardiff', latitude: 51.4816, longitude: -3.1791 },
+  { name: 'Belfast', latitude: 54.5973, longitude: -5.9301 },
+]);
 
 const locationStatus = document.querySelector('#location-status');
 const restaurantsHeading = document.querySelector('#restaurants-heading');
@@ -15,6 +27,7 @@ const state = {
   loading: false,
   hasMore: true,
   started: false,
+  fallbackCity: null,
 };
 
 function formatDistance(distanceKm) {
@@ -71,6 +84,7 @@ function appendRating(link, poi) {
 }
 
 async function loadAreaName() {
+  if (state.fallbackCity) return;
   const params = new URLSearchParams({
     latitude: String(state.latitude),
     longitude: String(state.longitude),
@@ -85,6 +99,37 @@ async function loadAreaName() {
   } catch {
     // The restaurant search remains useful when the optional location label fails.
   }
+}
+
+function resetRestaurantSearch() {
+  restaurantList.replaceChildren();
+  state.started = false;
+  state.offset = 0;
+  state.hasMore = true;
+  state.fallbackCity = null;
+}
+
+function startRestaurantSearch(latitude, longitude, { city = null, status } = {}) {
+  state.latitude = latitude;
+  state.longitude = longitude;
+  state.fallbackCity = city;
+  state.started = true;
+  locationStatus.textContent = status;
+  restaurantsHeading.textContent = city ? `Restaurants in ${city.name}` : 'Restaurants near you';
+  if (!city) loadAreaName();
+  loadNextPage();
+}
+
+function randomMajorUkCity() {
+  return UK_MAJOR_CITIES[Math.floor(Math.random() * UK_MAJOR_CITIES.length)];
+}
+
+function startFallbackCitySearch() {
+  const city = randomMajorUkCity();
+  startRestaurantSearch(city.latitude, city.longitude, {
+    city,
+    status: `Showing restaurants in ${city.name} because your location is unavailable.`,
+  });
 }
 
 function appendRestaurants(restaurants) {
@@ -194,15 +239,9 @@ async function loadNextPage() {
   }
 }
 
-function handleLocationError(error) {
-  const messages = {
-    1: 'Location access was denied. Allow it in your browser settings and try again.',
-    2: 'Your location is currently unavailable. Try again in a moment.',
-    3: 'Finding your location timed out. Try again.',
-  };
-  locationStatus.textContent = messages[error?.code] || 'Your location could not be determined. Try again.';
+function handleLocationError() {
   retryButton.hidden = false;
-  loadStatus.textContent = '';
+  startFallbackCitySearch();
 }
 
 function requestLocation() {
@@ -215,18 +254,12 @@ function requestLocation() {
   restaurantsHeading.textContent = 'Restaurants near you';
   retryButton.hidden = true;
   loadStatus.textContent = '';
-  restaurantList.replaceChildren();
-  state.started = false;
-  state.offset = 0;
-  state.hasMore = true;
+  resetRestaurantSearch();
 
   navigator.geolocation.getCurrentPosition(position => {
-    state.latitude = position.coords.latitude;
-    state.longitude = position.coords.longitude;
-    state.started = true;
-    locationStatus.textContent = 'Location found.';
-    loadAreaName();
-    loadNextPage();
+    startRestaurantSearch(position.coords.latitude, position.coords.longitude, {
+      status: 'Location found.',
+    });
   }, handleLocationError, {
     enableHighAccuracy: false,
     timeout: 10000,

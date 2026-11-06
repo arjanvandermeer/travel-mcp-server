@@ -15,7 +15,7 @@ These routes are presentation layers over the public REST API. They do not creat
 GET /api/v1/search/pois?latitude=<latitude>&longitude=<longitude>&poi_type=restaurant&radius_km=10&limit=25&offset=<offset>
 ```
 
-Results are ordered by the API's distance calculation. The client appends additional pages when its sentinel reaches the viewport; the explicit **Load more** button remains as a keyboard and permission-safe fallback. Every restaurant card links directly to `/poi/:osmId`.
+Results are ordered by the API's distance calculation. When browser geolocation is denied, unavailable, or times out, the client chooses a random major UK city and searches from that city centre instead; it labels the chosen city and keeps the location retry control available. The client appends additional pages when its sentinel reaches the viewport. Every restaurant card links directly to `/poi/:osmId`.
 
 The client also makes a best-effort `search/cities` request to label the surrounding area. A failed city label request must not prevent restaurant results from rendering.
 

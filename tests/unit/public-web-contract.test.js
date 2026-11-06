@@ -55,4 +55,14 @@ describe('public web contract', () => {
     assert.match(source, /connect-src 'self'\$\{oauthIssuer/);
     assert.match(source, /normalizeOAuthIssuer/);
   });
+
+  it('falls back to a random major UK city when browser geolocation is unavailable', () => {
+    const homeClient = read('public/home.js');
+
+    assert.match(homeClient, /const UK_MAJOR_CITIES/);
+    assert.match(homeClient, /\{ name: 'London'/);
+    assert.match(homeClient, /\{ name: 'Manchester'/);
+    assert.match(homeClient, /startFallbackCitySearch/);
+    assert.match(homeClient, /Showing restaurants in \$\{city\.name\}/);
+  });
 });
